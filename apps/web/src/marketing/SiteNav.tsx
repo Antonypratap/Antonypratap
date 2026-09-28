@@ -5,8 +5,7 @@ import styles from './SiteNav.module.css';
 const LINKS = [
   { href: '#product', label: 'Product' },
   { href: '#how-it-works', label: 'How it works' },
-  { href: '#principles', label: 'Principles' },
-  { href: '#trust', label: 'Trust' },
+  { href: '#finance-teams', label: 'For finance teams' },
 ];
 
 export function SiteNav() {

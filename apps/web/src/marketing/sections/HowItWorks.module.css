@@ -1,127 +1,113 @@
 .section {
   padding-block: var(--section-y);
-  border-top: 1px solid var(--color-line);
 }
 
-.steps {
+.flow {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-8);
-  margin-top: clamp(3rem, 2rem + 3vw, 5rem);
+  margin-top: clamp(2.5rem, 1.5rem + 3vw, 4.5rem);
+  border-top: 1px solid var(--color-ink);
 }
 
-.step {
+.stage {
   position: relative;
+  padding: var(--space-8) var(--space-8) 0 0;
+}
+.stage + .stage {
+  padding-left: var(--space-8);
+  border-left: 1px solid var(--color-line);
 }
 
-.marker {
+.state {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  margin-bottom: var(--space-6);
+  height: 1.75rem;
 }
 
-.icon {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-raised);
-  color: var(--color-ink);
-}
-.step:last-child .icon {
-  background: var(--color-accent);
-  box-shadow: none;
-  color: #fff;
-}
-
-.line {
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(
-      90deg,
-      var(--color-line-strong),
-      var(--color-line-strong) 50%,
-      transparent 50%
-    )
-    0 0 / 8px 1px repeat-x;
-}
-.step:last-child .line {
-  display: none;
-}
-
-.n {
-  font-size: var(--text-label);
+.struckChip {
+  display: inline-flex;
+  align-items: center;
+  height: 1.375rem;
+  padding: 0 0.5rem;
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 0 0 1px var(--color-line);
+  font-size: 0.71875rem;
   font-weight: var(--weight-medium);
-  letter-spacing: var(--tracking-label);
-  color: var(--color-ink-4);
-  font-variant-numeric: tabular-nums;
 }
 
-.stepTitle {
-  margin-top: var(--space-2);
-  font-size: 1.375rem;
-  letter-spacing: -0.025em;
-  line-height: 1.2;
+.stageTitle {
+  margin-top: var(--space-6);
+  font-size: clamp(1.375rem, 1.1rem + 0.8vw, 1.75rem);
+  line-height: 1.15;
+  letter-spacing: -0.03em;
 }
 
-.stepText {
-  margin-top: var(--space-2);
-  max-width: 16rem;
+.stageText {
+  max-width: 17rem;
+  margin-top: var(--space-3);
   font-size: var(--text-small);
   line-height: 1.6;
   color: var(--color-ink-2);
 }
 
+.arrow {
+  position: absolute;
+  top: calc(var(--space-8) + 0.1875rem);
+  right: calc(-1 * 0.6875rem);
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  background: var(--color-canvas);
+  color: var(--color-ink-3);
+}
+
 @media (max-width: 960px) {
-  .steps {
+  .flow {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    row-gap: var(--space-12);
   }
-  .step:nth-child(2) .line {
+  .stage:nth-child(3) {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .stage:nth-child(n + 3) {
+    margin-top: var(--space-8);
+    border-top: 1px solid var(--color-line);
+  }
+  .stage:nth-child(2) .arrow {
     display: none;
   }
 }
 
 @media (max-width: 560px) {
-  .steps {
+  .flow {
     grid-template-columns: 1fr;
-    gap: 0;
   }
-  .step {
+  .stage,
+  .stage + .stage,
+  .stage:nth-child(n + 3) {
+    margin-top: 0;
+    padding: var(--space-6) 0 var(--space-8);
+    border-left: 0;
+    border-top: 1px solid var(--color-line);
+  }
+  .stage:first-child {
+    border-top: 0;
+  }
+  .stageTitle {
+    margin-top: var(--space-4);
+  }
+  .arrow,
+  .stage:nth-child(2) .arrow {
     display: grid;
-    grid-template-columns: 2.5rem 1fr;
-    column-gap: var(--space-5);
-    padding-bottom: var(--space-8);
+    top: auto;
+    right: auto;
+    bottom: calc(-1 * 0.6875rem);
+    left: 0;
+    transform: rotate(90deg);
   }
-  .marker {
-    grid-row: 1 / span 3;
-    flex-direction: column;
-    align-self: stretch;
-    margin: 0;
-    gap: var(--space-2);
-  }
-  .step:nth-child(2) .line,
-  .line {
-    display: block;
-    width: 1px;
-    height: auto;
-    background: linear-gradient(
-        180deg,
-        var(--color-line-strong),
-        var(--color-line-strong) 50%,
-        transparent 50%
-      )
-      0 0 / 1px 8px repeat-y;
-    margin-bottom: calc(-1 * var(--space-6));
-  }
-  .step:last-child .line {
+  .stage:last-child .arrow {
     display: none;
-  }
-  .stepTitle {
-    margin-top: var(--space-1);
   }
 }

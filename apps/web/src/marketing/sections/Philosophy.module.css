@@ -1,5 +1,5 @@
 .section {
-  padding-block: clamp(7rem, 4rem + 11vw, 13rem);
+  padding-block: clamp(6rem, 3.5rem + 9vw, 11rem);
   background: var(--color-inverse);
   color: var(--color-inverse-ink);
 }
@@ -10,7 +10,7 @@
 }
 
 .lead {
-  max-width: 30ch;
+  max-width: 28ch;
   margin-top: var(--space-6);
   font-size: var(--text-lede);
   font-weight: var(--weight-medium);
@@ -22,24 +22,66 @@
 .statement {
   display: grid;
   margin-top: clamp(2.5rem, 1.5rem + 3vw, 4rem);
-  font-size: clamp(2.5rem, 1.2rem + 5.2vw, 6rem);
+  font-size: clamp(2.5rem, 1.1rem + 5.4vw, 6.25rem);
   font-weight: 600;
   line-height: 1.02;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.047em;
 }
 
 .line {
   display: block;
 }
 
-.accent {
+/* The two outcomes carry the product's colour language: handled is green, a question is amber. */
+.handles {
   color: var(--color-inverse-accent);
+}
+.asks {
+  color: var(--color-inverse-attention);
+}
+
+.foot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-8);
+  width: 100%;
+  margin-top: clamp(3rem, 2rem + 3vw, 5rem);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--color-inverse-line);
 }
 
 .support {
-  margin-top: clamp(2.5rem, 1.5rem + 3vw, 4rem);
-  padding-top: var(--space-6);
-  border-top: 1px solid var(--color-inverse-line);
   font-size: var(--text-lede);
+  color: var(--color-inverse-ink);
+}
+
+.commitments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+  font-size: var(--text-small);
   color: var(--color-inverse-ink-2);
+}
+.commitments li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.commitments li::before {
+  content: '';
+  width: 0.3125rem;
+  height: 0.3125rem;
+  border-radius: 50%;
+  background: var(--color-inverse-ink-3);
+}
+
+@media (max-width: 960px) {
+  .foot {
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+  }
+  .commitments {
+    flex-direction: column;
+  }
 }

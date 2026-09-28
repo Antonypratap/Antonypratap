@@ -8,5 +8,6 @@ export { Logo } from './components/Logo';
 export { Metric } from './components/Metric';
 export { Panel } from './components/Panel';
 export { StatusPill, type Status } from './components/StatusPill';
+export { Struck } from './components/Struck';
 export { Reveal } from './motion/Reveal';
 export { useInView, usePrefersReducedMotion, useSequence } from './motion/motion';

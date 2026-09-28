@@ -1,90 +1,80 @@
-import { Container, Icon, StatusPill, useInView, useSequence } from '../../design-system';
+import { Container, StatusPill, Struck, useInView, useSequence } from '../../design-system';
 import styles from './Problem.module.css';
 
-const CHORES = [
-  'Open it',
-  'Check it',
-  'Find the missing details',
-  'Chase someone',
-  'Resolve a discrepancy',
-  'Move it forward',
-];
-
-/** A queue of repetitive tasks builds up; then Veyra reduces it to the one thing that needs a person. */
+/**
+ * The problem, then its removal: the chores are struck out of the copy while the queue beside
+ * them empties, until one invoice that needs a person is left.
+ */
 const QUEUE = [
-  { vendor: 'Kestrel Packaging', task: 'Check it' },
-  { vendor: 'Northline Logistics', task: 'Find the missing details' },
-  { vendor: 'Altura Components', task: 'Open it' },
-  { vendor: 'Brightwater Supplies', task: 'Resolve a discrepancy' },
-  { vendor: 'Sable Office Co.', task: 'Chase someone' },
-  { vendor: 'Harbor Freight Lines', task: 'Check it' },
-  { vendor: 'Quill & Co.', task: 'Move it forward' },
-];
+  { vendor: 'Altura Components', chore: 'Open it' },
+  { vendor: 'Kestrel Packaging', chore: 'Check it' },
+  { vendor: 'Northline Logistics', chore: 'Find the missing details' },
+  { vendor: 'Sable Office Co.', chore: 'Chase someone' },
+  { vendor: 'Brightwater Supplies', chore: 'Resolve a discrepancy', keep: true },
+  { vendor: 'Quill & Co.', chore: 'Move it forward' },
+] as const;
 
 export function Problem() {
   const [ref, inView] = useInView<HTMLDivElement>({ threshold: 0.35 });
-  // 1..7 rows pile up, then step 8 = Veyra simplifies the queue.
-  const step = useSequence(QUEUE.length + 1, 260, inView, 200);
-  const simplified = step > QUEUE.length;
+  // One step per chore taken away, then a final step where the queue settles.
+  const step = useSequence(QUEUE.length + 1, 380, inView, 500);
+  const settled = step > QUEUE.length;
+  const waiting = QUEUE.filter((q, i) => 'keep' in q || i >= step).length;
 
   return (
     <section className={styles.section} aria-labelledby="problem-title">
-      <Container className={styles.grid}>
-        <div className={styles.copy}>
-          <h2 id="problem-title" className={styles.title}>
-            Finance shouldn&rsquo;t be a queue of invoices.
-          </h2>
-          <p className={styles.intro}>
-            Invoices arrive every day. <span className={styles.muted}>Someone has to</span>
-          </p>
-          <ul className={styles.chores}>
-            {CHORES.map((c) => (
-              <li key={c}>{c}.</li>
-            ))}
-          </ul>
-          <p className={styles.close}>
-            The work is repetitive.
-            <br />
-            <strong>The consequences of getting it wrong aren&rsquo;t.</strong>
-          </p>
-        </div>
+      <Container>
+        <h2 id="problem-title" className={styles.title}>
+          Finance shouldn&rsquo;t be a queue of invoices.
+        </h2>
+        <div ref={ref} className={styles.grid}>
+          <div className={styles.copy}>
+            <p className={styles.intro}>Invoices arrive every day, and someone has to</p>
+            <ul className={styles.chores}>
+              {QUEUE.map((q, i) => (
+                <li key={q.chore} data-kept={'keep' in q && step > i}>
+                  <Struck struck={!('keep' in q) && step > i}>{q.chore}.</Struck>
+                </li>
+              ))}
+            </ul>
+            <p className={styles.close}>
+              The work is repetitive.{' '}
+              <strong>The consequences of getting it wrong aren&rsquo;t.</strong>
+            </p>
+          </div>
 
-        <div ref={ref} className={styles.stage} data-simplified={simplified} aria-hidden="true">
-          <div className={styles.queue}>
+          <div className={styles.queue} data-settled={settled} aria-hidden="true">
             <div className={styles.queueHead}>
               <span>Waiting on your team</span>
-              <span className={styles.queueCount}>
-                {simplified ? 1 : Math.min(step, QUEUE.length)}
+              <span className={styles.queueCount} data-settled={settled}>
+                {waiting}
               </span>
             </div>
-            <ul className={styles.queueRows}>
+            <ul className={styles.rows}>
               {QUEUE.map((q, i) => {
-                const keep = q.vendor === 'Brightwater Supplies';
+                const keep = 'keep' in q;
+                const gone = !keep && step > i;
                 return (
                   <li
                     key={q.vendor}
-                    className={styles.queueRow}
-                    data-visible={i < step}
-                    data-keep={keep}
-                    style={{ transitionDelay: simplified && !keep ? `${i * 40}ms` : undefined }}
+                    className={styles.row}
+                    data-gone={gone}
+                    data-keep={keep && step > i}
                   >
-                    <span className={styles.queueVendor}>{q.vendor}</span>
-                    {simplified && keep ? (
+                    <span className={styles.vendor}>{q.vendor}</span>
+                    {keep && step > i ? (
                       <StatusPill status="attention">Needs a decision</StatusPill>
                     ) : (
-                      <span className={styles.task}>{q.task}</span>
+                      <span className={styles.chore}>
+                        <Struck struck={gone}>{q.chore}</Struck>
+                      </span>
                     )}
                   </li>
                 );
               })}
             </ul>
             <div className={styles.handled}>
-              <span className={styles.handledIcon}>
-                <Icon name="check" size={14} />
-              </span>
-              <span>
-                <strong>6 invoices</strong> handled by Veyra
-              </span>
+              <StatusPill status="handled">5 handled by Veyra</StatusPill>
             </div>
           </div>
         </div>

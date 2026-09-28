@@ -41,6 +41,7 @@
   --color-inverse-ink-2: #a3a8b0;
   --color-inverse-ink-3: #6f757e;
   --color-inverse-accent: #8fd4b6;
+  --color-inverse-attention: #f0b766;
 
   /* Type scale */
   --text-display: clamp(2.875rem, 1.55rem + 4.6vw, 5.25rem);
@@ -80,7 +81,7 @@
   --space-16: 4rem;
   --space-20: 5rem;
   --space-24: 6rem;
-  --section-y: clamp(5.5rem, 3rem + 9vw, 10.5rem);
+  --section-y: clamp(4.5rem, 2.75rem + 6.5vw, 8.5rem);
   --gutter: clamp(1.25rem, 0.6rem + 2.6vw, 2.5rem);
   --content-max: 76rem;
 

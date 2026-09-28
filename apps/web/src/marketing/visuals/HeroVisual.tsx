@@ -1,103 +1,84 @@
-import { Icon, Panel, StatusPill, useSequence } from '../../design-system';
-import { HERO_STEPS, heroStateAt, type Stage } from './heroTimeline';
+import { Icon, StatusPill, Struck, useSequence } from '../../design-system';
+import { HERO_STEPS, heroStateAt } from './heroTimeline';
 import styles from './HeroVisual.module.css';
 
-const STAGES: {
-  key: Stage;
-  label: string;
-  count: (c: ReturnType<typeof heroStateAt>['counts']) => number;
-}[] = [
-  { key: 'arrive', label: 'Arrived', count: (c) => c.arrived },
-  { key: 'handle', label: 'Handled', count: (c) => c.handled },
-  { key: 'people', label: 'With your team', count: (c) => c.people },
-  { key: 'ready', label: 'Ready', count: (c) => c.ready },
-];
-
 /**
- * Hero product preview. Plays once: invoices arrive, work gets handled, the one that needs a
- * decision reaches people, the rest is ready. Illustrative data only.
+ * Hero: one invoice arrives with the work attached to it. Veyra takes the work away,
+ * line by line. What is left is the one decision that belongs to a person. Plays once.
  */
 export function HeroVisual() {
-  const step = useSequence(HERO_STEPS, 520, true, 700);
-  const state = heroStateAt(step);
-  const stageIndex = state.stage ? STAGES.findIndex((s) => s.key === state.stage) : -1;
+  const step = useSequence(HERO_STEPS, 560, true, 900);
+  const s = heroStateAt(step);
 
   return (
     <figure
       className={styles.figure}
-      aria-label="Illustration: invoices arriving, being handled, one reaching the finance team, the rest ready."
+      data-arrived={s.arrived}
+      aria-label="Illustration: an invoice arrives with six tasks attached. Veyra removes five of them. One decision is left for the finance team."
     >
-      <Panel
-        className={styles.panel}
-        title={
-          <>
-            <Icon name="inbox" size={15} />
-            Accounts payable
-            <span className={styles.today}>Today</span>
-          </>
-        }
-        meta="Illustrative"
-        flush
-      >
-        <ol className={styles.stages} aria-hidden="true">
-          {STAGES.map((s, i) => (
-            <li
-              key={s.key}
-              className={styles.stage}
-              data-state={i < stageIndex ? 'done' : i === stageIndex ? 'active' : 'idle'}
-            >
-              <span className={styles.stageCount}>{s.count(state.counts)}</span>
-              <span className={styles.stageLabel}>{s.label}</span>
-            </li>
-          ))}
-        </ol>
+      <div className={styles.stack} aria-hidden="true">
+        <span className={styles.stackSheet} />
+        <span className={styles.stackSheet} />
+        <span className={styles.stackLabel}>1 of 142 today</span>
+      </div>
 
-        <ul className={styles.rows} aria-hidden="true">
-          {state.rows.map(({ invoice, visible, status }) => (
-            <li key={invoice.id} className={styles.row} data-visible={visible} data-status={status}>
-              <span className={styles.docIcon}>
-                <Icon name="document" size={16} />
+      <div className={styles.sheet} aria-hidden="true">
+        <div className={styles.head}>
+          <span className={styles.doc}>
+            <Icon name="document" size={17} />
+          </span>
+          <span className={styles.identity}>
+            <span className={styles.vendor}>Brightwater Supplies</span>
+            <span className={styles.meta}>Invoice #4821 · ₹2,04,300.00</span>
+          </span>
+          <StatusPill status={s.showDecision ? 'attention' : 'received'}>
+            {s.showDecision ? 'Needs you' : 'Received'}
+          </StatusPill>
+        </div>
+
+        <div className={styles.workHead}>
+          <span>Work on this invoice</span>
+          <span className={styles.counter} data-settled={s.settled}>
+            {s.settled ? '1 decision left' : `${s.remaining} to do`}
+          </span>
+        </div>
+
+        <ul className={styles.tasks}>
+          {s.tasks.map(({ task, status }) => (
+            <li key={task.id} className={styles.task} data-status={status}>
+              <span className={styles.mark}>
+                {status === 'done' && <Icon name="check" size={12} strokeWidth={2.2} />}
+                {status === 'decision' && <span className={styles.bang}>!</span>}
               </span>
-              <span className={styles.vendor}>
-                <span className={styles.vendorName}>{invoice.vendor}</span>
-                <span className={styles.number}>{invoice.number}</span>
+              <span className={styles.label}>
+                <Struck struck={status === 'done'}>{task.label}</Struck>
               </span>
-              <span className={styles.amount}>{invoice.amount}</span>
-              <span className={styles.status}>
-                <StatusPill status={status}>
-                  {status === 'attention' ? 'Your team' : undefined}
-                </StatusPill>
-              </span>
+              {status === 'decision' && <span className={styles.flag}>10 units short</span>}
             </li>
           ))}
         </ul>
 
-        <div className={styles.footer} data-visible={state.showReady} aria-hidden="true">
-          <span className={styles.footerIcon}>
-            <Icon name="check" size={14} />
-          </span>
-          <span>
-            <strong>4 invoices</strong> ready to move forward
-          </span>
-        </div>
-      </Panel>
-
-      <div className={styles.callout} data-visible={state.showCallout} aria-hidden="true">
-        <div className={styles.calloutHead}>
-          <span className={styles.calloutIcon}>
-            <Icon name="attention" size={15} />
-          </span>
-          <span className={styles.calloutTitle}>Invoice #4821 needs a decision</span>
-        </div>
-        <p className={styles.calloutText}>Quantity billed is higher than quantity received.</p>
-        <div className={styles.calloutActions}>
-          <span className={styles.assignee}>
-            <span className={styles.avatar}>FT</span>
-            Finance team
-          </span>
-          <span className={styles.review}>Review</span>
+        <div className={styles.decisionWrap} data-visible={s.showDecision}>
+          <div className={styles.decision}>
+            <p className={styles.decisionLabel}>For your team</p>
+            <p className={styles.decisionText}>
+              90 of 100 units were received. How should this invoice go forward?
+            </p>
+            <div className={styles.decisionActions}>
+              <span className={styles.primary}>Accept 90 units</span>
+              <span className={styles.secondary}>Ask the supplier</span>
+            </div>
+          </div>
         </div>
       </div>
+
+      <figcaption className={styles.caption} data-visible={s.settled}>
+        <Icon name="check" size={14} />
+        <span>
+          <strong>5 tasks</strong> taken off your team&rsquo;s plate. <strong>1 decision</strong>{' '}
+          left.
+        </span>
+      </figcaption>
     </figure>
   );
 }

@@ -1,188 +1,160 @@
 .section {
   padding-block: var(--section-y);
-  background: var(--color-surface-sunken);
-  border-block: 1px solid var(--color-line);
+  border-top: 1px solid var(--color-line);
 }
 
-.grid {
+.head {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-4);
-  margin-top: clamp(2.5rem, 1.5rem + 3vw, 4rem);
+  max-width: 52rem;
 }
 
-.card {
-  display: grid;
-  grid-template-rows: auto 1fr;
-  height: 100%;
-  overflow: hidden;
+.title {
+  font-size: var(--text-h1);
+  line-height: 1.06;
+  letter-spacing: var(--tracking-display);
+}
+.titleMuted {
+  color: var(--color-ink-4);
 }
 
-.visual {
+.rows {
+  margin-top: clamp(2.5rem, 1.5rem + 3vw, 4.5rem);
+  border-top: 1px solid var(--color-ink);
+}
+
+.row {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
-  height: 13.5rem;
-  padding: var(--space-6);
+  gap: clamp(2rem, 1rem + 4vw, 5rem);
+  padding-block: clamp(2rem, 1.25rem + 2.5vw, 3.5rem);
   border-bottom: 1px solid var(--color-line);
-  background:
-    radial-gradient(circle at 1px 1px, var(--color-line) 1px, transparent 0) 0 0 / 14px 14px,
-    var(--color-canvas);
 }
 
-.text {
-  padding: var(--space-6);
+.rowTitle {
+  font-size: clamp(1.75rem, 1.2rem + 1.7vw, 2.625rem);
+  line-height: 1.08;
+  letter-spacing: -0.035em;
 }
 
-.cardTitle {
-  font-size: var(--text-h3);
-  line-height: 1.3;
-  letter-spacing: -0.02em;
-}
-
-.cardBody {
-  margin-top: var(--space-2);
-  font-size: var(--text-small);
+.rowText {
+  max-width: 27rem;
+  margin-top: var(--space-4);
+  font-size: var(--text-body);
   line-height: 1.6;
   color: var(--color-ink-2);
 }
 
-/* Mini product components */
-.miniList {
-  display: grid;
-  gap: var(--space-2);
+.fragment {
+  justify-self: end;
+  width: min(100%, 26rem);
 }
-.miniRow {
+
+/* Less work: the work, struck out */
+.work {
+  display: grid;
+  gap: var(--space-3);
+  font-size: clamp(1.0625rem, 0.95rem + 0.4vw, 1.25rem);
+  font-weight: var(--weight-medium);
+  letter-spacing: -0.015em;
+  color: var(--color-ink);
+}
+
+/* More attention: the quiet rows recede, one stays */
+.queue {
+  display: grid;
+  gap: var(--space-1);
+}
+.quiet {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 2.25rem;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  box-shadow: 0 0 0 1px var(--color-line);
-}
-.miniName {
+  height: 2.5rem;
+  padding: 0 var(--space-4);
   font-size: var(--text-xsmall);
-  font-weight: var(--weight-medium);
-  color: var(--color-ink);
-  white-space: nowrap;
+  color: var(--color-ink-3);
+  transition: opacity 600ms var(--ease-out);
 }
-
-.focus {
-  display: grid;
-  gap: var(--space-2);
+.quiet svg {
+  color: var(--color-accent);
 }
-.dimRow {
-  height: 2.25rem;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  box-shadow: 0 0 0 1px var(--color-line);
-  opacity: 0.55;
+.queue[data-on='true'] .quiet {
+  opacity: 0.4;
 }
-.focusRow {
+.loud {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  height: 2.75rem;
-  margin-inline: calc(-1 * var(--space-2));
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-sm);
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
   background: var(--color-surface);
   box-shadow:
     var(--shadow-raised),
     0 0 0 1px var(--color-attention-line);
+  font-size: var(--text-small);
 }
-.focusRow .miniName {
-  margin-right: auto;
+.loud strong {
+  display: block;
+  font-weight: var(--weight-semibold);
 }
-.focusIcon {
-  display: grid;
-  place-items: center;
-  width: 1.375rem;
-  height: 1.375rem;
-  border-radius: var(--radius-xs);
-  background: var(--color-attention-soft);
-  color: var(--color-attention);
+.loudSub {
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-3);
 }
 
+/* Control */
 .control {
-  padding: var(--space-4);
+  padding: var(--space-5);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   box-shadow: var(--shadow-raised);
 }
-.controlLabel {
-  font-size: 0.6875rem;
-  font-weight: var(--weight-medium);
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
-  color: var(--color-ink-3);
-}
 .controlQuestion {
-  margin-top: var(--space-2);
-  font-size: var(--text-small);
-  font-weight: var(--weight-medium);
-  letter-spacing: -0.01em;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.015em;
 }
 .controlActions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
   margin-top: var(--space-4);
 }
-.approve,
-.hold {
+.accept,
+.ask {
   display: inline-flex;
   align-items: center;
-  height: 1.875rem;
+  height: 2.125rem;
   padding: 0 var(--space-3);
   border-radius: var(--radius-sm);
-  font-size: 0.75rem;
+  font-size: var(--text-xsmall);
   font-weight: var(--weight-medium);
   white-space: nowrap;
 }
-.approve {
+.accept {
   background: var(--color-ink);
   color: var(--color-canvas);
 }
-.hold {
-  background: var(--color-surface);
+.ask {
   box-shadow: inset 0 0 0 1px var(--color-line-strong);
-  color: var(--color-ink);
+}
+.controlNote {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-line);
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-3);
 }
 
-/* Tablet: each outcome becomes a horizontal row, visual beside its words. */
-@media (max-width: 960px) {
-  .grid {
+@media (max-width: 860px) {
+  .row {
     grid-template-columns: 1fr;
+    gap: var(--space-6);
   }
-  .card {
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-    grid-template-rows: none;
-  }
-  .visual {
-    height: auto;
-    min-height: 13rem;
-    border-bottom: 0;
-    border-right: 1px solid var(--color-line);
-  }
-  .text {
-    align-self: center;
-    padding: var(--space-8);
-  }
-}
-
-/* Phone: stacked, full width. */
-@media (max-width: 640px) {
-  .card {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
-  }
-  .visual {
-    min-height: 0;
-    border-right: 0;
-    border-bottom: 1px solid var(--color-line);
-  }
-  .text {
-    padding: var(--space-6);
+  .fragment {
+    justify-self: start;
   }
 }

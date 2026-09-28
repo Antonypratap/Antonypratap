@@ -1,45 +1,49 @@
 import { describe, expect, it } from 'vitest';
-import { HERO_STEPS, heroStateAt } from './heroTimeline';
+import { HERO_STEPS, HERO_TASKS, heroStateAt } from './heroTimeline';
 
-describe('hero preview timeline', () => {
-  it('starts empty', () => {
+describe('hero story: the work disappears', () => {
+  it('starts before the invoice arrives', () => {
     const s = heroStateAt(0);
-    expect(s.stage).toBeNull();
-    expect(s.rows.every((r) => !r.visible)).toBe(true);
+    expect(s.arrived).toBe(false);
+    expect(s.remaining).toBe(HERO_TASKS.length);
   });
 
-  it('invoices arrive one by one as received', () => {
-    const s = heroStateAt(3);
-    expect(s.stage).toBe('arrive');
-    expect(s.rows.map((r) => r.visible)).toEqual([true, true, true, false, false]);
-    expect(s.rows.every((r) => r.status === 'received')).toBe(true);
+  it('arrives with all the work still attached', () => {
+    const s = heroStateAt(1);
+    expect(s.arrived).toBe(true);
+    expect(s.tasks.every((t) => t.status === 'todo')).toBe(true);
   });
 
-  it('then each is handled, and exactly one needs a person', () => {
-    const s = heroStateAt(10);
-    expect(s.stage).toBe('handle');
-    expect(s.rows.map((r) => r.status)).toEqual([
-      'handled',
-      'handled',
-      'handled',
-      'attention',
-      'handled',
+  it('takes the work away one task at a time', () => {
+    expect(heroStateAt(3).tasks.map((t) => t.status)).toEqual([
+      'done',
+      'done',
+      'todo',
+      'todo',
+      'todo',
+      'todo',
     ]);
-    expect(s.showCallout).toBe(false);
+    expect(heroStateAt(3).remaining).toBe(4);
   });
 
-  it('the exception reaches the team before the rest is ready', () => {
-    const people = heroStateAt(11);
-    expect(people.stage).toBe('people');
-    expect(people.showCallout).toBe(true);
-    expect(people.showReady).toBe(false);
-    const done = heroStateAt(HERO_STEPS);
-    expect(done.stage).toBe('ready');
-    expect(done.counts).toEqual({ arrived: 5, handled: 4, people: 1, ready: 4 });
+  it('leaves exactly one decision, then shows it to the team', () => {
+    const worked = heroStateAt(HERO_TASKS.length + 1);
+    expect(worked.tasks.map((t) => t.status)).toEqual([
+      'done',
+      'done',
+      'done',
+      'done',
+      'decision',
+      'done',
+    ]);
+    expect(worked.remaining).toBe(1);
+    expect(worked.showDecision).toBe(false);
+    expect(heroStateAt(HERO_TASKS.length + 2).showDecision).toBe(true);
+    expect(heroStateAt(HERO_STEPS).settled).toBe(true);
   });
 
   it('clamps out-of-range steps', () => {
     expect(heroStateAt(99)).toEqual(heroStateAt(HERO_STEPS));
-    expect(heroStateAt(-3)).toEqual(heroStateAt(0));
+    expect(heroStateAt(-2)).toEqual(heroStateAt(0));
   });
 });

@@ -1,95 +1,115 @@
-import { Card, Container, Icon, Reveal, SectionHeading, StatusPill } from '../../design-system';
+import type { ReactNode } from 'react';
+import { Container, Eyebrow, Icon, StatusPill, Struck, useInView } from '../../design-system';
 import styles from './Outcomes.module.css';
 
-function LessWork() {
-  const rows = [
-    'Kestrel Packaging',
-    'Northline Logistics',
-    'Altura Components',
-    'Sable Office Co.',
+function LessWork({ on }: { on: boolean }) {
+  const work = [
+    'Keying in invoice details',
+    'Checking every total',
+    'Finding the matching order',
+    'Chasing sign-offs',
   ];
   return (
-    <ul className={styles.miniList} aria-hidden="true">
-      {rows.map((r) => (
-        <li key={r} className={styles.miniRow}>
-          <span className={styles.miniName}>{r}</span>
-          <StatusPill status="handled" />
+    <ul className={styles.work}>
+      {work.map((w, i) => (
+        <li key={w}>
+          <Struck struck={on} delay={i * 180}>
+            {w}
+          </Struck>
         </li>
       ))}
     </ul>
   );
 }
 
-function Focus() {
+function Attention({ on }: { on: boolean }) {
+  const handled = ['Kestrel Packaging', 'Northline Logistics', 'Sable Office Co.'];
   return (
-    <div className={styles.focus} aria-hidden="true">
-      <div className={styles.dimRow} />
-      <div className={styles.focusRow}>
-        <span className={styles.focusIcon}>
-          <Icon name="attention" size={14} />
+    <div className={styles.queue} data-on={on}>
+      {handled.map((h) => (
+        <div key={h} className={styles.quiet}>
+          <span>{h}</span>
+          <Icon name="check" size={14} />
+        </div>
+      ))}
+      <div className={styles.loud}>
+        <span>
+          <strong>Invoice #4821</strong>
+          <span className={styles.loudSub}>Brightwater Supplies</span>
         </span>
-        <span className={styles.miniName}>Invoice #4821</span>
-        <StatusPill status="attention">1 issue</StatusPill>
+        <StatusPill status="attention">10 units short</StatusPill>
       </div>
-      <div className={styles.dimRow} />
-      <div className={styles.dimRow} />
     </div>
   );
 }
 
 function Control() {
   return (
-    <div className={styles.control} aria-hidden="true">
-      <p className={styles.controlLabel}>Your decision</p>
+    <div className={styles.control}>
       <p className={styles.controlQuestion}>Accept 90 units instead of 100?</p>
       <div className={styles.controlActions}>
-        <span className={styles.approve}>Accept</span>
-        <span className={styles.hold}>Ask the supplier</span>
+        <span className={styles.accept}>Accept 90 units</span>
+        <span className={styles.ask}>Ask the supplier</span>
       </div>
+      <p className={styles.controlNote}>Veyra waits for your answer.</p>
     </div>
   );
 }
 
-const OUTCOMES = [
-  {
-    label: 'Less manual work',
-    text: 'Routine invoice work gets handled without unnecessary intervention.',
-    visual: <LessWork />,
-  },
-  {
-    label: 'Focus on what matters',
-    text: 'Your team sees the invoices and issues that actually need attention.',
-    visual: <Focus />,
-  },
-  {
-    label: 'Keep control',
-    text: 'Important decisions remain with your people.',
-    visual: <Control />,
-  },
-];
+function Row({
+  title,
+  text,
+  children,
+}: {
+  title: string;
+  text: string;
+  children: (on: boolean) => ReactNode;
+}) {
+  const [ref, inView] = useInView<HTMLLIElement>({ threshold: 0.45 });
+  return (
+    <li ref={ref} className={styles.row}>
+      <div className={styles.words}>
+        <h3 className={styles.rowTitle}>{title}</h3>
+        <p className={styles.rowText}>{text}</p>
+      </div>
+      <div className={styles.fragment} aria-hidden="true">
+        {children(inView)}
+      </div>
+    </li>
+  );
+}
 
 export function Outcomes() {
   return (
-    <section className={styles.section} aria-labelledby="outcomes-title">
+    <section id="finance-teams" className={styles.section} aria-labelledby="outcomes-title">
       <Container>
-        <SectionHeading
-          id="outcomes-title"
-          eyebrow="The outcome"
-          title="Less processing. More control."
-        />
-        <div className={styles.grid}>
-          {OUTCOMES.map((o, i) => (
-            <Reveal key={o.label} delay={i * 90}>
-              <Card className={styles.card}>
-                <div className={styles.visual}>{o.visual}</div>
-                <div className={styles.text}>
-                  <h3 className={styles.cardTitle}>{o.label}</h3>
-                  <p className={styles.cardBody}>{o.text}</p>
-                </div>
-              </Card>
-            </Reveal>
-          ))}
+        <div className={styles.head}>
+          <Eyebrow>For finance teams</Eyebrow>
+          <h2 id="outcomes-title" className={styles.title}>
+            Your team sees what matters.{' '}
+            <span className={styles.titleMuted}>Veyra takes care of the rest.</span>
+          </h2>
         </div>
+        <ol className={styles.rows}>
+          <Row
+            title="Less work."
+            text="The reading, keying, checking and chasing behind each invoice is done before anyone opens it."
+          >
+            {(on) => <LessWork on={on} />}
+          </Row>
+          <Row
+            title="More attention on what matters."
+            text="Your queue holds only the invoices that genuinely need a person. Everything else is already handled."
+          >
+            {(on) => <Attention on={on} />}
+          </Row>
+          <Row
+            title="Control when it counts."
+            text="When something needs judgement, Veyra asks the right person and waits. It never decides for you."
+          >
+            {() => <Control />}
+          </Row>
+        </ol>
       </Container>
     </section>
   );

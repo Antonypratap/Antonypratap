@@ -1,30 +1,32 @@
-import { Container, Icon, Reveal, SectionHeading, type IconName } from '../../design-system';
+import type { ReactNode } from 'react';
+import { Container, Icon, Reveal, SectionHeading, StatusPill, Struck } from '../../design-system';
 import styles from './HowItWorks.module.css';
 
-const STEPS: { n: string; title: string; text: string; icon: IconName }[] = [
+/** The same invoice at each stage: what it looks like to your team. */
+const STAGES: { title: string; text: string; state: ReactNode }[] = [
   {
-    n: '01',
-    title: 'Receive',
-    text: 'Invoices come in the way they do today: PDFs, scans, photos.',
-    icon: 'inbox',
+    title: 'Arrives',
+    text: 'A PDF, a scan or a photo. Invoices come in the way they already do.',
+    state: <StatusPill status="received">Received</StatusPill>,
   },
   {
-    n: '02',
-    title: 'Understand',
-    text: 'Veyra reads each one and knows what it should look like.',
-    icon: 'document',
+    title: 'Works',
+    text: 'Veyra reads it, checks it and does the routine work your team does today.',
+    state: (
+      <span className={styles.struckChip}>
+        <Struck struck>Check the totals</Struck>
+      </span>
+    ),
   },
   {
-    n: '03',
-    title: 'Resolve',
-    text: 'The routine gets settled. Real decisions go to your team.',
-    icon: 'person',
+    title: 'Asks when needed',
+    text: 'If something doesn’t add up, Veyra asks the right person. It never guesses.',
+    state: <StatusPill status="attention">Needs you</StatusPill>,
   },
   {
-    n: '04',
     title: 'Ready',
-    text: 'Invoices move forward, complete and accounted for.',
-    icon: 'check',
+    text: 'Checked, complete and ready for payment. Paying stays with you.',
+    state: <StatusPill status="ready">Ready</StatusPill>,
   },
 ];
 
@@ -35,21 +37,20 @@ export function HowItWorks() {
         <SectionHeading
           id="how-title"
           eyebrow="How it works"
-          title="From invoice to done."
-          lede="Veyra works quietly in the background, handling the routine work and bringing your team in only when a decision is needed."
+          title="From invoice to ready."
+          lede="Veyra works in the background. You only hear from it when a decision is yours to make."
         />
-        <ol className={styles.steps}>
-          {STEPS.map((s, i) => (
-            <Reveal as="li" key={s.n} delay={i * 110} className={styles.step}>
-              <div className={styles.marker}>
-                <span className={styles.icon}>
-                  <Icon name={s.icon} size={18} />
+        <ol className={styles.flow}>
+          {STAGES.map((s, i) => (
+            <Reveal as="li" key={s.title} delay={i * 120} className={styles.stage}>
+              <div className={styles.state}>{s.state}</div>
+              <h3 className={styles.stageTitle}>{s.title}</h3>
+              <p className={styles.stageText}>{s.text}</p>
+              {i < STAGES.length - 1 && (
+                <span className={styles.arrow} aria-hidden="true">
+                  <Icon name="arrowRight" size={18} />
                 </span>
-                <span className={styles.line} aria-hidden="true" />
-              </div>
-              <p className={styles.n}>{s.n}</p>
-              <h3 className={styles.stepTitle}>{s.title}</h3>
-              <p className={styles.stepText}>{s.text}</p>
+              )}
             </Reveal>
           ))}
         </ol>

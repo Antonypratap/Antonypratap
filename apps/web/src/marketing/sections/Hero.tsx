@@ -15,8 +15,8 @@ export function Hero() {
             Your finance team has better things to do than process invoices.
           </p>
           <p className={styles.body}>
-            Veyra takes care of the repetitive work behind accounts payable, while keeping your team
-            in control when something needs a decision.
+            Veyra takes the reading, keying, checking and chasing out of accounts payable. What
+            reaches your team is only what needs a decision.
           </p>
           <div className={styles.ctas}>
             <ButtonLink href="#product" size="lg" arrow>

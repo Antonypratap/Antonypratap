@@ -1,0 +1,22 @@
+.struck {
+  --strike-color: var(--color-accent);
+  background-image: linear-gradient(var(--strike-color), var(--strike-color));
+  background-repeat: no-repeat;
+  background-position: 0 58%;
+  background-size: 0% 1.5px;
+  transition:
+    background-size 420ms var(--ease-out) var(--strike-delay, 0ms),
+    color 420ms var(--ease-out) calc(var(--strike-delay, 0ms) + 240ms);
+}
+
+.struck[data-struck='true'] {
+  background-size: 100% 1.5px;
+  color: var(--color-ink-4);
+}
+
+.inverse {
+  --strike-color: var(--color-inverse-accent);
+}
+.inverse[data-struck='true'] {
+  color: var(--color-inverse-ink-3);
+}

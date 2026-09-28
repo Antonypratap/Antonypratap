@@ -2,14 +2,26 @@ import { Container, Icon, Reveal, SectionHeading, type IconName } from '../../de
 import styles from './Trust.module.css';
 
 const PRINCIPLES: { title: string; text: string; icon: IconName }[] = [
-  { title: 'Your rules', text: 'Your process stays yours.', icon: 'rules' },
-  { title: 'Your people', text: 'Important decisions stay with your team.', icon: 'person' },
+  {
+    title: 'Your rules',
+    text: 'Veyra follows the way your team already checks and approves invoices.',
+    icon: 'rules',
+  },
+  {
+    title: 'Your people',
+    text: 'Decisions go to the person who owns them. Veyra never makes them.',
+    icon: 'person',
+  },
   {
     title: 'Your systems',
-    text: 'Veyra fits into the way your business already works.',
+    text: 'Works alongside the accounting system you already use.',
     icon: 'systems',
   },
-  { title: 'Your audit trail', text: 'Know what happened and why.', icon: 'audit' },
+  {
+    title: 'Your audit trail',
+    text: 'Every step is recorded: what Veyra did, what it asked, who decided.',
+    icon: 'audit',
+  },
 ];
 
 export function Trust() {

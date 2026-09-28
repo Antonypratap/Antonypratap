@@ -1,9 +1,7 @@
 .section {
   padding-block: var(--section-y);
   border-top: 1px solid var(--color-line);
-  background:
-    radial-gradient(ellipse 60% 80% at 50% 100%, var(--color-accent-soft), transparent 70%),
-    var(--color-canvas);
+  background: var(--color-canvas);
 }
 
 .inner {
@@ -14,7 +12,7 @@
 
 .title {
   max-width: 16ch;
-  font-size: var(--text-h1);
+  font-size: var(--text-display);
   line-height: 1.06;
   letter-spacing: var(--tracking-display);
 }

@@ -7,7 +7,7 @@ export function FinalCta() {
       <Container>
         <Reveal className={styles.inner}>
           <h2 id="cta-title" className={styles.title}>
-            Give your finance team their time back.
+            Let the work disappear.
           </h2>
           <p className={styles.copy}>
             Veyra handles the invoice work.
