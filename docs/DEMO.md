@@ -75,7 +75,15 @@ No items exist with HSN 9608 (markers) or 7318 (fasteners). There are no vendor-
 | PO-2026-0111 | V002 Apex | 11-Sep | ITM-003 × 20 NOS @ ₹145.00 | GRN-2026-0210 (20) |
 | PO-2026-0112 | V001 Shakti | 12-Sep | ITM-002 × 200 KGS @ ₹68.00 | GRN-2026-0211 (200) |
 
-No purchase invoices are seeded.
+No purchase invoices and no vendor-item aliases are seeded. The duplicate scenario (S11b) relies on S01 being recorded first.
+
+DEMO.md gives one GRN figure per line and no GRN dates or vendor addresses. The seed therefore sets:
+- received quantity = accepted quantity
+- GRN date = PO date
+- vendor address = the vendor's state name
+- PO line GST rate = the item master rate
+
+`npm run erp:reset` loads this seed. `packages/fake-erp/src/demo-seed.test.ts` verifies every row above through `ErpConnector`.
 
 ## 2. Scenarios
 

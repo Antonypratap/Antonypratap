@@ -19,5 +19,42 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // ERP boundary (ARCHITECTURE §1): everything outside the fake ERP sees only ErpConnector.
+    ignores: ['packages/fake-erp/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@veyra/fake-erp/*'],
+              message: 'Use the FakeErpConnector export only; fake_erp.db internals are private.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Only the fake ERP (and, from Phase 3, the API's own veyra.db) may use SQLite directly.
+    files: ['packages/**/*.ts'],
+    ignores: ['packages/fake-erp/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: ['better-sqlite3', 'drizzle-orm'],
+          patterns: [
+            {
+              group: ['drizzle-orm/*'],
+              message: 'Only @veyra/fake-erp talks to SQLite among packages.',
+            },
+            { group: ['@veyra/fake-erp/*'], message: 'Use the FakeErpConnector export only.' },
+          ],
+        },
+      ],
+    },
+  },
   prettier,
 );

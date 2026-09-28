@@ -1,6 +1,11 @@
 /**
- * @veyra/fake-erp: SQLite-backed fake ERP implementing ErpConnector, plus demo seed data.
+ * @veyra/fake-erp: a SQLite-backed ErpConnector with the DEMO.md seed data.
  *
- * Phase 0 scaffold only. Implementation lands in Phase 2 (see docs/ARCHITECTURE.md §11).
+ * Only the connector class and its options are public. The database schema, SQL and connection
+ * stay inside this package: the rest of Veyra sees nothing but `ErpConnector`.
  */
 export const PACKAGE_NAME = '@veyra/fake-erp';
+
+export { FakeErpConnector } from './connector';
+export type { FakeErpFailpoint, FakeErpOptions, FakeErpTestHooks } from './connector';
+export type { FakeErpSeed } from './seed/seed';

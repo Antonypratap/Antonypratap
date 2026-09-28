@@ -3,3 +3,4 @@ dist
 coverage
 package-lock.json
 *.md
+packages/fake-erp/drizzle
