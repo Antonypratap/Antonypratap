@@ -5,7 +5,7 @@ AI-assisted business transaction automation. The V1 use case is purchase invoice
 **READ → FIND → USE → IF MISSING, CREATE → VALIDATE → ASK HUMAN WHEN UNCERTAIN.**
 Never guess · No tolerance · No approval hierarchy · No timeout · No payment execution.
 
-Status: architecture approved (rev 3). Phase 0 (scaffold) complete; no business code yet.
+Status: architecture approved (rev 3). Phase 0 (scaffold) and Phase 1 (shared contracts, India tax, ERP connector contract) complete.
 
 - [Architecture & implementation plan](docs/ARCHITECTURE.md)
 - [Business rules](docs/RULES.md)

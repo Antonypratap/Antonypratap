@@ -5,12 +5,15 @@
   "description": "ErpConnector port (interface) and its reusable contract test suite.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./contract": "./src/contract/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@veyra/shared": "*"
+    "@veyra/india-tax": "*",
+    "@veyra/shared": "*",
+    "zod": "^4.6.5"
   }
 }

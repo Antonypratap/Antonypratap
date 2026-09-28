@@ -57,6 +57,7 @@ Name normalisation is used **only to build candidate lists**, never to auto-link
 The steps are applied in order, and the first one that yields a result wins:
 
 1. **Printed.** The invoice has an explicit "Place of Supply" field that is usable → use it (`source = extracted`).
+   If a place of supply is printed but is not usable (low confidence, or it names no known state, or its name and code disagree), it is still "printed", so step 2 does not apply: go to step 3.
 2. **Established from GST evidence on the document.** This applies only when the invoice prints a **ship-to / consignee block** that carries a usable state (a state code, or a GSTIN whose checksum passes). The value is derived deterministically as `derived_from_document_evidence`, and the evidence is recorded.
    - If several pieces of evidence disagree, or the evidence is unusable, go to step 3.
 3. **Ask.** Raise `MD_FIELD` for `header.placeOfSupply`.

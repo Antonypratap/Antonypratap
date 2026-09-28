@@ -1,6 +1,6 @@
 # Veyra — Architecture (V1)
 
-Status: **Approved (rev 3: decisions D1–D4 recorded)**. Phase 0 (scaffold) complete; no business code yet.
+Status: **Approved (rev 3: decisions D1–D4 recorded)**. Phase 0 (scaffold) and Phase 1 (shared contracts, India tax, ERP connector contract) complete.
 
 Veyra is an AI-assisted business transaction automation platform. The V1 use case:
 
@@ -141,17 +141,18 @@ interface Extractor {
 
 interface ExtractedField<T> {
   value: T | null;                 // null = not found
-  confidence: number;              // 0..1
-  evidence: { page: number; text: string; bbox?: [number, number, number, number] } | null;
+  confidenceBp: number;            // integer 0..10000 (no floats anywhere)
+  evidence: { page: number; text: string; bbox: [number, number, number, number] | null } | null;
 }
 
 interface ExtractionResult {
   header: {
     vendorName, vendorGstin, vendorAddress, buyerGstin, placeOfSupply,
+    shipToState, shipToGstin,          // place-of-supply evidence (RULES §1.6)
     invoiceNumber, invoiceDate, poNumber,
     taxablePaise, cgstPaise, sgstPaise, igstPaise, roundOffPaise, totalPaise
   };                                // each an ExtractedField<...>
-  lines: Array<{
+  lines: Array<{                    // lineNo 1..n; field paths use lines[<lineNo>]
     description, vendorItemCode, hsnSac, qtyMilli, uom,
     unitPricePaise, taxablePaise, gstRateBp, cgstPaise, sgstPaise, igstPaise
   }>;                               // each an ExtractedField<...>
@@ -170,34 +171,52 @@ Honest limitation: reconstructing line-item tables from phone photos with Tesser
 
 ### 3.2 ErpConnector
 
+Defined in `packages/erp-connector/src/connector.ts` (Phase 1). All ids, money, quantities and rates are branded integer/ID types from `@veyra/shared`; GSTIN, PAN and FY types come from `@veyra/india-tax`.
+
 ```ts
 interface ErpConnector {
-  // READ / FIND
+  readonly info: { name: string; version: string };
+  // READ / FIND: by key → null | []; by parent id → ErpNotFoundError if the parent is unknown
   getCompany(): Promise<Company>;
-  findVendorByGstin(gstin: string): Promise<Vendor | null>;
-  findVendorsByPan(pan: string): Promise<Vendor[]>;
-  findVendorsByNormalizedName(name: string): Promise<Vendor[]>;
-  findItemByVendorAlias(vendorId: string, vendorItemCode: string): Promise<Item | null>;
-  findItemsByNormalizedNameAndHsn(name: string, hsn: string): Promise<Item[]>;
-  findItemsByHsn(hsn: string): Promise<Item[]>;
-  getPurchaseOrderByNumber(poNumber: string): Promise<PurchaseOrder | null>;
-  listOpenPurchaseOrders(vendorId: string): Promise<PurchaseOrder[]>;  // open = status open AND remaining uninvoiced qty
-  listGrnsForPo(poId: string): Promise<Grn[]>;
-  getInvoicedQtyByPoLine(poLineId: string): Promise<number>;            // milli
-  findPurchaseInvoice(vendorId: string, normalizedInvoiceNo: string, fy: string): Promise<PurchaseInvoice | null>;
+  getVendor(vendorId): Promise<Vendor | null>;
+  findVendorByGstin(gstin: Gstin): Promise<Vendor | null>;
+  findVendorsByPan(pan: Pan): Promise<Vendor[]>;
+  findVendorsByNormalizedName(normalizedName): Promise<Vendor[]>;         // exact, pre-normalised
+  getItem(itemId): Promise<Item | null>;
+  findItemByVendorAlias(vendorId, vendorItemCode): Promise<Item | null>;  // exact code
+  findItemsByNormalizedNameAndHsn(normalizedName, hsnSac): Promise<Item[]>;
+  findItemsByHsn(hsnSac): Promise<Item[]>;
+  getPurchaseOrder(poId): Promise<PurchaseOrder | null>;
+  getPurchaseOrderByNumber(poNumber): Promise<PurchaseOrder | null>;
+  listOpenPurchaseOrders(vendorId): Promise<PurchaseOrder[]>;  // open = status open AND uninvoiced qty
+  listGrnsForPo(poId): Promise<Grn[]>;
+  getInvoicedQtyByPoLine(poLineId): Promise<MilliQty>;
+  findPurchaseInvoice(vendorId, normalizedInvoiceNo, fy): Promise<PurchaseInvoice | null>;
 
-  // CREATE (all idempotent on `idempotencyKey`)
-  createVendor(input, idempotencyKey): Promise<Vendor>;
-  reactivateVendor(vendorId, idempotencyKey): Promise<Vendor>;
-  createItem(input, idempotencyKey): Promise<Item>;
-  createVendorItemAlias(input, idempotencyKey): Promise<VendorItemAlias>;
-  createPurchaseOrder(input /* includes origin tag */, idempotencyKey): Promise<PurchaseOrder>;
-  createGrn(input /* includes confirmedByUserId */, idempotencyKey): Promise<Grn>;
-  recordPurchaseInvoice(input, idempotencyKey): Promise<PurchaseInvoice>;  // status verified_pending_payment
+  // WRITE: COMMITTING only; all idempotent on `key`
+  reactivateVendor(input: { vendorId, sourceInvoiceId, approvedByUserId }, key): Promise<Vendor>;
+  createVendor(input, key): Promise<Vendor>;                 // natural key: GSTIN
+  createItem(input /* approvedByUserId required */, key): Promise<Item>;
+  createVendorItemAlias(input, key): Promise<VendorItemAlias>;  // natural key: (vendor, code)
+  createPurchaseOrder(input /* origin tag; ERP assigns number */, key): Promise<PurchaseOrder>;
+  createGrn(input /* confirmedByUserId required */, key): Promise<Grn>;
+  recordPurchaseInvoice(input, key): Promise<PurchaseInvoice>;  // natural key: (vendor, no, FY)
 }
 ```
 
-`packages/erp-connector` ships a **contract test suite** that any connector (fake or real) must pass. There is deliberately no `pay*` method.
+**Errors** (all extend `ErpConnectorError`): `NOT_FOUND`, `CONFLICT` (natural key taken; carries `existingId`), `VALIDATION`, `IDEMPOTENCY_CONFLICT`, `UNAVAILABLE` (the only retryable one), `UNSUPPORTED_OPERATION`.
+
+**Idempotency contract** (`idempotency.ts`):
+
+1. On first use of a key, validate, write, and record `{key, operation, payloadHash, resultId}` atomically with the write.
+2. Same key + same operation + same payload → no write; return the same record. This must survive restarts.
+3. Same key with a different operation or payload → `IDEMPOTENCY_CONFLICT`, and nothing is written.
+4. Failed writes do not consume the key.
+5. A natural-key collision with a record written under another key → `CONFLICT`. It is never resolved silently.
+
+`payloadHash` is SHA-256 of canonical JSON, which rejects non-integer numbers.
+
+`packages/erp-connector` ships a **contract test suite** (`@veyra/erp-connector/contract`, `describeErpConnectorContract`) that any connector (fake or real) must pass. There is deliberately no `pay*` method, and a type test enforces that.
 
 ## 4. Database schema
 
@@ -241,7 +260,7 @@ purchase_invoice_lines(id, purchase_invoice_id, line_no, po_line_id, item_id,
       qty_milli, unit_price_paise, taxable_paise, gst_rate_bp,
       cgst_paise, sgst_paise, igst_paise)
 
-idempotency_log(key PRIMARY KEY, operation, result_id, created_at)
+idempotency_log(key PRIMARY KEY, operation, payload_hash, result_id, created_at)
 ```
 
 ### 4.2 `veyra.db`
@@ -398,7 +417,7 @@ Notes:
 | `VALIDATION_FAILURE` | A deterministic rule failed | Correct a misread field · "Fixed in ERP — re-check" · Reject invoice (**there is no override option**) |
 | `CREATION_APPROVAL` | A record may be created only with the user's approval (vendor not auto-eligible, item master, PO ≥ threshold, **every GRN**) | Approve (with required inputs, e.g. GRN quantities) · Decline / reject invoice |
 
-Every option maps to a **typed, deterministic effect** (`SET_FIELD`, `CONFIRM_FIELD`, `LINK_ERP_RECORD`, `APPROVE_CREATION`, `DECLINE_CREATION`, `RECHECK`, `REJECT_INVOICE`). All questions are assigned to the single designated user. See RULES.md for every question code.
+Every option maps to a **typed, deterministic effect** (`SET_FIELD`, `CONFIRM_FIELD`, `LINK_ERP_RECORD`, `REQUEST_CREATION`, `DECLARE_NON_PO`, `APPROVE_CREATION`, `RECHECK`, `REJECT_INVOICE`; declining a creation is `REJECT_INVOICE`, per RULES §5, and there is no override effect). All questions are assigned to the single designated user. See RULES.md for every question code.
 
 ## 7. Users and auth (V1)
 
