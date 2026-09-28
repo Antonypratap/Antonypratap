@@ -13,4 +13,4 @@ apps/api/storage/
 .DS_Store
 
 # local demo databases
-data/
+/data/
