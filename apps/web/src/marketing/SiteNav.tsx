@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { DEMO_ENTRY_HREF } from '../access/demoAccess';
 import { ButtonLink, Container, Icon, Logo } from '../design-system';
 import styles from './SiteNav.module.css';
 
@@ -52,7 +53,7 @@ export function SiteNav() {
           ))}
         </nav>
         <div className={styles.actions}>
-          <ButtonLink href="#product" size="sm">
+          <ButtonLink href={DEMO_ENTRY_HREF} size="sm">
             See Veyra in action
           </ButtonLink>
         </div>
@@ -83,7 +84,7 @@ export function SiteNav() {
             </ul>
           </nav>
           <ButtonLink
-            href="#product"
+            href={DEMO_ENTRY_HREF}
             size="lg"
             arrow
             className={styles.sheetCta}

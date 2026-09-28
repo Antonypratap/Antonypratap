@@ -11,6 +11,8 @@ Status: architecture approved (rev 3). Phases 0–2 complete; Phase 3B vertical 
 - [Business rules](docs/RULES.md)
 - [Demo data & scenarios](docs/DEMO.md)
 
+**Demo access gate.** In the demo environment the product workspace (`#/app/…`) asks for a demo PIN once per browser tab (*See Veyra in action* on the homepage leads there); the marketing homepage stays public. It is a gate for demos, not authentication: there are no users or sessions, the API is not gated, and the PIN (shared with the demo team, never shown in the UI) is compared by digest in `apps/web/src/access/`, which real authentication will replace.
+
 ## Development
 
 Requires Node 22.12 or newer (see `.nvmrc`). Check with `node -v`.

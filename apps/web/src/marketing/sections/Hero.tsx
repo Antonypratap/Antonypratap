@@ -1,4 +1,5 @@
 import { ButtonLink, Container } from '../../design-system';
+import { DEMO_ENTRY_HREF } from '../../access/demoAccess';
 import { HeroVisual } from '../visuals/HeroVisual';
 import styles from './Hero.module.css';
 
@@ -19,7 +20,7 @@ export function Hero() {
             reaches your team is only what needs a decision.
           </p>
           <div className={styles.ctas}>
-            <ButtonLink href="#product" size="lg" arrow>
+            <ButtonLink href={DEMO_ENTRY_HREF} size="lg" arrow>
               See Veyra in action
             </ButtonLink>
             <ButtonLink href="#how-it-works" size="lg" variant="secondary">

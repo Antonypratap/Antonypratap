@@ -1,0 +1,110 @@
+.page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  padding: var(--space-12) var(--space-4);
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+.home {
+  display: inline-flex;
+  border-radius: var(--radius-sm);
+}
+
+.panel {
+  width: 100%;
+  max-width: 24rem;
+  display: grid;
+  padding: var(--space-8);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-panel);
+}
+
+.title {
+  font-size: 1.5rem;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-heading);
+  line-height: var(--leading-heading);
+}
+
+.text {
+  max-width: none;
+  margin-top: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--color-ink-3);
+}
+
+.label {
+  margin-top: var(--space-6);
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+}
+
+.pin {
+  margin-top: var(--space-2);
+  width: 100%;
+  height: 3.25rem;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px var(--color-line-strong);
+  font: inherit;
+  font-size: 1.5rem;
+  letter-spacing: 0.5em;
+  text-align: center;
+  color: var(--color-ink);
+  transition: box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.pin::placeholder {
+  color: var(--color-ink-4);
+}
+
+.pin:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px var(--color-accent),
+    0 0 0 3px var(--color-accent-soft);
+}
+
+.pin[aria-invalid='true'] {
+  box-shadow: inset 0 0 0 1px var(--color-attention);
+}
+
+.error {
+  min-height: 1.25rem;
+  margin-top: var(--space-2);
+  font-size: var(--text-xsmall);
+  color: var(--color-attention);
+}
+
+.submit {
+  margin-top: var(--space-4);
+  width: 100%;
+  justify-content: center;
+}
+
+.back {
+  font-size: var(--text-small);
+  color: var(--color-ink-3);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--color-line-strong);
+}
+
+.back:hover {
+  color: var(--color-ink);
+}
+
+@media (max-width: 480px) {
+  .panel {
+    padding: var(--space-6);
+  }
+}

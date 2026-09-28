@@ -1,4 +1,5 @@
 import { ButtonLink, Container, Reveal } from '../../design-system';
+import { DEMO_ENTRY_HREF } from '../../access/demoAccess';
 import styles from './FinalCta.module.css';
 
 export function FinalCta() {
@@ -14,7 +15,7 @@ export function FinalCta() {
             <br />
             Your people handle the business.
           </p>
-          <ButtonLink href="#product" size="lg" arrow>
+          <ButtonLink href={DEMO_ENTRY_HREF} size="lg" arrow>
             See Veyra in action
           </ButtonLink>
         </Reveal>

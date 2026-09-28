@@ -615,6 +615,7 @@ Upload → extract → resolve → match → ask → validate → commit → `VE
 
 - **TECHNICAL CONSTRAINT** Extraction in this slice is the `FixtureExtractor` only: it recognises the demo documents in `fixtures/invoices/` by SHA-256 and returns what is printed on them (including deliberately weak reads). It refuses production (`NODE_ENV=production`) and runs only with `VEYRA_ALLOW_FIXTURE_EXTRACTOR=true`. Any other file fails visibly at EXTRACTING. LocalOcr/Ollama are later phases.
 - **TECHNICAL CONSTRAINT** The fixture documents are generated deterministically (`npm run fixtures:generate`, hand-written PDF and stored-deflate PNG writers) so their hashes never change; a test checks the committed files. Scenario data lives in `packages/extractor/src/fixture/scenarios.ts` instead of per-file `*.expected.json`.
+- **IMPLEMENTATION DECISION** Demo access gate (added after Phase 3C): product routes render `DemoGate` until the demo PIN is entered; access is kept in `sessionStorage` (`veyra.demoAccess`) for the browser tab. It is isolated in `apps/web/src/access/` and is not authentication (the API is not gated); real authentication replaces it.
 - **TECHNICAL CONSTRAINT** No authentication: the server acts as the single designated user (`settings.designated_user_id`) and binds to 127.0.0.1. Every actor reference is still a `user_id`.
 - **TECHNICAL CONSTRAINT** The web app polls (1 s while anything is processing, 4 s otherwise); there are no websockets (§8).
 

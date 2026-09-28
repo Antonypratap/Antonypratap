@@ -149,7 +149,7 @@ fixtures/invoices/
 npm run demo -- --reset      # API on :8787 (fixture extractor, DEMO.md seed) + web on :5173
 ```
 
-1. Open http://localhost:5173/#/app/inbox and click **Upload invoice**. Choose files from `fixtures/invoices/`.
+1. Open http://localhost:5173/, click **See Veyra in action** and enter the demo PIN (once per browser tab; see README). Then click **Upload invoice** in the Inbox. Choose files from `fixtures/invoices/`.
 2. Each invoice shows as *Processing*, then either *Handled* (S01, S02) or *Needs your attention*.
 3. Open one from the queue, answer the question (for example S08: **Record the receipt**, date and quantities), and watch it resume, commit and become *Ready* (`VERIFIED_PENDING_PAYMENT`).
 4. **ERP** shows the records Veyra wrote, tagged by origin; **Audit** shows every step, Veyra vs You.
