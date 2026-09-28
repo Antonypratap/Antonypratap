@@ -343,15 +343,23 @@ describe('AuditEventSchema', () => {
 });
 
 describe('ExtractionResultSchema', () => {
-  const f = (value: unknown, confidenceBp = 9800) => ({ value, confidenceBp, evidence: null });
+  const f = (value: unknown, confidenceBp = 9800) => ({
+    value,
+    confidenceBp,
+    evidence: null,
+    source: 'pdf_text',
+  });
   const header = {
     vendorName: f('Shakti Steel Suppliers Pvt Ltd'),
     vendorGstin: f('29AAFCS5678K1ZK'),
     vendorAddress: f('Bengaluru'),
+    vendorPan: f('AAFCS5678K'),
     buyerGstin: f('29AAACS1111A1Z6'),
+    billingAddress: f(null, 0),
     placeOfSupply: f('Karnataka (29)'),
     shipToState: f(null, 0),
     shipToGstin: f(null, 0),
+    shipToAddress: f(null, 0),
     invoiceNumber: f('SSS/26-27/0451'),
     invoiceDate: f('2026-09-15'),
     poNumber: f('PO-2026-0101'),
@@ -359,6 +367,7 @@ describe('ExtractionResultSchema', () => {
     cgstPaise: f(868500),
     sgstPaise: f(868500),
     igstPaise: f(null, 0),
+    cessPaise: f(null, 0),
     roundOffPaise: f(null, 0),
     totalPaise: f(11387000),
   };
@@ -370,13 +379,37 @@ describe('ExtractionResultSchema', () => {
     qtyMilli: f(1_000_000),
     uom: f('KGS'),
     unitPricePaise: f(6250),
+    discountPaise: f(null, 0),
     taxablePaise: f(6250000),
     gstRateBp: f(1800),
     cgstPaise: f(null, 0),
     sgstPaise: f(null, 0),
     igstPaise: f(null, 0),
+    lineTotalPaise: f(null, 0),
   });
-  const valid = { header, lines: [line(1)], pages: 1, warnings: [] };
+  const valid = {
+    extractor: { id: 'local_ocr', version: '1' },
+    header,
+    lines: [line(1)],
+    pages: 1,
+    warnings: [],
+  };
+
+  it('requires every field to say how it was read', () => {
+    const unsourced = { value: 'SSS/26-27/0451', confidenceBp: 9800, evidence: null };
+    expect(
+      ExtractionResultSchema.safeParse({
+        ...valid,
+        header: { ...header, invoiceNumber: unsourced },
+      }).success,
+    ).toBe(false);
+    expect(
+      ExtractionResultSchema.safeParse({
+        ...valid,
+        header: { ...header, invoiceNumber: { ...f('X'), source: 'guess' } },
+      }).success,
+    ).toBe(false);
+  });
 
   it('accepts DEMO S01-shaped output', () => {
     expect(issues(ExtractionResultSchema.safeParse(valid))).toEqual([]);

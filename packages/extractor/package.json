@@ -2,16 +2,26 @@
   "name": "@veyra/extractor",
   "version": "0.0.0",
   "private": true,
-  "description": "Extractor port and the demo/test FixtureExtractor (local OCR and Ollama come later).",
+  "description": "Extractor port: local document extraction (PDF text, Tesseract OCR, optional Ollama) and the demo/test FixtureExtractor.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "fixtures": "tsx src/cli/generate-fixtures.ts"
+    "fixtures": "tsx src/cli/generate-fixtures.ts",
+    "fixtures:documents": "tsx src/cli/generate-documents.ts"
   },
   "dependencies": {
-    "@veyra/shared": "*"
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@veyra/shared": "*",
+    "jpeg-js": "^0.4.4",
+    "pdfjs-dist": "^6.3.289",
+    "pngjs": "^7.0.0",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/pngjs": "^6.0.5",
+    "playwright-core": "^1.63.0"
   }
 }

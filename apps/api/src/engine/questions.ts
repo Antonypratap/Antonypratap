@@ -49,10 +49,13 @@ const HEADER_LABEL: Record<string, string> = {
   vendorName: 'supplier name',
   vendorGstin: 'supplier GSTIN',
   vendorAddress: 'supplier address',
+  vendorPan: 'supplier PAN',
   buyerGstin: 'your GSTIN on the invoice',
+  billingAddress: 'billing address',
   placeOfSupply: 'place of supply',
   shipToState: 'ship-to state',
   shipToGstin: 'ship-to GSTIN',
+  shipToAddress: 'ship-to address',
   invoiceNumber: 'invoice number',
   invoiceDate: 'invoice date',
   poNumber: 'order number',
@@ -60,6 +63,7 @@ const HEADER_LABEL: Record<string, string> = {
   cgstPaise: 'CGST',
   sgstPaise: 'SGST',
   igstPaise: 'IGST',
+  cessPaise: 'cess',
   roundOffPaise: 'round-off',
   totalPaise: 'total',
 };
@@ -70,12 +74,17 @@ const LINE_LABEL: Record<string, string> = {
   qtyMilli: 'quantity',
   uom: 'unit',
   unitPricePaise: 'price',
+  discountPaise: 'discount',
   taxablePaise: 'line amount',
   gstRateBp: 'GST rate',
   cgstPaise: 'line CGST',
   sgstPaise: 'line SGST',
   igstPaise: 'line IGST',
+  lineTotalPaise: 'line total',
 };
+
+/** "the total", but "your GSTIN on the invoice" (never "the your …"). */
+const theLabel = (label: string): string => (/^your\b/.test(label) ? label : `the ${label}`);
 
 export function fieldLabel(path: string): string {
   const header = /^header\.(\w+)$/.exec(path);
@@ -166,11 +175,11 @@ export function mdField(
       input: null,
     });
   }
-  options.push(setFieldOption(path, `Enter the ${label}`, 'primary'), rejectOption());
+  options.push(setFieldOption(path, `Enter ${theLabel(label)}`, 'primary'), rejectOption());
   return draft('MD_FIELD', path, {
     summary,
     evidence: shown ? `Read as ${shown}, not clearly` : 'Not found on the invoice',
-    headline: `What is the ${label}?`,
+    headline: `What is ${theLabel(label)}?`,
     facts: [
       ...(shown ? [{ label: 'Read as', value: shown, tone: 'attention' as const }] : []),
       ...(extra.facts ?? []),

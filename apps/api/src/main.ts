@@ -14,6 +14,9 @@ const app = await createApp({
   demo: process.env.VEYRA_DEMO !== 'false',
   allowFixtureExtractor: process.env.VEYRA_ALLOW_FIXTURE_EXTRACTOR === 'true',
   nodeEnv: process.env.NODE_ENV,
+  ollama: process.env.VEYRA_OLLAMA_URL
+    ? { baseUrl: process.env.VEYRA_OLLAMA_URL, model: process.env.VEYRA_OLLAMA_MODEL ?? 'llama3.1' }
+    : null,
   logger: process.env.VEYRA_LOG === 'true',
 });
 app.runner.start();

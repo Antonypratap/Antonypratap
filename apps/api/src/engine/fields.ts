@@ -36,10 +36,13 @@ export const HEADER_KINDS: Record<HeaderFieldKey, FieldKind> = {
   vendorName: 'text',
   vendorGstin: 'gstin',
   vendorAddress: 'text',
+  vendorPan: 'text',
   buyerGstin: 'gstin',
+  billingAddress: 'text',
   placeOfSupply: 'state',
   shipToState: 'state',
   shipToGstin: 'gstin',
+  shipToAddress: 'text',
   invoiceNumber: 'text',
   invoiceDate: 'date',
   poNumber: 'text',
@@ -47,6 +50,7 @@ export const HEADER_KINDS: Record<HeaderFieldKey, FieldKind> = {
   cgstPaise: 'money',
   sgstPaise: 'money',
   igstPaise: 'money',
+  cessPaise: 'money',
   roundOffPaise: 'signedMoney',
   totalPaise: 'money',
 };
@@ -58,11 +62,13 @@ export const LINE_KINDS: Record<LineFieldKey, FieldKind> = {
   qtyMilli: 'qty',
   uom: 'uom',
   unitPricePaise: 'money',
+  discountPaise: 'money',
   taxablePaise: 'money',
   gstRateBp: 'rate',
   cgstPaise: 'money',
   sgstPaise: 'money',
   igstPaise: 'money',
+  lineTotalPaise: 'money',
 };
 
 export function kindOfPath(path: FieldPath): FieldKind {

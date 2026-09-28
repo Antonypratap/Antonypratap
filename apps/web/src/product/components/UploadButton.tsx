@@ -5,8 +5,8 @@ import { useProductData } from '../state/data';
 import styles from './UploadButton.module.css';
 
 /**
- * Upload one or more invoices (PDF, JPEG or PNG). The server checks the file; this only sends it.
- * In this demo Veyra reads the sample invoices in fixtures/invoices.
+ * Upload one or more invoices (PDF, JPEG or PNG). The server checks the file and reads it (PDF text,
+ * or OCR for scans and photos); this only sends it.
  */
 export function UploadButton({ label = 'Upload invoice' }: { label?: string }) {
   const input = useRef<HTMLInputElement>(null);
@@ -48,7 +48,7 @@ export function UploadButton({ label = 'Upload invoice' }: { label?: string }) {
       <input
         ref={input}
         type="file"
-        accept="application/pdf,image/png,image/jpeg"
+        accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
         multiple
         hidden
         onChange={(e) => void send(e.target.files)}

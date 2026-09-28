@@ -55,7 +55,7 @@ const get = async <T>(url: string): Promise<T> =>
 describe('@veyra/api', () => {
   it('exposes its package name and health', async () => {
     expect(PACKAGE_NAME).toBe('@veyra/api');
-    expect(await get('/api/v1/health')).toMatchObject({ ok: true, extractor: { id: 'fixture' } });
+    expect(await get('/api/v1/health')).toMatchObject({ ok: true, extractor: { id: 'local_ocr' } });
   });
 });
 

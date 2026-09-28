@@ -1,14 +1,22 @@
 import { z } from 'zod';
 
-/** Header fields an extractor reads (ARCHITECTURE §3.1). Ship-to fields support place-of-supply evidence (RULES §1.6). */
+/**
+ * Header fields an extractor reads (ARCHITECTURE §3.1). Ship-to fields support place-of-supply
+ * evidence (RULES §1.6). `vendorPan`, `billingAddress`, `shipToAddress` and `cessPaise` are recorded
+ * as read (Phase 3D) but no V1 rule depends on them: the PAN used for matching is the one inside
+ * the GSTIN (RULES §1.4), and cess is not part of the V1 arithmetic (RULES §4.1).
+ */
 export const HEADER_FIELD_KEYS = [
   'vendorName',
   'vendorGstin',
   'vendorAddress',
+  'vendorPan',
   'buyerGstin',
+  'billingAddress',
   'placeOfSupply',
   'shipToState',
   'shipToGstin',
+  'shipToAddress',
   'invoiceNumber',
   'invoiceDate',
   'poNumber',
@@ -16,11 +24,13 @@ export const HEADER_FIELD_KEYS = [
   'cgstPaise',
   'sgstPaise',
   'igstPaise',
+  'cessPaise',
   'roundOffPaise',
   'totalPaise',
 ] as const;
 export type HeaderFieldKey = (typeof HEADER_FIELD_KEYS)[number];
 
+/** Line fields. `discountPaise` and `lineTotalPaise` are recorded as read; no V1 rule uses them. */
 export const LINE_FIELD_KEYS = [
   'description',
   'vendorItemCode',
@@ -28,11 +38,13 @@ export const LINE_FIELD_KEYS = [
   'qtyMilli',
   'uom',
   'unitPricePaise',
+  'discountPaise',
   'taxablePaise',
   'gstRateBp',
   'cgstPaise',
   'sgstPaise',
   'igstPaise',
+  'lineTotalPaise',
 ] as const;
 export type LineFieldKey = (typeof LINE_FIELD_KEYS)[number];
 

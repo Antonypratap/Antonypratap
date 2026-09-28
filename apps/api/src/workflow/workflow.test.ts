@@ -289,7 +289,8 @@ describe('boundaries: the backend is authoritative', () => {
     h = createHarness();
     const { invoiceId } = h.veyra.upload({
       filename: 'scan.pdf',
-      bytes: new TextEncoder().encode('%PDF-1.4 unknown'),
+      // A complete-looking PDF whose body is damaged: accepted, then unreadable.
+      bytes: new TextEncoder().encode('%PDF-1.4\n1 0 obj << /Garbage >>\ntrailer\n%%EOF\n'),
     });
     await h.runner.drain();
     expect(h.veyra.invoiceRow(h.veyra.db, invoiceId)).toMatchObject({

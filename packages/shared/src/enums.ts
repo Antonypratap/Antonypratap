@@ -76,6 +76,13 @@ export const FIELD_STATUSES = ['usable', 'missing', 'low_confidence', 'unparseab
 export type FieldStatus = (typeof FIELD_STATUSES)[number];
 
 export const EXTRACTOR_IDS = ['fixture', 'local_ocr', 'ollama'] as const;
+
+/**
+ * How one value was read (Phase 3D): the PDF's own text layer, Tesseract OCR, an optional local
+ * Ollama model (always grounded in the document text), or the demo fixture extractor.
+ */
+export const EXTRACTION_METHODS = ['pdf_text', 'tesseract', 'ollama', 'fixture'] as const;
+export type ExtractionMethod = (typeof EXTRACTION_METHODS)[number];
 export type ExtractorId = (typeof EXTRACTOR_IDS)[number];
 
 export const CREATION_ENTITIES = [

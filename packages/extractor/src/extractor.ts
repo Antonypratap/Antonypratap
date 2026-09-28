@@ -22,7 +22,18 @@ export interface Extractor {
   extract(input: ExtractorInput): Promise<ExtractionResult>;
 }
 
-export type ExtractorErrorCode = 'NOT_ALLOWED' | 'UNKNOWN_DOCUMENT' | 'UNSUPPORTED_MIME';
+export type ExtractorErrorCode =
+  | 'NOT_ALLOWED'
+  | 'UNKNOWN_DOCUMENT'
+  | 'UNSUPPORTED_MIME'
+  /** The file is not a readable PDF/PNG/JPEG (truncated, corrupt, encrypted…). */
+  | 'MALFORMED_DOCUMENT'
+  /** Too many pages, or an image too large to read safely. */
+  | 'DOCUMENT_TOO_LARGE'
+  /** The file appears to hold more than one invoice; Veyra never merges or splits them. */
+  | 'MULTIPLE_INVOICES'
+  | 'OCR_UNAVAILABLE'
+  | 'OCR_FAILED';
 
 /** An extractor could not read a document. The workflow records it and moves the invoice to FAILED. */
 export class ExtractorError extends Error {

@@ -149,8 +149,38 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       uploadedAt: d.uploadedAt,
       invoiceId: inv?.id ?? null,
       state: inv?.state ?? null,
+      failureReason: inv?.failureReason ?? null,
+      extraction: inv ? latestExtraction(inv.id) : null,
     };
   });
+
+  /** How the document was last read: which extractor, how many pages, which read methods. */
+  const latestExtraction = (invoiceId: string) => {
+    const x = veyra.db
+      .select()
+      .from(t.extractions)
+      .where(eq(t.extractions.invoiceId, invoiceId))
+      .orderBy(desc(t.extractions.createdAt))
+      .get();
+    if (!x) return null;
+    const raw = JSON.parse(x.rawJson) as { pages?: number; warnings?: string[] };
+    const methods = veyra.db
+      .selectDistinct({ method: t.extractedFields.method })
+      .from(t.extractedFields)
+      .where(eq(t.extractedFields.extractionId, x.id))
+      .all()
+      .map((r) => r.method)
+      .filter((m): m is string => m !== null)
+      .sort();
+    return {
+      extractor: x.extractorId,
+      version: x.extractorVersion,
+      pages: raw.pages ?? null,
+      methods,
+      warnings: raw.warnings ?? [],
+      readAt: x.createdAt,
+    };
+  };
 
   app.get('/api/v1/documents/:id/file', async (req, reply) => {
     const d = documentRow(Id.parse(req.params).id);

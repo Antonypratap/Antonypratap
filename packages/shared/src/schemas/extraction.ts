@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { IsoDateSchema, IsoDateTimeSchema } from '../dates';
-import { FIELD_SOURCES } from '../enums';
+import { EXTRACTION_METHODS, EXTRACTOR_IDS, FIELD_SOURCES, type ExtractionMethod } from '../enums';
 import { FieldPathSchema } from '../fields';
 import { ExtractionIdSchema, InvoiceIdSchema, UserIdSchema } from '../ids';
 import { MilliQtySchema, NonNegativeMilliQtySchema } from '../quantity';
@@ -17,20 +17,24 @@ export const EvidenceSchema = z.object({
 export type Evidence = z.infer<typeof EvidenceSchema>;
 
 /**
- * One value proposed by an extractor. AI output is untrusted: `value` is only a proposal until the
- * deterministic core decides it is usable (RULES §1.3). `null` means "not found".
+ * One value proposed by an extractor: `{ value, confidence, evidence, source }`. Extraction output
+ * is untrusted: `value` is only a proposal until the deterministic core decides it is usable
+ * (RULES §1.3), and `confidenceBp` is the extractor's own confidence, never proof. `null` means
+ * "not found". `source` says how the value was read.
  */
 export function extractedFieldSchema<T extends z.ZodType>(value: T) {
   return z.object({
     value: value.nullable(),
     confidenceBp: ConfidenceBpSchema,
     evidence: EvidenceSchema.nullable(),
+    source: z.enum(EXTRACTION_METHODS),
   });
 }
 export interface ExtractedField<T> {
   value: T | null;
   confidenceBp: z.infer<typeof ConfidenceBpSchema>;
   evidence: Evidence | null;
+  source: ExtractionMethod;
 }
 
 const text = z.string().min(1);
@@ -41,10 +45,13 @@ export const ExtractedHeaderSchema = z.object({
   vendorName: field(text),
   vendorGstin: field(text),
   vendorAddress: field(text),
+  vendorPan: field(text),
   buyerGstin: field(text),
+  billingAddress: field(text),
   placeOfSupply: field(text),
   shipToState: field(text),
   shipToGstin: field(text),
+  shipToAddress: field(text),
   invoiceNumber: field(text),
   invoiceDate: field(IsoDateSchema),
   poNumber: field(text),
@@ -52,6 +59,7 @@ export const ExtractedHeaderSchema = z.object({
   cgstPaise: field(NonNegativePaiseSchema),
   sgstPaise: field(NonNegativePaiseSchema),
   igstPaise: field(NonNegativePaiseSchema),
+  cessPaise: field(NonNegativePaiseSchema),
   roundOffPaise: field(PaiseSchema),
   totalPaise: field(NonNegativePaiseSchema),
 });
@@ -65,17 +73,21 @@ export const ExtractedLineSchema = z.object({
   qtyMilli: field(NonNegativeMilliQtySchema),
   uom: field(text),
   unitPricePaise: field(NonNegativePaiseSchema),
+  discountPaise: field(NonNegativePaiseSchema),
   taxablePaise: field(NonNegativePaiseSchema),
   gstRateBp: field(RateBpSchema),
   cgstPaise: field(NonNegativePaiseSchema),
   sgstPaise: field(NonNegativePaiseSchema),
   igstPaise: field(NonNegativePaiseSchema),
+  lineTotalPaise: field(NonNegativePaiseSchema),
 });
 export type ExtractedLine = z.infer<typeof ExtractedLineSchema>;
 
 /** What every Extractor implementation returns (ARCHITECTURE §3.1). */
 export const ExtractionResultSchema = z
   .object({
+    /** Which extractor produced this reading (recorded with the extraction). */
+    extractor: z.object({ id: z.enum(EXTRACTOR_IDS), version: z.string().min(1) }),
     header: ExtractedHeaderSchema,
     lines: z.array(ExtractedLineSchema),
     pages: z.int().positive(),

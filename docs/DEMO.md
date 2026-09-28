@@ -14,7 +14,7 @@ Status: **Approved (rev 3)**. The numbers in this file were verified with a scri
 | Setting | Value |
 |---|---|
 | User | `usr_demo`, "Demo Approver", `approver@veyra.local`, the **designated user** |
-| `extractor_mode` | `fixture` (demo) |
+| `extractor_mode` | `demo`: the sample invoices below keep their scripted reading; any other document is read for real (PDF text / Tesseract OCR, §7) |
 | `extraction_confidence_min_bp` | `9000` |
 | `po_auto_create_enabled` | `true` |
 | `po_auto_create_below_paise` | `2500000` (**₹25,000.00**, compared with the grand total incl. GST, strictly below) |
@@ -186,4 +186,25 @@ npm run demo -- --empty      # starts from a business with only its company reco
 7. **Invoices** / **Audit** → *Export*, or **ERP** → *Import and export* → *Export*: processed invoices, decisions and the audit trail as .xlsx or .csv; business records as .xlsx in the import format.
 
 The same run is an automated test: `apps/api/src/imports/excel-to-invoice.test.ts`.
+
+## 7. Real documents (Phase 3D)
+
+`fixtures/documents/` holds synthetic invoices (made up, matching the §1 seed) that go through the **real** extractor: PDF text layer or Tesseract OCR. Start the demo as usual (`npm run demo`), open http://localhost:5173/, click **See Veyra in action** and enter the demo PIN, then upload from the Inbox.
+
+| File | Kind | What happens |
+|---|---|---|
+| `D01-clean-text.pdf` | Text PDF | Read exactly; matched to Shakti / PO-2026-0110 / GRN; **Handled** (`VERIFIED_PENDING_PAYMENT`) with no question. |
+| `D02-scanned.pdf` | Scanned PDF | OCR. Your GSTIN is misread (`…A176`) and asked; unclear IDs are asked ("Yes, it's …"); the supplier is confirmed; then **Ready**. |
+| `D03-photo.jpg` / `D04-photo.png` | Photos | Same as D02. |
+| `D05-blurry.jpg` | Blurry photo | Almost nothing is legible, so almost nothing is proposed: questions, no guesses. Reject it. |
+| `D06-unreadable-total.pdf` | Text PDF, smudged total | One question: **What is the total?** Enter 13,275.00 → **Ready**. |
+| `D07-quantity-mismatch.pdf` | Text PDF | 120 discs on a PO for 100: `VF_R23` (no override). |
+| `D08-rate-mismatch.pdf` | Text PDF | ₹150.00 against a PO price of ₹145.00: `VF_R21`. |
+| `D09-ambiguous-vendor.pdf` | Text PDF, no GSTIN | Two suppliers are called Vasudha Traders: **Which supplier?** Pick V005 → **Ready**. |
+| `D10-multi-page.pdf` | Two pages | Lines on both pages, totals on page 2; **Handled**. |
+| `D11-two-invoices.pdf` | Two invoices | **Needs your attention**: "This file seems to hold more than one invoice… Upload each invoice as its own file." Reject it. |
+
+With an empty business (`npm run demo -- --empty`), import the Excel files from §6 first, then upload `D01-clean-text.pdf`: it verifies against the imported records.
+
+The same runs are automated: `packages/extractor/src/local/local.test.ts` (what is read) and `apps/api/src/workflow/real-documents.test.ts` (what the workflow does).
 

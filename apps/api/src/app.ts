@@ -2,7 +2,13 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { FakeErpConnector } from '@veyra/fake-erp';
-import { FixtureExtractor, type Extractor } from '@veyra/extractor';
+import {
+  DemoRoutedExtractor,
+  FixtureExtractor,
+  LocalDocumentExtractor,
+  OllamaAssist,
+  type Extractor,
+} from '@veyra/extractor';
 import { openVeyraDb } from './db/open';
 import { buildServer } from './http/server';
 import { JobRunner } from './workflow/runner';
@@ -14,22 +20,41 @@ export interface AppConfig {
   demo: boolean;
   allowFixtureExtractor: boolean;
   nodeEnv: string | undefined;
+  /** Optional local Ollama assist (VEYRA_OLLAMA_URL / VEYRA_OLLAMA_MODEL). Off when absent. */
+  ollama?: { baseUrl: string; model: string } | null;
+  /** Tests only: replaces the real document extractor. */
+  documentExtractor?: Extractor & { close?: () => Promise<void> };
   clock?: () => Date;
   logger?: boolean;
 }
 
-/** Only the fixture extractor exists in this slice; anything else is refused, never faked. */
-function makeExtractor(mode: string, config: AppConfig): Extractor {
-  if (mode === 'fixture')
-    return new FixtureExtractor({ allow: config.allowFixtureExtractor, nodeEnv: config.nodeEnv });
-  throw new Error(
-    `Extractor "${mode}" is not available in this version. Use the demo (fixture) extractor.`,
-  );
+/**
+ * The real, local document extractor reads every document. In the demo (never in production), the
+ * demo's own sample invoices keep their scripted reading so the DEMO.md scenarios stay exact.
+ */
+function makeExtractor(
+  mode: string,
+  config: AppConfig,
+): Extractor & { close?: () => Promise<void> } {
+  const real =
+    config.documentExtractor ??
+    new LocalDocumentExtractor({
+      ollama: config.ollama ? new OllamaAssist(config.ollama) : null,
+    });
+  const demo = (mode === 'demo' || mode === 'fixture') && config.nodeEnv !== 'production';
+  if (!demo || !config.allowFixtureExtractor) return real;
+  const fixture = new FixtureExtractor({
+    allow: config.allowFixtureExtractor,
+    nodeEnv: config.nodeEnv,
+  });
+  return Object.assign(new DemoRoutedExtractor(fixture, real), {
+    close: () => real.close?.() ?? Promise.resolve(),
+  });
 }
 
 /**
- * Composition root: the only place that knows the ERP is the fake ERP and the extractor is the
- * fixture extractor. Everything else sees the ErpConnector and Extractor ports.
+ * Composition root: the only place that knows the ERP is the fake ERP and which extractor reads
+ * documents. Everything else sees the ErpConnector and Extractor ports.
  */
 export async function createApp(config: AppConfig) {
   mkdirSync(config.dataDir, { recursive: true });
@@ -40,10 +65,11 @@ export async function createApp(config: AppConfig) {
   });
   const initialSettings = config.demo ? DEMO_SETTINGS : DEFAULT_SETTINGS;
   const storageDir = join(config.dataDir, 'uploads');
+  const extractor = makeExtractor(initialSettings.extractorMode, config);
   const veyra = new Veyra({
     db,
     erp,
-    extractor: makeExtractor(initialSettings.extractorMode, config),
+    extractor,
     storageDir,
     initialSettings,
     ...(config.clock ? { clock: config.clock } : {}),
@@ -92,6 +118,7 @@ export async function createApp(config: AppConfig) {
       await server.close();
       sqlite.close();
       erp.close();
+      await extractor.close?.();
     },
   };
 }

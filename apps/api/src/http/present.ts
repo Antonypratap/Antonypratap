@@ -432,9 +432,10 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
       );
     case 'extraction.completed': {
       const unclear = (d.lowConfidence as string[] | undefined) ?? [];
+      const how = readMethods((d.methods as string[] | undefined) ?? []);
       return make(
         'Invoice understood',
-        `${String(d.lines)} line${d.lines === 1 ? '' : 's'}, totals and tax${unclear.length ? `. Not clear: ${unclear.map(fieldLabel).join(', ')}` : ''}`,
+        `${how}${String(d.lines)} line${d.lines === 1 ? '' : 's'}, totals and tax${unclear.length ? `. Not clear: ${unclear.map(fieldLabel).join(', ')}` : ''}`,
       );
     }
     case 'field.derived':
@@ -583,7 +584,6 @@ function kindOf(path: string) {
 function plainFailure(reason: string): string {
   if (reason.startsWith('INVARIANT_VIOLATION'))
     return 'A check did not pass and no question could resolve it.';
-  if (/sample invoices/.test(reason)) return 'This demo can only read the sample invoices.';
   return reason;
 }
 
@@ -592,3 +592,15 @@ export const fmt = {
   dateText,
   qty: (m: number, uom: string) => `${formatQty(milliQty(m))} ${uom}`,
 };
+
+/** How an invoice was read, for the audit trail ("Read from the PDF's text. "). */
+function readMethods(methods: readonly string[]): string {
+  const text: Record<string, string> = {
+    pdf_text: "the PDF's text",
+    tesseract: 'OCR (Tesseract)',
+    ollama: 'a local AI model, checked against the document text',
+    fixture: 'the sample invoice data',
+  };
+  const parts = methods.map((m) => text[m]).filter((t): t is string => t !== undefined);
+  return parts.length ? `Read from ${parts.join(' and ')}. ` : '';
+}

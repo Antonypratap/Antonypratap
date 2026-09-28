@@ -26,7 +26,8 @@
     "fixtures:generate": "npm run fixtures -w @veyra/extractor && npm run fixtures -w @veyra/api",
     "dev:api": "npm run dev -w @veyra/api",
     "dev:web": "npm run dev -w @veyra/web",
-    "demo": "tsx scripts/demo.ts"
+    "demo": "tsx scripts/demo.ts",
+    "fixtures:documents": "npm run fixtures:documents -w @veyra/extractor"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

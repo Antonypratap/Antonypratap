@@ -42,7 +42,7 @@ export function DemoGate({ onGranted }: { onGranted: () => void }) {
           type="password"
           inputMode="numeric"
           autoComplete="off"
-          maxLength={4}
+          pattern="[0-9]{4}"
           placeholder="••••"
           value={pin}
           onChange={(e) => {

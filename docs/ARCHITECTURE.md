@@ -141,21 +141,24 @@ interface Extractor {
 
 interface ExtractedField<T> {
   value: T | null;                 // null = not found
-  confidenceBp: number;            // integer 0..10000 (no floats anywhere)
+  confidenceBp: number;            // integer 0..10000 (no floats anywhere); the extractor's own, never proof
   evidence: { page: number; text: string; bbox: [number, number, number, number] | null } | null;
+  source: 'pdf_text' | 'tesseract' | 'ollama' | 'fixture';   // how it was read (Phase 3D)
 }
 
 interface ExtractionResult {
+  extractor: { id: 'fixture' | 'local_ocr' | 'ollama'; version: string };   // Phase 3D
   header: {
-    vendorName, vendorGstin, vendorAddress, buyerGstin, placeOfSupply,
-    shipToState, shipToGstin,          // place-of-supply evidence (RULES §1.6)
+    vendorName, vendorGstin, vendorAddress, vendorPan*, buyerGstin, billingAddress*, placeOfSupply,
+    shipToState, shipToGstin, shipToAddress*,   // place-of-supply evidence (RULES §1.6)
     invoiceNumber, invoiceDate, poNumber,
-    taxablePaise, cgstPaise, sgstPaise, igstPaise, roundOffPaise, totalPaise
+    taxablePaise, cgstPaise, sgstPaise, igstPaise, cessPaise*, roundOffPaise, totalPaise
   };                                // each an ExtractedField<...>
   lines: Array<{                    // lineNo 1..n; field paths use lines[<lineNo>]
     description, vendorItemCode, hsnSac, qtyMilli, uom,
-    unitPricePaise, taxablePaise, gstRateBp, cgstPaise, sgstPaise, igstPaise
-  }>;                               // each an ExtractedField<...>
+    unitPricePaise, discountPaise*, taxablePaise, gstRateBp, cgstPaise, sgstPaise, igstPaise,
+    lineTotalPaise*
+  }>;                               // each an ExtractedField<...>;  * recorded, used by no V1 rule (§15)
   pages: number;
   warnings: string[];
 }
@@ -164,8 +167,8 @@ interface ExtractionResult {
 | Implementation | Purpose | How confidence is produced |
 |---|---|---|
 | `FixtureExtractor` | **Demo and tests only.** Looks up `fixtures/invoices/<sha256>.expected.json`. Disabled unless `VEYRA_ALLOW_FIXTURE_EXTRACTOR=true`, and refuses in `NODE_ENV=production`. | Taken from the fixture file, so scripted low-confidence cases work. |
-| `LocalOcrExtractor` | **Real, free default.** 1) `pdfjs-dist` text layer when present. 2) Otherwise render page → `sharp` (grayscale, deskew, threshold) → `tesseract.js`. 3) Deterministic field parser: label-anchored patterns (GSTIN regex, "Invoice No", "PO No", dates), and table reconstruction from word bounding boxes. | Text-layer values start at 1.0. OCR values use the Tesseract word confidence. Either is reduced to 0 if the value fails format validation (e.g. a GSTIN pattern). |
-| `OllamaExtractor` | **Optional.** Local vision model via Ollama HTTP (e.g. `qwen2.5vl:7b`). Prompted for strict JSON, parsed by Zod. | LLMs do not provide calibrated confidence. Each value is **cross-checked verbatim** against the OCR/text-layer tokens. If found, the OCR confidence is used; if not found, confidence 0 (it becomes a question). |
+| `LocalDocumentExtractor` (id `local_ocr`, built in Phase 3D, §15) | **Real, free default.** 1) `pdfjs-dist` text layer when present. 2) Otherwise (scanned PDF page, PNG, JPEG) greyscale + table-rule removal → `tesseract.js`. 3) Deterministic field parser: label-anchored patterns (GSTIN, "Invoice No", "PO No", dates, Bill To / Ship To blocks, totals) and table reconstruction from positioned text. | Text-layer values 0.99. OCR values: the lowest Tesseract confidence of the words spelling the value. Not found: 0.99 for a text layer, the page's mean OCR confidence for a scan. Unreadable or ambiguous: 0. |
+| Ollama assist (inside `LocalDocumentExtractor`, optional) | **Optional.** A local model via Ollama HTTP may propose values only for header fields the parser found nothing for. | Each proposal must be printed **verbatim** in the document text or it is discarded; accepted proposals are capped at **0.50**, so they are always shown to the user to confirm (§15). |
 
 Honest limitation: reconstructing line-item tables from phone photos with Tesseract is the weakest part. Weak reads produce questions, not guesses.
 
@@ -529,7 +532,7 @@ Errors use one shape: `{ "error": { "code": "INVALID_TRANSITION", "message": "..
 | Key | Default | Notes |
 |---|---|---|
 | `designated_user_id` | seeded user | Exactly one. |
-| `extractor_mode` | `local_ocr` | `fixture` is allowed only with `VEYRA_ALLOW_FIXTURE_EXTRACTOR=true` (demo/tests). |
+| `extractor_mode` | `local_ocr` | `demo` (the demo's default): the demo's own sample invoices keep their scripted fixture reading, every other document is read by `local_ocr`. Requires `VEYRA_ALLOW_FIXTURE_EXTRACTOR=true`; never in production. |
 | `extraction_confidence_min_bp` | `9000` (0.90) | Below → `MISSING_DATA`. |
 | `po_auto_create_enabled` | `false` | Safe default; the demo seed turns it on. |
 | `po_auto_create_below_paise` | `0` | Eligible only if invoice **grand total incl. GST < value**. `0` means nothing is eligible. The demo uses ₹25,000.00. |
@@ -684,4 +687,58 @@ POST /dev/reset  { erp: 'demo'|'empty' } (not in production) 'empty' = company o
 - **TECHNICAL CONSTRAINT** No spreadsheet library: a small, audited reader/writer covers the XLSX subset Excel, Google Sheets and openpyxl produce (shared/inline strings, number formats for dates and percentages, 1900/1904 date systems). Generated files were verified with openpyxl; LibreOffice was not available to test.
 - **TECHNICAL CONSTRAINT** Imports only add records. Updating or deactivating an existing record, importing the company, scheduled imports and two-way sync are out of scope.
 - **TECHNICAL CONSTRAINT** SQLite migrations that rebuild tables run with `foreign_keys` off and a `foreign_key_check` before it is turned back on (in both databases), because SQLite ignores the pragma inside the migration transaction. The generated `0001_import_origin.sql` was corrected by hand (the copy step selected a column that does not yet exist); a test upgrades a Phase 3B database.
+
+## 15. Phase 3D: real invoice document ingestion
+
+Veyra now reads real invoice documents (PDF, JPEG, PNG) locally and for free, and hands the reading to the unchanged workflow: **upload → extract → match → resolve → validate → commit → `VERIFIED_PENDING_PAYMENT`**, or `NEEDS_INPUT` whenever anything is uncertain. The deterministic engine stays the only authority; the extractor only proposes values with evidence. Labels as in §13.
+
+### 15.1 What runs
+
+| Part | Where | Notes |
+|---|---|---|
+| Extraction contract | `packages/shared/src/schemas/extraction.ts` | Every field is `{ value, confidenceBp, evidence, source }`; the result names its extractor. New fields: `vendorPan`, `billingAddress`, `shipToAddress`, `cessPaise`, line `discountPaise`, `lineTotalPaise`. |
+| Local extractor | `packages/extractor/src/local/` | `pdf.ts` (pdf.js text layer; page image of scans), `ocr.ts` (tesseract.js, English model from npm), `image.ts` (header size checks, decode, rule removal), `layout.ts` (positioned segments), `parse.ts` (deterministic invoice parser), `ollama.ts` (optional assist), `local-extractor.ts`. |
+| Demo routing | `packages/extractor/src/routed.ts` | Demo only: `fixtures/invoices/` sample files (recognised by SHA-256) keep their scripted reading; all other files are read for real. |
+| Storage | `extracted_fields.method` (migration `0002_extraction_method`); `extractions.extractor_id/version` from the result | Per-field read method; the full reading stays in `extractions.raw_json`. |
+| API | `POST /documents` (unchanged route) · `GET /documents/:id` now adds `failureReason` and `extraction: { extractor, version, pages, methods, warnings, readAt }` | Processing stays a background job on the existing SQLite `jobs` table. |
+| Synthetic documents | `fixtures/documents/` (`npm run fixtures:documents`, from `packages/extractor/src/samples/documents.ts`) | 11 synthetic invoices: clean text PDF, scanned PDF, JPEG, PNG, blurry photo, smudged total, quantity mismatch, rate mismatch, ambiguous vendor, two-page invoice, two invoices in one file. |
+
+### 15.2 Client requirements implemented as specified
+
+- **CLIENT REQUIREMENT** PDF, JPEG and PNG are accepted and read: embedded PDF text first; Tesseract OCR for scanned pages and images; Ollama only as an optional, grounded enhancement. No paid or external service is needed.
+- **CLIENT REQUIREMENT** Extraction is untrusted: every result is parsed by `ExtractionResultSchema`; confidence is the extractor's own and is compared with `extraction_confidence_min_bp` by the engine exactly as before. No rule, state, question or option changed. There is no override.
+- **CLIENT REQUIREMENT** Missing values are never invented. A value the parser cannot find is `null`; a value printed but unreadable keeps its evidence with confidence 0; a value printed twice differently (e.g. two invoice numbers) is `null` with both readings as evidence, so the user is asked. A GSTIN misread by OCR is kept as read and fails its format check (asked), never "corrected".
+- **CLIENT REQUIREMENT** Invoice boundaries: different invoice numbers on different pages mean the file holds more than one invoice. The extraction fails visibly (`FAILED`, "Upload each invoice as its own file"), it is never merged or split; the invoice can be reprocessed or rejected.
+- **CLIENT REQUIREMENT** The original document is kept byte for byte (`documents`, `GET /documents/:id/file`), with filename, MIME type from the bytes, size, SHA-256, upload time and processing state.
+- **CLIENT REQUIREMENT** Document safety: type from file signature only (never the name or the client's MIME); 20 MB per file; PDFs must end with an end-of-file marker; images' dimensions checked from the header before decoding (≤ 12,000 px a side, ≤ 40 MP); PDFs ≤ 20 pages; pdf.js with `isEvalSupported: false`, XFA and font loading off and a decoded-image cap; JPEG decoding with memory limits; 60 s OCR timeout per page; filenames sanitised and files stored by id under the data directory; nothing uploaded is ever executed.
+- **CLIENT REQUIREMENT** Background processing on the existing jobs table: the upload only stores and queues; a failed extraction becomes `FAILED` with its reason and can be reprocessed; re-extraction never overwrites values the user entered.
+- **CLIENT REQUIREMENT** The FixtureExtractor stays for tests, the demo scenarios and regression coverage (S01–S19 unchanged), and is never the production path.
+
+### 15.3 Implementation decisions
+
+- **IMPLEMENTATION DECISION** Confidence: text-layer reads 0.99; OCR values take the lowest Tesseract confidence of the words that spell the value (not its label). "Nothing printed here" is itself a claim with a confidence: 0.99 on a text layer, the page's mean OCR confidence on a scan, so a blurred page never claims a tax head is absent. Tesseract usually scores alphanumeric IDs (GSTINs, invoice numbers) at 0.80–0.90, so on scans and photos those are typically asked ("Yes, it's …" or enter it). This is by design; confidence is not inflated.
+- **IMPLEMENTATION DECISION** Ollama is an assist inside the local extractor, not a separate extractor: it may only fill header fields the parser found nothing for (never ambiguous ones), must quote text printed on the document (checked verbatim), is parsed by the same deterministic parsers, and is capped at confidence 0.50 so the user always confirms it. This is stricter than the plan in §3.1 (which used the OCR confidence of a grounded value). Off unless `VEYRA_OLLAMA_URL` is set; any failure only adds a warning.
+- **IMPLEMENTATION DECISION** OCR pre-processing is deterministic greyscale plus removal of long straight table rules (which merge with cell text); no deskew, and no `sharp` (pure-JS `pngjs`/`jpeg-js` instead of a native dependency). Tesseract runs in page-segmentation mode 11 (sparse text), which reads invoice layouts best.
+- **IMPLEMENTATION DECISION** Recorded but unused by any V1 rule: `vendorPan` (matching uses the PAN inside the GSTIN, RULES §1.4), `billingAddress`, `shipToAddress`, `cessPaise`, `discountPaise`, `lineTotalPaise`. The V1 arithmetic is unchanged (see 15.5).
+- **IMPLEMENTATION DECISION** The demo (`extractor_mode = demo`) routes by SHA-256: the demo's sample invoices get their scripted reading; everything else is read for real. `GET /health` reports `local_ocr`.
+- **IMPLEMENTATION DECISION** Upload checks that are cheap and certain happen at upload (type, size, PDF end marker, image header size); checks that need reading (page count, encryption, damaged content, several invoices) happen in the job and fail the invoice visibly.
+
+### 15.4 Technical constraints
+
+- **TECHNICAL CONSTRAINT** Tesseract is `tesseract.js` 7 (WebAssembly) with the English model from `@tesseract.js-data/eng`: installed by `npm install`, nothing downloaded at run time, no system package required. A system Tesseract is not used.
+- **TECHNICAL CONSTRAINT** The parser reads the common Indian GST invoice layout (labelled header fields, Bill To / Ship To blocks, a line-item table with a header row, a totals block). Layouts it does not recognise produce missing fields, hence questions, not guesses. Two-line table headers are supported; per-line tax columns are not split into CGST/SGST (line taxes are then "unknown" and asked), and a PDF page is either read from its text layer or OCR'd whole.
+- **TECHNICAL CONSTRAINT** English text only; handwriting and rotated scans are not supported.
+- **TECHNICAL CONSTRAINT** `fixtures/documents/` files depend on the Chromium build that rendered them, so they are committed and the tests assert what is read from them, not their hashes.
+- **TECHNICAL CONSTRAINT** The generated `0002_extraction_method.sql` was corrected by hand (same drizzle-kit copy-step issue as §14.4).
+
+### 15.5 Needs a client decision (not silently changed)
+
+| # | Situation | V1 rule | What happens now |
+|---|---|---|---|
+| C4 | An invoice charges **cess** | RULES §4.1: `total = taxable + cgst + sgst + igst (+ round-off)` | Cess is read and stored (`cessPaise`), but the total then does not add up: `VF_R09` is asked. Whether cess enters the V1 arithmetic is a client decision. |
+| C5 | A line has a **discount** | RULES §4.1: line taxable = qty × rate | Discount is read and stored (`discountPaise`), but a discounted line fails `R06` and is asked. Whether (and how) discounts are allowed is a client decision. |
+
+### 15.6 Demo access gate
+
+The product workspace (`#/app/…`) sits behind a demo PIN gate (see README): the homepage is public; "See Veyra in action" opens the gate; the correct PIN opens the requested route and is remembered for the browser tab (`sessionStorage`); a wrong PIN shows "That PIN isn't correct."; the PIN is compared by digest and never shown. **This is not authentication**: no users, sessions or server checks, and the API is not gated. It is isolated in `apps/web/src/access/` for replacement by real authentication.
 

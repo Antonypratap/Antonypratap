@@ -72,6 +72,7 @@ export function scenarioExtraction(s: FixtureScenario): ExtractionResult {
     value,
     confidenceBp: confidenceBp(base),
     evidence: value === null || printed === null ? null : { page: 1, text: printed, bbox: null },
+    source: 'fixture' as const,
   });
   const weak = <T>(key: 'vendorGstin' | 'totalPaise', value: T, printed: string) => {
     const w = s.weak?.[key];
@@ -80,23 +81,28 @@ export function scenarioExtraction(s: FixtureScenario): ExtractionResult {
           value: w.value,
           confidenceBp: confidenceBp(w.confidenceBp),
           evidence: { page: 1, text: `${printed} (hard to read)`, bbox: null },
+          source: 'fixture' as const,
         }
       : field(value, printed);
   };
   const tax = (v: number | null, label: string) =>
     field(v, v === null ? null : `${label}: ${money(v)}`);
   const result = {
+    extractor: { id: 'fixture', version: '1' },
     header: {
       vendorName: field(s.vendor.name, s.vendor.name),
       vendorGstin: weak('vendorGstin', s.vendor.gstin, `GSTIN: ${s.vendor.gstin}`),
       vendorAddress: field(s.vendor.address, s.vendor.address),
+      vendorPan: field(null, null),
       buyerGstin: field(s.buyerGstin, `Bill to GSTIN: ${s.buyerGstin}`),
+      billingAddress: field(null, null),
       placeOfSupply: field(
         s.placeOfSupply,
         s.placeOfSupply && `Place of Supply: ${s.placeOfSupply}`,
       ),
       shipToState: field(s.shipTo?.state ?? null, s.shipTo?.state ?? null),
       shipToGstin: field(s.shipTo?.gstin ?? null, s.shipTo?.gstin ?? null),
+      shipToAddress: field(null, null),
       invoiceNumber: field(s.invoiceNumber, `Invoice No: ${s.invoiceNumber}`),
       invoiceDate: field(s.invoiceDate, `Date: ${dmy(s.invoiceDate)}`),
       poNumber: field(s.poNumber, s.poNumber && `PO No: ${s.poNumber}`),
@@ -104,6 +110,7 @@ export function scenarioExtraction(s: FixtureScenario): ExtractionResult {
       cgstPaise: tax(s.cgstPaise, 'CGST'),
       sgstPaise: tax(s.sgstPaise, 'SGST'),
       igstPaise: tax(s.igstPaise, 'IGST'),
+      cessPaise: field(null, null),
       roundOffPaise: tax(s.roundOffPaise, 'Round off'),
       totalPaise: weak('totalPaise', s.totalPaise, `Invoice total: ${money(s.totalPaise)}`),
     },
@@ -117,11 +124,13 @@ export function scenarioExtraction(s: FixtureScenario): ExtractionResult {
         qtyMilli: field(l.qtyMilli, `${row}, ${formatQty(milliQty(l.qtyMilli))} ${l.uom}`),
         uom: field(l.uom, `${row}, ${l.uom}`),
         unitPricePaise: field(l.unitPricePaise, `${row}, rate ${money(l.unitPricePaise)}`),
+        discountPaise: field(null, null),
         taxablePaise: field(l.taxablePaise, `${row}, taxable ${money(l.taxablePaise)}`),
         gstRateBp: field(l.gstRateBp, `${row}, GST ${formatRate(rateBp(l.gstRateBp))}`),
         cgstPaise: field(null, null),
         sgstPaise: field(null, null),
         igstPaise: field(null, null),
+        lineTotalPaise: field(null, null),
       };
     }),
     pages: 1,

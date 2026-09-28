@@ -13,6 +13,7 @@ import {
   CREATION_ACTION_STATUSES,
   CREATION_ENTITIES,
   CREATION_TRIGGERS,
+  EXTRACTION_METHODS,
   FIELD_SOURCES,
   INVOICE_STATES,
   JOB_STATUSES,
@@ -129,6 +130,8 @@ export const extractedFields = sqliteTable(
     evidenceJson: text('evidence_json'),
     evidenceDetailJson: text('evidence_detail_json'),
     source: text('source').notNull(),
+    /** How an extracted value was read (pdf_text, tesseract, ollama, fixture); null otherwise. */
+    method: text('method'),
     extractionId: text('extraction_id').references(() => extractions.id),
     updatedByUserId: text('updated_by_user_id').references(() => users.id),
     updatedAt: text('updated_at').notNull(),
@@ -136,6 +139,10 @@ export const extractedFields = sqliteTable(
   (t) => [
     uniqueIndex('extracted_fields_path').on(t.invoiceId, t.path),
     check('extracted_fields_source', inList(t.source, FIELD_SOURCES)),
+    check(
+      'extracted_fields_method',
+      sql`${t.method} IS NULL OR ${inList(t.method, EXTRACTION_METHODS)}`,
+    ),
     check(
       'extracted_fields_confidence',
       sql`${t.confidenceBp} IS NULL OR (${isInteger(t.confidenceBp)} AND ${t.confidenceBp} BETWEEN 0 AND 10000)`,

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { and, asc, desc, eq, inArray, lte, max, ne, sql } from 'drizzle-orm';
 import {
   ExtractionResultSchema,
+  LINE_FIELD_KEYS,
   MAX_UPLOAD_BYTES,
   headerPath,
   linePath,
@@ -17,7 +18,7 @@ import {
   type QuestionCode,
 } from '@veyra/shared';
 import type { ErpConnector } from '@veyra/erp-connector';
-import type { Extractor } from '@veyra/extractor';
+import { checkImageSize, imageSize, sniffDocument, type Extractor } from '@veyra/extractor';
 import type { VeyraDb, VeyraTx } from '../db/open';
 import * as t from '../db/schema';
 import { ulid } from '../ids';
@@ -49,7 +50,7 @@ export interface VeyraSettings extends EngineSettings {
 }
 
 export const DEFAULT_SETTINGS: Omit<VeyraSettings, 'designatedUserId'> = {
-  extractorMode: 'fixture',
+  extractorMode: 'local_ocr',
   confidenceMinBp: 9000,
   poAutoCreateEnabled: false,
   poAutoCreateBelowPaise: 0,
@@ -57,7 +58,7 @@ export const DEFAULT_SETTINGS: Omit<VeyraSettings, 'designatedUserId'> = {
 
 /** DEMO.md §1.1: the demo turns automatic POs on below ₹25,000.00 (grand total incl. GST). */
 export const DEMO_SETTINGS: Omit<VeyraSettings, 'designatedUserId'> = {
-  extractorMode: 'fixture',
+  extractorMode: 'demo',
   confidenceMinBp: 9000,
   poAutoCreateEnabled: true,
   poAutoCreateBelowPaise: 2_500_000,
@@ -274,8 +275,9 @@ export class Veyra {
     if (bytes.length === 0) throw new VeyraError('UNSUPPORTED_FILE', 'The file is empty.');
     if (bytes.length > MAX_UPLOAD_BYTES)
       throw new VeyraError('UNSUPPORTED_FILE', 'Files up to 20 MB are accepted.');
-    const mime = sniffMime(bytes);
+    const mime = sniffDocument(bytes);
     if (!mime) throw new VeyraError('UNSUPPORTED_FILE', 'Upload a PDF, JPEG or PNG invoice.');
+    checkDocumentShape(bytes, mime);
     const sha256 = createHash('sha256').update(bytes).digest('hex');
     const existing = this.db.select().from(t.documents).where(eq(t.documents.sha256, sha256)).get();
     if (existing) {
@@ -420,8 +422,8 @@ export class Veyra {
         .values({
           id: extractionId,
           invoiceId,
-          extractorId: this.extractor.id,
-          extractorVersion: this.extractor.version,
+          extractorId: result.extractor.id,
+          extractorVersion: result.extractor.version,
           rawJson: JSON.stringify(result),
           createdAt: now,
         })
@@ -441,7 +443,7 @@ export class Veyra {
       );
       const write = (
         path: FieldPath,
-        f: { value: unknown; confidenceBp: number; evidence: unknown },
+        f: { value: unknown; confidenceBp: number; evidence: unknown; source: string },
       ) => {
         if (human.has(path)) return; // human values are never overwritten by re-extraction
         tx.insert(t.extractedFields)
@@ -454,6 +456,7 @@ export class Veyra {
             evidenceJson: f.evidence ? JSON.stringify(f.evidence) : null,
             evidenceDetailJson: null,
             source: 'extracted',
+            method: f.source,
             extractionId,
             updatedByUserId: null,
             updatedAt: now,
@@ -466,6 +469,7 @@ export class Veyra {
               evidenceJson: f.evidence ? JSON.stringify(f.evidence) : null,
               evidenceDetailJson: null,
               source: 'extracted',
+              method: f.source,
               extractionId,
               updatedByUserId: null,
               updatedAt: now,
@@ -489,9 +493,15 @@ export class Veyra {
           .filter(([, f]) => f.value !== null && f.confidenceBp < this.settings(tx).confidenceMinBp)
           .map(([k]) => `header.${k}`),
       ];
+      const read = [
+        ...Object.values(result.header),
+        ...result.lines.flatMap((l) => LINE_FIELD_KEYS.map((k) => l[k])),
+      ];
+      const methods = [...new Set(read.filter((f) => f.value !== null).map((f) => f.source))];
       this.audit(tx, invoiceId, { type: 'ai' }, 'extraction.completed', {
-        extractor: this.extractor.id,
-        extractorVersion: this.extractor.version,
+        extractor: result.extractor.id,
+        extractorVersion: result.extractor.version,
+        methods,
         lines: result.lines.length,
         pages: result.pages,
         lowConfidence,
@@ -1182,21 +1192,33 @@ export class Veyra {
 
 // ── helpers ──────────────────────────────────────────────────────────────
 
-function sniffMime(bytes: Uint8Array): 'application/pdf' | 'image/png' | 'image/jpeg' | null {
-  const b = (i: number) => bytes[i] ?? -1;
-  if (b(0) === 0x25 && b(1) === 0x50 && b(2) === 0x44 && b(3) === 0x46 && b(4) === 0x2d)
-    return 'application/pdf';
-  if (
-    b(0) === 0x89 &&
-    b(1) === 0x50 &&
-    b(2) === 0x4e &&
-    b(3) === 0x47 &&
-    b(4) === 0x0d &&
-    b(5) === 0x0a
-  )
-    return 'image/png';
-  if (b(0) === 0xff && b(1) === 0xd8 && b(2) === 0xff) return 'image/jpeg';
-  return null;
+/**
+ * Cheap structural checks before a document is stored (Phase 3D). Images: the header must be
+ * readable and the size within the OCR limits, checked without decoding a pixel. PDFs: the file
+ * must end properly (a truncated upload has no end-of-file marker). Page count, encryption and
+ * damaged content are found while reading, and fail the invoice visibly.
+ */
+function checkDocumentShape(
+  bytes: Uint8Array,
+  mime: 'application/pdf' | 'image/png' | 'image/jpeg',
+) {
+  if (mime === 'application/pdf') {
+    const tail = Buffer.from(bytes.subarray(Math.max(0, bytes.length - 8192))).toString('latin1');
+    if (!tail.includes('%%EOF'))
+      throw new VeyraError(
+        'UNSUPPORTED_FILE',
+        'The PDF looks incomplete or damaged. Upload the original file again.',
+      );
+    return;
+  }
+  try {
+    checkImageSize(imageSize(bytes));
+  } catch (error) {
+    throw new VeyraError(
+      'UNSUPPORTED_FILE',
+      error instanceof Error ? error.message : 'The image could not be read.',
+    );
+  }
 }
 
 function safeFilename(name: string, ext: string): string {
