@@ -1,0 +1,22 @@
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.title {
+  font-size: 1.625rem;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+.sub {
+  margin-top: var(--space-1);
+  font-size: var(--text-small);
+  color: var(--color-ink-2);
+}
+.aside {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
