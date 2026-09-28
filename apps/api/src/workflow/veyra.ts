@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { basename, isAbsolute } from 'node:path';
-import { and, asc, desc, eq, inArray, lte, max, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lte, max, ne, notInArray, sql } from 'drizzle-orm';
 import {
   ExtractionResultSchema,
   LINE_FIELD_KEYS,
@@ -131,7 +131,15 @@ export class Veyra {
     this.maxUploadBytes = Math.min(options.maxUploadBytes ?? MAX_UPLOAD_BYTES, MAX_UPLOAD_BYTES);
     this.clock = options.clock ?? (() => new Date());
     this.commitHooks = options.commitHooks ?? {};
-    this.bootstrap(options.initialSettings ?? DEFAULT_SETTINGS);
+    this.#initial = options.initialSettings ?? DEFAULT_SETTINGS;
+  }
+
+  readonly #initial: Omit<VeyraSettings, 'designatedUserId'>;
+
+  /** Creates the designated user and default settings when missing. Call once before use. */
+  async init(): Promise<this> {
+    await this.bootstrap(this.#initial);
+    return this;
   }
 
   now(): string {
@@ -145,32 +153,31 @@ export class Veyra {
 
   // ── Setup ────────────────────────────────────────────────────────────────
 
-  private bootstrap(initial: Omit<VeyraSettings, 'designatedUserId'>): void {
+  private async bootstrap(initial: Omit<VeyraSettings, 'designatedUserId'>): Promise<void> {
     const now = this.now();
-    this.db.transaction((tx) => {
-      if (!tx.select().from(t.users).where(eq(t.users.id, DEMO_USER.id)).get()) {
-        tx.insert(t.users)
-          .values({ ...DEMO_USER, active: true, createdAt: now })
-          .run();
-      }
+    // Idempotent under concurrency: several instances may start at once.
+    await this.db.transaction(async (tx) => {
+      await tx
+        .insert(t.users)
+        .values({ ...DEMO_USER, active: true, createdAt: now })
+        .onConflictDoNothing();
       const values: VeyraSettings = { ...initial, designatedUserId: DEMO_USER.id };
       for (const [k, key] of Object.entries(SETTING_KEYS)) {
-        if (!tx.select().from(t.settings).where(eq(t.settings.key, key)).get()) {
-          tx.insert(t.settings)
-            .values({
-              key,
-              valueJson: JSON.stringify(values[k as keyof VeyraSettings]),
-              updatedByUserId: null,
-              updatedAt: now,
-            })
-            .run();
-        }
+        await tx
+          .insert(t.settings)
+          .values({
+            key,
+            valueJson: JSON.stringify(values[k as keyof VeyraSettings]),
+            updatedByUserId: null,
+            updatedAt: now,
+          })
+          .onConflictDoNothing();
       }
     });
   }
 
-  settings(db: Db = this.db): VeyraSettings {
-    const rows = db.select().from(t.settings).all();
+  async settings(db: Db = this.db): Promise<VeyraSettings> {
+    const rows = await db.select().from(t.settings);
     const get = (key: string): unknown => {
       const row = rows.find((r) => r.key === key);
       return row ? JSON.parse(row.valueJson) : undefined;
@@ -185,46 +192,44 @@ export class Veyra {
   }
 
   /** V1 has exactly one designated user; every decision is theirs (no hierarchy, no roles). */
-  designatedUserId(): string {
-    return this.settings().designatedUserId;
+  async designatedUserId(): Promise<string> {
+    return (await this.settings()).designatedUserId;
   }
 
   // ── Audit and transitions ────────────────────────────────────────────────
 
-  audit(
+  async audit(
     db: Db,
     invoiceId: string | null,
     actor: Actor,
     event: (typeof t.auditEvents.$inferInsert)['event'],
     detail: Record<string, JsonValue>,
     states: { from: InvoiceState; to: InvoiceState } | null = null,
-  ): void {
-    db.insert(t.auditEvents)
-      .values({
-        id: ulid(),
-        invoiceId,
-        actorType: actor.type,
-        actorUserId: actor.type === 'user' ? actor.userId : null,
-        event,
-        fromState: states?.from ?? null,
-        toState: states?.to ?? null,
-        detailJson: JSON.stringify(detail),
-        createdAt: this.now(),
-      })
-      .run();
+  ): Promise<void> {
+    await db.insert(t.auditEvents).values({
+      id: ulid(),
+      invoiceId,
+      actorType: actor.type,
+      actorUserId: actor.type === 'user' ? actor.userId : null,
+      event,
+      fromState: states?.from ?? null,
+      toState: states?.to ?? null,
+      detailJson: JSON.stringify(detail),
+      createdAt: this.now(),
+    });
   }
 
   /** A legal transition, with optimistic locking and its audit row, in the caller's transaction. */
-  transition(
+  async transition(
     db: Db,
     invoiceId: string,
     from: InvoiceState,
     to: InvoiceState,
     actor: Actor,
     patch: Partial<typeof t.invoices.$inferInsert> = {},
-  ): void {
+  ): Promise<void> {
     assertTransition(from, to);
-    const updated = db
+    const updated = await db
       .update(t.invoices)
       .set({
         ...patch,
@@ -233,42 +238,47 @@ export class Veyra {
         updatedAt: this.now(),
       })
       .where(and(eq(t.invoices.id, invoiceId), eq(t.invoices.state, from)))
-      .run();
-    if (updated.changes !== 1)
+      .returning({ id: t.invoices.id });
+    if (updated.length !== 1)
       throw new VeyraError('INVALID_STATE', `invoice ${invoiceId} is no longer ${from}`);
-    this.audit(db, invoiceId, actor, 'invoice.state_changed', {}, { from, to });
+    await this.audit(db, invoiceId, actor, 'invoice.state_changed', {}, { from, to });
   }
 
-  invoiceRow(db: Db, invoiceId: string) {
-    const row = db.select().from(t.invoices).where(eq(t.invoices.id, invoiceId)).get();
+  /**
+   * The invoice row. With `lock`, the row is locked for the rest of the caller's transaction, so
+   * two workers never run the same stage of one invoice at the same time (PostgreSQL).
+   */
+  async invoiceRow(db: Db, invoiceId: string, lock = false) {
+    const query = db.select().from(t.invoices).where(eq(t.invoices.id, invoiceId)).limit(1);
+    const row = (await (lock ? query.for('update') : query))[0];
     if (!row) throw new VeyraError('NOT_FOUND', `invoice ${invoiceId} not found`);
     return row;
   }
 
-  enqueue(db: Db, invoiceId: string, type: 'pipeline' | 'commit'): void {
-    const pending = db
-      .select()
-      .from(t.jobs)
-      .where(
-        and(eq(t.jobs.invoiceId, invoiceId), eq(t.jobs.type, type), eq(t.jobs.status, 'queued')),
-      )
-      .get();
+  async enqueue(db: Db, invoiceId: string, type: 'pipeline' | 'commit'): Promise<void> {
+    const pending = (
+      await db
+        .select()
+        .from(t.jobs)
+        .where(
+          and(eq(t.jobs.invoiceId, invoiceId), eq(t.jobs.type, type), eq(t.jobs.status, 'queued')),
+        )
+        .limit(1)
+    )[0];
     if (pending) return;
     const now = this.now();
-    db.insert(t.jobs)
-      .values({
-        id: ulid(),
-        invoiceId,
-        type,
-        status: 'queued',
-        attempts: 0,
-        runAfter: now,
-        lockedAt: null,
-        lastError: null,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .run();
+    await db.insert(t.jobs).values({
+      id: ulid(),
+      invoiceId,
+      type,
+      status: 'queued',
+      attempts: 0,
+      runAfter: now,
+      lockedAt: null,
+      lastError: null,
+      createdAt: now,
+      updatedAt: now,
+    });
   }
 
   // ── Upload ───────────────────────────────────────────────────────────────
@@ -292,13 +302,17 @@ export class Veyra {
     if (!mime) throw new VeyraError('UNSUPPORTED_FILE', 'Upload a PDF, JPEG or PNG invoice.');
     checkDocumentShape(bytes, mime);
     const sha256 = createHash('sha256').update(bytes).digest('hex');
-    const existing = this.db.select().from(t.documents).where(eq(t.documents.sha256, sha256)).get();
+    const existing = (
+      await this.db.select().from(t.documents).where(eq(t.documents.sha256, sha256)).limit(1)
+    )[0];
     if (existing) {
-      const inv = this.db
-        .select({ id: t.invoices.id })
-        .from(t.invoices)
-        .where(eq(t.invoices.documentId, existing.id))
-        .get();
+      const inv = (
+        await this.db
+          .select({ id: t.invoices.id })
+          .from(t.invoices)
+          .where(eq(t.invoices.documentId, existing.id))
+          .limit(1)
+      )[0];
       throw new VeyraError('DUPLICATE_UPLOAD', 'This exact file was already uploaded.', {
         documentId: existing.id,
         invoiceId: inv?.id ?? null,
@@ -311,40 +325,36 @@ export class Veyra {
     const storageKey = `${documentId}.${ext}`;
     await this.storage.put(storageKey, bytes, { mime, sha256 });
     const filename = safeFilename(file.filename, ext);
-    const userId = this.designatedUserId();
+    const userId = await this.designatedUserId();
     const now = this.now();
     try {
-      this.db.transaction((tx) => {
-        tx.insert(t.documents)
-          .values({
-            id: documentId,
-            sha256,
-            filename,
-            mime,
-            sizeBytes: bytes.length,
-            storagePath: storageKey,
-            uploadedByUserId: userId,
-            uploadedAt: now,
-          })
-          .run();
-        tx.insert(t.invoices)
-          .values({
-            id: invoiceId,
-            documentId,
-            state: 'UPLOADED',
-            stateVersion: 1,
-            runNo: 0,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .run();
-        this.audit(tx, invoiceId, { type: 'user', userId }, 'invoice.uploaded', {
+      await this.db.transaction(async (tx) => {
+        await tx.insert(t.documents).values({
+          id: documentId,
+          sha256,
+          filename,
+          mime,
+          sizeBytes: bytes.length,
+          storagePath: storageKey,
+          uploadedByUserId: userId,
+          uploadedAt: now,
+        });
+        await tx.insert(t.invoices).values({
+          id: invoiceId,
+          documentId,
+          state: 'UPLOADED',
+          stateVersion: 1,
+          runNo: 0,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await this.audit(tx, invoiceId, { type: 'user', userId }, 'invoice.uploaded', {
           filename,
           mime,
           sizeBytes: bytes.length,
           sha256,
         });
-        this.enqueue(tx, invoiceId, 'pipeline');
+        await this.enqueue(tx, invoiceId, 'pipeline');
       });
     } catch (error) {
       // Not recorded (e.g. the same file uploaded at the same moment): keep no orphan document.
@@ -372,23 +382,23 @@ export class Veyra {
 
   /** Runs the pipeline job from wherever the invoice is. Safe to run twice: it no-ops when done. */
   async runPipeline(invoiceId: string): Promise<void> {
-    let inv = this.invoiceRow(this.db, invoiceId);
+    let inv = await this.invoiceRow(this.db, invoiceId);
     try {
       if (inv.state === 'UPLOADED') {
-        this.transition(this.db, invoiceId, 'UPLOADED', 'EXTRACTING', { type: 'system' });
-        inv = this.invoiceRow(this.db, invoiceId);
+        await this.transition(this.db, invoiceId, 'UPLOADED', 'EXTRACTING', { type: 'system' });
+        inv = await this.invoiceRow(this.db, invoiceId);
       }
       if (inv.state === 'EXTRACTING') {
         const ok = await this.extract(invoiceId);
         if (!ok) return;
-        inv = this.invoiceRow(this.db, invoiceId);
+        inv = await this.invoiceRow(this.db, invoiceId);
       }
       if (inv.state === 'MATCHING') await this.evaluate(invoiceId);
     } catch (error) {
       // A temporary outage (ERP, storage, database) is retried by the job runner, which fails
       // the invoice itself once the retries are used up (Phase 6 retry policy).
       if (isRetryable(error)) throw error;
-      this.fail(invoiceId, error);
+      await this.fail(invoiceId, error);
     }
   }
 
@@ -397,18 +407,18 @@ export class Veyra {
    * (or possibly sent) and not confirmed. Such an invoice is never failed or shown as ready; the
    * commit job keeps reconciling it.
    */
-  hasUnresolvedErpWrite(invoiceId: string): boolean {
-    return this.db
-      .select({ status: t.erpWrites.status })
-      .from(t.erpWrites)
-      .where(eq(t.erpWrites.invoiceId, invoiceId))
-      .all()
-      .some((r) => r.status === 'unknown' || r.status === 'pending');
+  async hasUnresolvedErpWrite(invoiceId: string): Promise<boolean> {
+    return (
+      await this.db
+        .select({ status: t.erpWrites.status })
+        .from(t.erpWrites)
+        .where(eq(t.erpWrites.invoiceId, invoiceId))
+    ).some((r) => r.status === 'unknown' || r.status === 'pending');
   }
 
   /** Moves an invoice in a system state to FAILED, recording where and why (never silently). */
-  fail(invoiceId: string, error: unknown): void {
-    const inv = this.invoiceRow(this.db, invoiceId);
+  async fail(invoiceId: string, error: unknown): Promise<void> {
+    const inv = await this.invoiceRow(this.db, invoiceId);
     const systemStates: InvoiceState[] = [
       'UPLOADED',
       'EXTRACTING',
@@ -427,8 +437,8 @@ export class Veyra {
       : isInternalError(error)
         ? INTERNAL_FAILURE_REASON
         : (error as Error).message;
-    this.db.transaction((tx) => {
-      this.transition(
+    await this.db.transaction(async (tx) => {
+      await this.transition(
         tx,
         invoiceId,
         inv.state as InvoiceState,
@@ -439,7 +449,7 @@ export class Veyra {
           failureReason: reason.slice(0, 500),
         },
       );
-      this.audit(tx, invoiceId, { type: 'system' }, 'invoice.failed', {
+      await this.audit(tx, invoiceId, { type: 'system' }, 'invoice.failed', {
         stage: inv.state,
         reason: reason.slice(0, 500),
       });
@@ -448,12 +458,14 @@ export class Veyra {
 
   /** READ. The extractor's output is untrusted: it is validated in full before anything uses it. */
   private async extract(invoiceId: string): Promise<boolean> {
-    const doc = this.db
-      .select()
-      .from(t.documents)
-      .innerJoin(t.invoices, eq(t.invoices.documentId, t.documents.id))
-      .where(eq(t.invoices.id, invoiceId))
-      .get()?.documents;
+    const doc = (
+      await this.db
+        .select()
+        .from(t.documents)
+        .innerJoin(t.invoices, eq(t.invoices.documentId, t.documents.id))
+        .where(eq(t.invoices.id, invoiceId))
+        .limit(1)
+    )[0]?.documents;
     if (!doc) throw new Error('document missing');
     let result: ExtractionResult;
     try {
@@ -478,41 +490,40 @@ export class Veyra {
       result = parsed.data;
     } catch (error) {
       if (isRetryable(error)) throw error;
-      this.fail(invoiceId, error);
+      await this.fail(invoiceId, error);
       return false;
     }
     const extractionId = ulid();
     const now = this.now();
-    this.db.transaction((tx) => {
-      tx.insert(t.extractions)
-        .values({
-          id: extractionId,
-          invoiceId,
-          extractorId: result.extractor.id,
-          extractorVersion: result.extractor.version,
-          rawJson: JSON.stringify(result),
-          createdAt: now,
-        })
-        .run();
+    await this.db.transaction(async (tx) => {
+      await tx.insert(t.extractions).values({
+        id: extractionId,
+        invoiceId,
+        extractorId: result.extractor.id,
+        extractorVersion: result.extractor.version,
+        rawJson: JSON.stringify(result),
+        createdAt: now,
+      });
       const human = new Set(
-        tx
-          .select({ path: t.extractedFields.path })
-          .from(t.extractedFields)
-          .where(
-            and(
-              eq(t.extractedFields.invoiceId, invoiceId),
-              inArray(t.extractedFields.source, ['human_confirmed', 'human_corrected']),
-            ),
-          )
-          .all()
-          .map((r) => r.path),
+        (
+          await tx
+            .select({ path: t.extractedFields.path })
+            .from(t.extractedFields)
+            .where(
+              and(
+                eq(t.extractedFields.invoiceId, invoiceId),
+                inArray(t.extractedFields.source, ['human_confirmed', 'human_corrected']),
+              ),
+            )
+        ).map((r) => r.path),
       );
-      const write = (
+      const write = async (
         path: FieldPath,
         f: { value: unknown; confidenceBp: number; evidence: unknown; source: string },
       ) => {
         if (human.has(path)) return; // human values are never overwritten by re-extraction
-        tx.insert(t.extractedFields)
+        await tx
+          .insert(t.extractedFields)
           .values({
             id: ulid(),
             invoiceId,
@@ -540,23 +551,23 @@ export class Veyra {
               updatedByUserId: null,
               updatedAt: now,
             },
-          })
-          .run();
+          });
       };
       for (const [key, f] of Object.entries(result.header))
-        write(headerPath(key as HeaderFieldKey), f);
+        await write(headerPath(key as HeaderFieldKey), f);
       for (const line of result.lines) {
         for (const [key, f] of Object.entries(line)) {
-          if (key !== 'lineNo') write(linePath(line.lineNo, key as LineFieldKey), f as never);
+          if (key !== 'lineNo') await write(linePath(line.lineNo, key as LineFieldKey), f as never);
         }
-        tx.insert(t.invoiceLines)
+        await tx
+          .insert(t.invoiceLines)
           .values({ id: ulid(), invoiceId, lineNo: line.lineNo })
-          .onConflictDoNothing()
-          .run();
+          .onConflictDoNothing();
       }
+      const { confidenceMinBp } = await this.settings(tx);
       const lowConfidence = [
         ...Object.entries(result.header)
-          .filter(([, f]) => f.value !== null && f.confidenceBp < this.settings(tx).confidenceMinBp)
+          .filter(([, f]) => f.value !== null && f.confidenceBp < confidenceMinBp)
           .map(([k]) => `header.${k}`),
       ];
       const read = [
@@ -564,7 +575,7 @@ export class Veyra {
         ...result.lines.flatMap((l) => LINE_FIELD_KEYS.map((k) => l[k])),
       ];
       const methods = [...new Set(read.filter((f) => f.value !== null).map((f) => f.source))];
-      this.audit(tx, invoiceId, { type: 'ai' }, 'extraction.completed', {
+      await this.audit(tx, invoiceId, { type: 'ai' }, 'extraction.completed', {
         extractor: result.extractor.id,
         extractorVersion: result.extractor.version,
         methods,
@@ -573,17 +584,18 @@ export class Veyra {
         lowConfidence,
         warnings: result.warnings,
       });
-      this.transition(tx, invoiceId, 'EXTRACTING', 'MATCHING', { type: 'system' });
+      await this.transition(tx, invoiceId, 'EXTRACTING', 'MATCHING', { type: 'system' });
     });
     return true;
   }
 
-  loadFields(db: Db, invoiceId: string): Map<string, StoredField> {
-    const rows = db
+  async loadFields(db: Db, invoiceId: string): Promise<Map<string, StoredField>> {
+    const rows = await db
       .select()
       .from(t.extractedFields)
       .where(eq(t.extractedFields.invoiceId, invoiceId))
-      .all();
+      // By path in byte order: the order SQLite returned them in (its (invoice_id, path) index).
+      .orderBy(sql`${t.extractedFields.path} collate "C"`);
     return new Map(
       rows.map((r) => [
         r.path,
@@ -599,47 +611,46 @@ export class Veyra {
     );
   }
 
-  answers(db: Db, invoiceId: string): AnsweredDecision[] {
-    return db
-      .select()
-      .from(t.questions)
-      .where(and(eq(t.questions.invoiceId, invoiceId), eq(t.questions.status, 'answered')))
-      .all()
-      .map((q) => {
-        const answer = JSON.parse(q.answerJson ?? '{}') as {
-          optionId: string;
-          input: JsonValue;
-          effect: AnswerEffect;
-        };
-        return {
-          questionId: q.id,
-          code: q.code as QuestionCode,
-          subjectKey: q.subjectKey,
-          optionId: answer.optionId,
-          effect: answer.effect,
-          input: answer.input ?? null,
-          userId: q.answeredByUserId ?? '',
-          seq: q.answerSeq ?? 0,
-        };
-      });
+  async answers(db: Db, invoiceId: string): Promise<AnsweredDecision[]> {
+    return (
+      await db
+        .select()
+        .from(t.questions)
+        .where(and(eq(t.questions.invoiceId, invoiceId), eq(t.questions.status, 'answered')))
+        .orderBy(asc(t.questions.seq))
+    ).map((q) => {
+      const answer = JSON.parse(q.answerJson ?? '{}') as {
+        optionId: string;
+        input: JsonValue;
+        effect: AnswerEffect;
+      };
+      return {
+        questionId: q.id,
+        code: q.code as QuestionCode,
+        subjectKey: q.subjectKey,
+        optionId: answer.optionId,
+        effect: answer.effect,
+        input: answer.input ?? null,
+        userId: q.answeredByUserId ?? '',
+        seq: q.answerSeq ?? 0,
+      };
+    });
   }
 
   /** One deterministic engine run over the invoice's current data. Reads only. */
   async engine(invoiceId: string): Promise<EngineOutput> {
-    const settings = this.settings();
-    const lineCount = this.db
-      .select()
-      .from(t.invoiceLines)
-      .where(eq(t.invoiceLines.invoiceId, invoiceId))
-      .all().length;
+    const settings = await this.settings();
+    const lineCount = (
+      await this.db.select().from(t.invoiceLines).where(eq(t.invoiceLines.invoiceId, invoiceId))
+    ).length;
     return runEngine({
       invoiceId,
       today: this.today(),
       settings,
-      fields: this.loadFields(this.db, invoiceId),
+      fields: await this.loadFields(this.db, invoiceId),
       lineCount,
-      answers: this.answers(this.db, invoiceId),
-      existingActions: this.db
+      answers: await this.answers(this.db, invoiceId),
+      existingActions: (await this.db
         .select({
           id: t.creationActions.id,
           signature: t.creationActions.signature,
@@ -647,10 +658,14 @@ export class Veyra {
         })
         .from(t.creationActions)
         .where(eq(t.creationActions.invoiceId, invoiceId))
-        .all() as { id: string; signature: string; status: 'staged' | 'committed' | 'discarded' }[],
+        .orderBy(asc(t.creationActions.seq))) as {
+        id: string;
+        signature: string;
+        status: 'staged' | 'committed' | 'discarded';
+      }[],
       erp: this.erp,
-      otherInvoicesWithKey: async (key) =>
-        this.db
+      otherInvoicesWithKey: async (key) => {
+        const others = await this.db
           .select()
           .from(t.invoices)
           .where(
@@ -662,13 +677,16 @@ export class Veyra {
               ne(t.invoices.state, 'REJECTED'),
             ),
           )
-          .all()
-          .map((o) => {
-            const f = this.loadFields(this.db, o.id);
+          .orderBy(asc(t.invoices.seq));
+        return Promise.all(
+          others.map(async (o) => {
+            const f = await this.loadFields(this.db, o.id);
             const date = readField<string>(f, 'header.invoiceDate', 0).value;
             const total = readField<number>(f, 'header.totalPaise', 0).value;
             return { id: o.id, state: o.state, invoiceDate: date, totalPaise: total };
           }),
+        );
+      },
       newId: ulid,
     });
   }
@@ -678,30 +696,30 @@ export class Veyra {
     const out = await this.engine(invoiceId);
     const now = this.now();
     let queuedCommit = false;
-    this.db.transaction((tx) => {
-      const inv = this.invoiceRow(tx, invoiceId);
+    await this.db.transaction(async (tx) => {
+      // Locked: a concurrent run of the same invoice waits here, then sees it has moved on.
+      const inv = await this.invoiceRow(tx, invoiceId, true);
       if (inv.state !== 'MATCHING') return; // another run got here first
       const runNo = inv.runNo + 1;
       const sys: Actor = { type: 'system' };
 
       // FIND
       for (const m of out.matches) {
-        tx.insert(t.matchResults)
-          .values({
-            id: ulid(),
-            invoiceId,
-            runNo,
-            entity: m.entity,
-            lineNo: m.lineNo,
-            outcome: m.outcome,
-            method: m.method,
-            candidatesJson: JSON.stringify(m.candidates),
-            chosenErpId: m.chosenErpId,
-          })
-          .run();
+        await tx.insert(t.matchResults).values({
+          id: ulid(),
+          invoiceId,
+          runNo,
+          entity: m.entity,
+          lineNo: m.lineNo,
+          outcome: m.outcome,
+          method: m.method,
+          candidatesJson: JSON.stringify(m.candidates),
+          chosenErpId: m.chosenErpId,
+        });
       }
       for (const f of out.derivedFields) {
-        tx.insert(t.extractedFields)
+        await tx
+          .insert(t.extractedFields)
           .values({
             id: ulid(),
             invoiceId,
@@ -724,16 +742,15 @@ export class Veyra {
               confidenceBp: null,
               updatedAt: now,
             },
-          })
-          .run();
-        this.audit(tx, invoiceId, sys, 'field.derived', {
+          });
+        await this.audit(tx, invoiceId, sys, 'field.derived', {
           path: f.path,
           value: f.value,
           source: f.source,
           detail: f.evidenceDetail,
         });
       }
-      this.audit(tx, invoiceId, sys, 'match.recorded', {
+      await this.audit(tx, invoiceId, sys, 'match.recorded', {
         runNo,
         vendor: out.vendor ? refLabel(out.vendor) : null,
         po: out.po ? refLabel(out.po) : null,
@@ -745,40 +762,38 @@ export class Veyra {
           chosen: m.chosenErpId,
         })),
       });
-      this.transition(tx, invoiceId, 'MATCHING', 'RESOLVING', sys, {
+      await this.transition(tx, invoiceId, 'MATCHING', 'RESOLVING', sys, {
         runNo,
         vendorErpId: out.vendor?.kind === 'erp' ? out.vendor.id : null,
         poErpId: out.po?.kind === 'erp' ? out.po.id : null,
       });
 
       // USE / IF MISSING, CREATE (staged; nothing reaches the ERP yet)
-      const existing = tx
+      const existing = await tx
         .select()
         .from(t.creationActions)
         .where(eq(t.creationActions.invoiceId, invoiceId))
-        .all();
+        .orderBy(asc(t.creationActions.seq));
       const planned = new Set(out.actions.map((a) => a.id));
       for (const a of out.actions) {
         if (existing.some((e) => e.id === a.id)) continue;
-        tx.insert(t.creationActions)
-          .values({
-            id: a.id,
-            invoiceId,
-            entity: a.entity,
-            payloadJson: JSON.stringify(a.payload),
-            signature: a.signature,
-            policyCode: a.policyCode,
-            trigger: a.trigger,
-            approvedByUserId: a.approvedByUserId,
-            questionId: a.questionId,
-            status: 'staged',
-            erpId: null,
-            idempotencyKey: `veyra:${invoiceId}:${a.id}`,
-            createdAt: now,
-            committedAt: null,
-          })
-          .run();
-        this.audit(
+        await tx.insert(t.creationActions).values({
+          id: a.id,
+          invoiceId,
+          entity: a.entity,
+          payloadJson: JSON.stringify(a.payload),
+          signature: a.signature,
+          policyCode: a.policyCode,
+          trigger: a.trigger,
+          approvedByUserId: a.approvedByUserId,
+          questionId: a.questionId,
+          status: 'staged',
+          erpId: null,
+          idempotencyKey: `veyra:${invoiceId}:${a.id}`,
+          createdAt: now,
+          committedAt: null,
+        });
+        await this.audit(
           tx,
           invoiceId,
           a.trigger === 'user_approval' ? { type: 'user', userId: a.approvedByUserId ?? '' } : sys,
@@ -788,11 +803,11 @@ export class Veyra {
       }
       for (const e of existing) {
         if (e.status === 'staged' && !planned.has(e.id)) {
-          tx.update(t.creationActions)
+          await tx
+            .update(t.creationActions)
             .set({ status: 'discarded' })
-            .where(eq(t.creationActions.id, e.id))
-            .run();
-          this.audit(tx, invoiceId, sys, 'creation.discarded', {
+            .where(eq(t.creationActions.id, e.id));
+          await this.audit(tx, invoiceId, sys, 'creation.discarded', {
             actionId: e.id,
             entity: e.entity,
             reason: 'no longer needed',
@@ -800,7 +815,8 @@ export class Veyra {
         }
       }
       for (const line of out.lines) {
-        tx.update(t.invoiceLines)
+        await tx
+          .update(t.invoiceLines)
           .set({
             itemErpId: line.item?.kind === 'erp' ? line.item.id : null,
             itemRefStagedActionId: line.item?.kind === 'staged' ? line.item.actionId : null,
@@ -808,33 +824,30 @@ export class Veyra {
           })
           .where(
             and(eq(t.invoiceLines.invoiceId, invoiceId), eq(t.invoiceLines.lineNo, line.lineNo)),
-          )
-          .run();
+          );
       }
-      this.transition(tx, invoiceId, 'RESOLVING', 'VALIDATING', sys);
+      await this.transition(tx, invoiceId, 'RESOLVING', 'VALIDATING', sys);
 
       // VALIDATE
       for (const r of out.validations) {
-        tx.insert(t.validationResults)
-          .values({
-            id: ulid(),
-            invoiceId,
-            runNo,
-            ruleCode: r.ruleCode,
-            lineNo: r.lineNo,
-            outcome: r.outcome,
-            naReason: r.naReason,
-            expectedJson: JSON.stringify(r.expected),
-            actualJson: JSON.stringify(r.actual),
-            message: r.message,
-            createdAt: now,
-          })
-          .run();
+        await tx.insert(t.validationResults).values({
+          id: ulid(),
+          invoiceId,
+          runNo,
+          ruleCode: r.ruleCode,
+          lineNo: r.lineNo,
+          outcome: r.outcome,
+          naReason: r.naReason,
+          expectedJson: JSON.stringify(r.expected),
+          actualJson: JSON.stringify(r.actual),
+          message: r.message,
+          createdAt: now,
+        });
       }
       const failed = out.validations
         .filter((r) => r.outcome === 'fail')
         .map((r) => (r.lineNo ? `${r.ruleCode}:line:${r.lineNo}` : r.ruleCode));
-      this.audit(tx, invoiceId, sys, 'validation.completed', {
+      await this.audit(tx, invoiceId, sys, 'validation.completed', {
         runNo,
         passed: out.validations.filter((r) => r.outcome === 'pass').length,
         failed,
@@ -843,7 +856,7 @@ export class Veyra {
           .map((r) => `${r.ruleCode}:${r.naReason}`),
         notEvaluated: out.validations.filter((r) => r.outcome === 'not_evaluated').length,
       });
-      this.syncQuestions(tx, invoiceId, out.questions);
+      await this.syncQuestions(tx, invoiceId, out.questions);
       const dup = out.duplicateKey;
       const patch = {
         dupVendorGstin: dup?.vendorGstin ?? null,
@@ -853,22 +866,22 @@ export class Veyra {
 
       // ASK, or COMMIT automatically (there is no human "verify" step)
       if (out.questions.length > 0) {
-        this.transition(tx, invoiceId, 'VALIDATING', 'NEEDS_INPUT', sys, patch);
+        await this.transition(tx, invoiceId, 'VALIDATING', 'NEEDS_INPUT', sys, patch);
       } else if (out.plan) {
-        this.transition(tx, invoiceId, 'VALIDATING', 'COMMITTING', sys, {
+        await this.transition(tx, invoiceId, 'VALIDATING', 'COMMITTING', sys, {
           ...patch,
           commitPlanJson: JSON.stringify(out.plan),
         });
-        this.enqueue(tx, invoiceId, 'commit');
+        await this.enqueue(tx, invoiceId, 'commit');
         queuedCommit = true;
       } else {
         // Safety net (RULES §4): a failed or unevaluated rule with no question is never passed.
-        this.transition(tx, invoiceId, 'VALIDATING', 'FAILED', sys, {
+        await this.transition(tx, invoiceId, 'VALIDATING', 'FAILED', sys, {
           ...patch,
           failedStage: 'VALIDATING',
           failureReason: 'INVARIANT_VIOLATION: a check did not pass but no question was raised.',
         });
-        this.audit(tx, invoiceId, sys, 'invoice.failed', {
+        await this.audit(tx, invoiceId, sys, 'invoice.failed', {
           stage: 'VALIDATING',
           reason: 'INVARIANT_VIOLATION',
           rules: failed,
@@ -879,18 +892,22 @@ export class Veyra {
   }
 
   /** Questions are idempotent by (code, subject): keep what is still asked, supersede the rest. */
-  private syncQuestions(tx: VeyraTx, invoiceId: string, drafts: readonly QuestionDraft[]): void {
-    const open = tx
+  private async syncQuestions(
+    tx: VeyraTx,
+    invoiceId: string,
+    drafts: readonly QuestionDraft[],
+  ): Promise<void> {
+    const open = await tx
       .select()
       .from(t.questions)
       .where(and(eq(t.questions.invoiceId, invoiceId), eq(t.questions.status, 'open')))
-      .all();
-    const userId = this.settings(tx).designatedUserId;
+      .orderBy(asc(t.questions.seq));
+    const userId = (await this.settings(tx)).designatedUserId;
     const now = this.now();
     for (const q of open) {
       if (!drafts.some((d) => d.code === q.code && d.subjectKey === q.subjectKey)) {
-        tx.update(t.questions).set({ status: 'superseded' }).where(eq(t.questions.id, q.id)).run();
-        this.audit(tx, invoiceId, { type: 'system' }, 'question.superseded', {
+        await tx.update(t.questions).set({ status: 'superseded' }).where(eq(t.questions.id, q.id));
+        await this.audit(tx, invoiceId, { type: 'system' }, 'question.superseded', {
           questionId: q.id,
           code: q.code,
           summary: summaryOf(q.contextJson),
@@ -920,28 +937,26 @@ export class Veyra {
       };
       const current = open.find((q) => q.code === d.code && q.subjectKey === d.subjectKey);
       if (current) {
-        tx.update(t.questions).set(values).where(eq(t.questions.id, current.id)).run();
+        await tx.update(t.questions).set(values).where(eq(t.questions.id, current.id));
         continue;
       }
       const id = ulid();
-      tx.insert(t.questions)
-        .values({
-          id,
-          invoiceId,
-          kind: d.kind,
-          code: d.code,
-          subjectKey: d.subjectKey,
-          ...values,
-          status: 'open',
-          assignedToUserId: userId,
-          answerJson: null,
-          answeredByUserId: null,
-          answeredAt: null,
-          answerSeq: null,
-          createdAt: now,
-        })
-        .run();
-      this.audit(tx, invoiceId, { type: 'system' }, 'question.raised', {
+      await tx.insert(t.questions).values({
+        id,
+        invoiceId,
+        kind: d.kind,
+        code: d.code,
+        subjectKey: d.subjectKey,
+        ...values,
+        status: 'open',
+        assignedToUserId: userId,
+        answerJson: null,
+        answeredByUserId: null,
+        answeredAt: null,
+        answerSeq: null,
+        createdAt: now,
+      });
+      await this.audit(tx, invoiceId, { type: 'system' }, 'question.raised', {
         questionId: id,
         code: d.code,
         kind: d.kind,
@@ -959,14 +974,20 @@ export class Veyra {
    * parsed server-side, and its typed effect is applied as data. Then the invoice re-runs from
    * MATCHING (or is rejected). The client decides nothing.
    */
-  answer(questionId: string, body: { optionId: string; input: unknown }, userId: string): void {
-    if (userId !== this.designatedUserId())
+  async answer(
+    questionId: string,
+    body: { optionId: string; input: unknown },
+    userId: string,
+  ): Promise<void> {
+    if (userId !== (await this.designatedUserId()))
       throw new VeyraError('NOT_DESIGNATED_USER', 'Only the designated user can answer questions.');
-    const q = this.db.select().from(t.questions).where(eq(t.questions.id, questionId)).get();
+    const q = (
+      await this.db.select().from(t.questions).where(eq(t.questions.id, questionId)).limit(1)
+    )[0];
     if (!q) throw new VeyraError('NOT_FOUND', 'Question not found.');
     if (q.status !== 'open')
       throw new VeyraError('INVALID_STATE', 'This question has already been answered.');
-    const inv = this.invoiceRow(this.db, q.invoiceId);
+    const inv = await this.invoiceRow(this.db, q.invoiceId);
     if (inv.state !== 'NEEDS_INPUT')
       throw new VeyraError('INVALID_STATE', 'This invoice is not waiting for an answer.');
     const options = JSON.parse(q.optionsJson) as {
@@ -991,13 +1012,19 @@ export class Veyra {
       optionMeta?: Record<string, { result?: string }>;
     };
 
-    this.db.transaction((tx) => {
+    await this.db.transaction(async (tx) => {
+      // Answers are numbered globally ("the latest decision"): serialise numbering across
+      // concurrent requests and workers for the rest of this transaction.
+      await tx.execute(sql`select pg_advisory_xact_lock(${ANSWER_SEQ_LOCK}::bigint)`);
       const seq =
-        (tx
-          .select({ m: max(t.questions.answerSeq) })
-          .from(t.questions)
-          .get()?.m ?? 0) + 1;
-      tx.update(t.questions)
+        ((
+          await tx
+            .select({ m: max(t.questions.answerSeq) })
+            .from(t.questions)
+            .limit(1)
+        )[0]?.m ?? 0) + 1;
+      const answered = await tx
+        .update(t.questions)
         .set({
           status: 'answered',
           answerJson: JSON.stringify({ optionId: option.id, input: parsed.value, effect }),
@@ -1006,8 +1033,11 @@ export class Veyra {
           answerSeq: seq,
         })
         .where(and(eq(t.questions.id, q.id), eq(t.questions.status, 'open')))
-        .run();
-      this.audit(tx, q.invoiceId, user, 'question.answered', {
+        .returning({ id: t.questions.id });
+      // Answered concurrently by another request: nothing of this answer is kept.
+      if (answered.length !== 1)
+        throw new VeyraError('INVALID_STATE', 'This question has already been answered.');
+      await this.audit(tx, q.invoiceId, user, 'question.answered', {
         questionId: q.id,
         code: q.code,
         summary: context.summary ?? q.code,
@@ -1019,12 +1049,13 @@ export class Veyra {
 
       if (effect.type === 'SET_FIELD' || effect.type === 'CONFIRM_FIELD') {
         const path = effect.path;
-        const fields = this.loadFields(tx, q.invoiceId);
+        const fields = await this.loadFields(tx, q.invoiceId);
         const current = fields.get(path);
         const value = effect.type === 'SET_FIELD' ? parsed.value : (current?.value ?? null);
         const source: FieldSource =
           effect.type === 'SET_FIELD' ? 'human_corrected' : 'human_confirmed';
-        tx.insert(t.extractedFields)
+        await tx
+          .insert(t.extractedFields)
           .values({
             id: ulid(),
             invoiceId: q.invoiceId,
@@ -1046,9 +1077,8 @@ export class Veyra {
               updatedByUserId: userId,
               updatedAt: now,
             },
-          })
-          .run();
-        this.audit(
+          });
+        await this.audit(
           tx,
           q.invoiceId,
           user,
@@ -1058,92 +1088,94 @@ export class Veyra {
       }
 
       if (effect.type === 'REJECT_INVOICE') {
-        this.rejectInTx(tx, q.invoiceId, 'NEEDS_INPUT', userId, option.label);
+        await this.rejectInTx(tx, q.invoiceId, 'NEEDS_INPUT', userId, option.label);
         return;
       }
-      this.transition(tx, q.invoiceId, 'NEEDS_INPUT', 'MATCHING', user);
-      this.enqueue(tx, q.invoiceId, 'pipeline');
+      await this.transition(tx, q.invoiceId, 'NEEDS_INPUT', 'MATCHING', user);
+      await this.enqueue(tx, q.invoiceId, 'pipeline');
     });
     this.onEnqueue();
   }
 
-  private rejectInTx(
+  private async rejectInTx(
     tx: VeyraTx,
     invoiceId: string,
     from: InvoiceState,
     userId: string,
     reason: string,
-  ): void {
+  ): Promise<void> {
     const user: Actor = { type: 'user', userId };
-    this.transition(tx, invoiceId, from, 'REJECTED', user, {
+    await this.transition(tx, invoiceId, from, 'REJECTED', user, {
       rejectedByUserId: userId,
       rejectedReason: reason,
       commitPlanJson: null,
     });
-    this.audit(tx, invoiceId, user, 'invoice.rejected', { reason });
+    await this.audit(tx, invoiceId, user, 'invoice.rejected', { reason });
     // D1: staged records never reach the ERP; a confirmed GRN stays here, discarded, for the audit trail.
-    const staged = tx
+    const staged = await tx
       .select()
       .from(t.creationActions)
       .where(
         and(eq(t.creationActions.invoiceId, invoiceId), eq(t.creationActions.status, 'staged')),
       )
-      .all();
+      .orderBy(asc(t.creationActions.seq));
     for (const a of staged) {
-      tx.update(t.creationActions)
+      await tx
+        .update(t.creationActions)
         .set({ status: 'discarded' })
-        .where(eq(t.creationActions.id, a.id))
-        .run();
-      this.audit(tx, invoiceId, { type: 'system' }, 'creation.discarded', {
+        .where(eq(t.creationActions.id, a.id));
+      await this.audit(tx, invoiceId, { type: 'system' }, 'creation.discarded', {
         actionId: a.id,
         entity: a.entity,
         reason: 'invoice rejected',
         payload: JSON.parse(a.payloadJson),
       });
     }
-    const open = tx
+    const open = await tx
       .select()
       .from(t.questions)
       .where(and(eq(t.questions.invoiceId, invoiceId), eq(t.questions.status, 'open')))
-      .all();
+      .orderBy(asc(t.questions.seq));
     for (const q of open) {
-      tx.update(t.questions).set({ status: 'superseded' }).where(eq(t.questions.id, q.id)).run();
+      await tx.update(t.questions).set({ status: 'superseded' }).where(eq(t.questions.id, q.id));
     }
   }
 
   /** Explicit business rejection by the designated user (from NEEDS_INPUT or FAILED). */
-  reject(invoiceId: string, reason: string, userId: string): void {
-    if (userId !== this.designatedUserId())
+  async reject(invoiceId: string, reason: string, userId: string): Promise<void> {
+    if (userId !== (await this.designatedUserId()))
       throw new VeyraError('NOT_DESIGNATED_USER', 'Only the designated user can reject invoices.');
-    const inv = this.invoiceRow(this.db, invoiceId);
+    const inv = await this.invoiceRow(this.db, invoiceId);
     if (inv.state !== 'NEEDS_INPUT' && inv.state !== 'FAILED')
       throw new VeyraError('INVALID_STATE', 'Only invoices waiting for you can be rejected.');
-    this.db.transaction((tx) =>
-      this.rejectInTx(tx, invoiceId, inv.state as InvoiceState, userId, reason),
+    await this.db.transaction(
+      async (tx) => await this.rejectInTx(tx, invoiceId, inv.state as InvoiceState, userId, reason),
     );
   }
 
   /** FAILED → EXTRACTING (extraction never finished) or MATCHING (re-run on the stored reading). */
-  reprocess(invoiceId: string, userId: string): void {
-    if (userId !== this.designatedUserId())
+  async reprocess(invoiceId: string, userId: string): Promise<void> {
+    if (userId !== (await this.designatedUserId()))
       throw new VeyraError(
         'NOT_DESIGNATED_USER',
         'Only the designated user can reprocess invoices.',
       );
-    const inv = this.invoiceRow(this.db, invoiceId);
+    const inv = await this.invoiceRow(this.db, invoiceId);
     if (inv.state !== 'FAILED')
       throw new VeyraError('INVALID_STATE', 'Only failed invoices can be processed again.');
-    const extracted = this.db
-      .select()
-      .from(t.extractions)
-      .where(eq(t.extractions.invoiceId, invoiceId))
-      .get();
+    const extracted = (
+      await this.db
+        .select()
+        .from(t.extractions)
+        .where(eq(t.extractions.invoiceId, invoiceId))
+        .limit(1)
+    )[0];
     const to: InvoiceState =
       extracted && inv.failedStage !== 'EXTRACTING' && inv.failedStage !== 'UPLOADED'
         ? 'MATCHING'
         : 'EXTRACTING';
-    this.db.transaction((tx) => {
-      this.transition(
+    await this.db.transaction(async (tx) => {
+      await this.transition(
         tx,
         invoiceId,
         'FAILED',
@@ -1151,7 +1183,7 @@ export class Veyra {
         { type: 'user', userId },
         { failedStage: null, failureReason: null },
       );
-      this.enqueue(tx, invoiceId, 'pipeline');
+      await this.enqueue(tx, invoiceId, 'pipeline');
     });
     this.onEnqueue();
   }
@@ -1160,64 +1192,55 @@ export class Veyra {
 
   /** COMMITTING (decision D4): automatic, restartable, idempotent. See ./commit.ts. */
   async runCommit(invoiceId: string): Promise<void> {
-    const inv = this.invoiceRow(this.db, invoiceId);
+    const inv = await this.invoiceRow(this.db, invoiceId);
     if (inv.state !== 'COMMITTING') return;
     await executeCommit(this, invoiceId, JSON.parse(inv.commitPlanJson ?? 'null') as CommitPlan);
   }
 
   // ── Jobs ─────────────────────────────────────────────────────────────────
 
-  /** After a restart, jobs that were running are queued again. Every job is safe to re-run. */
-  recoverJobs(): number {
-    return this.db
-      .update(t.jobs)
-      .set({ status: 'queued', lockedAt: null, updatedAt: this.now() })
-      .where(eq(t.jobs.status, 'running'))
-      .run().changes;
-  }
-
   /** Heartbeat: the job is still being worked on (renews its lease). */
-  touchJob(id: string): void {
-    this.db
+  async touchJob(id: string): Promise<void> {
+    await this.db
       .update(t.jobs)
       .set({ lockedAt: this.now() })
-      .where(and(eq(t.jobs.id, id), eq(t.jobs.status, 'running')))
-      .run();
+      .where(and(eq(t.jobs.id, id), eq(t.jobs.status, 'running')));
   }
 
   /**
    * Running jobs whose lease expired: the worker that claimed them stopped (crash, kill, lost
-   * host) without finishing. `recoverJobs` handles a restart of this process; this handles any
-   * worker that disappeared while others keep running.
+   * host) without finishing, including this process before a restart. A live worker renews its
+   * jobs' leases (`touchJob`), so this never takes a job from a worker that is still running.
    */
-  expiredJobs(leaseMs: number): { id: string; invoiceId: string; attempts: number }[] {
+  async expiredJobs(
+    leaseMs: number,
+  ): Promise<{ id: string; invoiceId: string; attempts: number }[]> {
     const cutoff = new Date(this.clock().getTime() - leaseMs).toISOString();
     return this.db
       .select({ id: t.jobs.id, invoiceId: t.jobs.invoiceId, attempts: t.jobs.attempts })
       .from(t.jobs)
       .where(and(eq(t.jobs.status, 'running'), lte(t.jobs.lockedAt, cutoff)))
-      .all();
+      .orderBy(asc(t.jobs.seq));
   }
 
   /** Puts a claimed job back in the queue (shutdown, or an expired lease). */
-  releaseJob(id: string): void {
-    this.db
+  async releaseJob(id: string): Promise<void> {
+    await this.db
       .update(t.jobs)
       .set({ status: 'queued', lockedAt: null, updatedAt: this.now() })
-      .where(and(eq(t.jobs.id, id), eq(t.jobs.status, 'running')))
-      .run();
+      .where(and(eq(t.jobs.id, id), eq(t.jobs.status, 'running')));
   }
 
   /** Job counts for readiness and diagnostics (no payloads). */
-  jobStats(leaseMs: number): {
+  async jobStats(leaseMs: number): Promise<{
     queued: number;
     running: number;
     expired: number;
     failedLast24h: number;
     oldestQueuedAgeMs: number | null;
-  } {
+  }> {
     const now = this.clock().getTime();
-    const rows = this.db
+    const rows = await this.db
       .select({
         status: t.jobs.status,
         lockedAt: t.jobs.lockedAt,
@@ -1225,8 +1248,7 @@ export class Veyra {
         updatedAt: t.jobs.updatedAt,
       })
       .from(t.jobs)
-      .where(ne(t.jobs.status, 'succeeded'))
-      .all();
+      .where(ne(t.jobs.status, 'succeeded'));
     const queued = rows.filter((r) => r.status === 'queued');
     const due = queued.map((r) => Date.parse(r.runAfter)).filter((x) => x <= now);
     return {
@@ -1242,29 +1264,51 @@ export class Veyra {
     };
   }
 
-  claimJob(): {
+  /**
+   * Claims the oldest due job, atomically, for one worker. PostgreSQL (ARCHITECTURE §19):
+   * - claims are serialised by a transaction-scoped advisory lock, so two workers can never take
+   *   the same job (the status update is also conditional on `queued`);
+   * - a job is not claimed while another job of the same invoice is running, so one invoice is
+   *   never processed by two workers at once (what the single SQLite worker guaranteed).
+   */
+  async claimJob(): Promise<{
     id: string;
     invoiceId: string;
     type: 'pipeline' | 'commit';
     attempts: number;
-  } | null {
-    return this.db.transaction((tx) => {
-      const job = tx
-        .select()
+  } | null> {
+    return this.db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(${CLAIM_LOCK}::bigint)`);
+      const busy = tx
+        .select({ invoiceId: t.jobs.invoiceId })
         .from(t.jobs)
-        .where(and(eq(t.jobs.status, 'queued'), lte(t.jobs.runAfter, this.now())))
-        .orderBy(asc(t.jobs.createdAt), asc(t.jobs.id))
-        .get();
+        .where(eq(t.jobs.status, 'running'));
+      const job = (
+        await tx
+          .select()
+          .from(t.jobs)
+          .where(
+            and(
+              eq(t.jobs.status, 'queued'),
+              lte(t.jobs.runAfter, this.now()),
+              notInArray(t.jobs.invoiceId, busy),
+            ),
+          )
+          .orderBy(asc(t.jobs.runAfter), asc(t.jobs.seq))
+          .limit(1)
+      )[0];
       if (!job) return null;
-      tx.update(t.jobs)
+      const claimed = await tx
+        .update(t.jobs)
         .set({
           status: 'running',
           lockedAt: this.now(),
           attempts: job.attempts + 1,
           updatedAt: this.now(),
         })
-        .where(eq(t.jobs.id, job.id))
-        .run();
+        .where(and(eq(t.jobs.id, job.id), eq(t.jobs.status, 'queued')))
+        .returning({ id: t.jobs.id });
+      if (claimed.length !== 1) return null;
       return {
         id: job.id,
         invoiceId: job.invoiceId,
@@ -1274,15 +1318,15 @@ export class Veyra {
     });
   }
 
-  finishJob(
+  async finishJob(
     id: string,
     outcome:
       | { status: 'succeeded' }
       | { status: 'failed'; error: string }
       | { status: 'retry'; error: string; delayMs: number },
-  ): void {
+  ): Promise<void> {
     const now = this.clock().getTime();
-    this.db
+    await this.db
       .update(t.jobs)
       .set(
         outcome.status === 'retry'
@@ -1300,27 +1344,33 @@ export class Veyra {
               updatedAt: this.now(),
             },
       )
-      .where(eq(t.jobs.id, id))
-      .run();
+      .where(eq(t.jobs.id, id));
   }
 
-  pendingJobs(): number {
-    return this.db
-      .select()
-      .from(t.jobs)
-      .where(inArray(t.jobs.status, ['queued', 'running']))
-      .all().length;
+  async pendingJobs(): Promise<number> {
+    return (
+      await this.db
+        .select({ id: t.jobs.id })
+        .from(t.jobs)
+        .where(inArray(t.jobs.status, ['queued', 'running']))
+    ).length;
   }
 
-  latestJobs(invoiceId: string) {
+  /** The invoice's jobs, newest first. */
+  async latestJobs(invoiceId: string) {
     return this.db
       .select()
       .from(t.jobs)
       .where(eq(t.jobs.invoiceId, invoiceId))
-      .orderBy(desc(t.jobs.createdAt))
-      .all();
+      .orderBy(desc(t.jobs.createdAt), desc(t.jobs.seq));
   }
 }
+
+/** Advisory-lock key numbering answers (see `answer`). */
+const ANSWER_SEQ_LOCK = 7_665_002;
+
+/** Advisory-lock key serialising job claims across workers. */
+const CLAIM_LOCK = 7_665_001;
 
 // ── helpers ──────────────────────────────────────────────────────────────
 

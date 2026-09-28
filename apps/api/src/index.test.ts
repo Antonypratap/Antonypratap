@@ -4,8 +4,10 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderScenario, scenarioById } from '@veyra/extractor';
 import type { ApiInbox, ApiInvoiceDetail, ApiQuestion, ApiAuditEntry } from '@veyra/shared';
-import { PACKAGE_NAME, createApp } from './index';
+import type { createApp } from './index';
+import { PACKAGE_NAME } from './index';
 import { DEMO_NOW } from './test/harness';
+import { createTestApp } from './test/app';
 
 type App = Awaited<ReturnType<typeof createApp>>;
 let app: App;
@@ -13,7 +15,7 @@ let dir: string;
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'veyra-http-'));
-  app = await createApp({
+  app = await createTestApp({
     dataDir: dir,
     demo: true,
     allowFixtureExtractor: true,

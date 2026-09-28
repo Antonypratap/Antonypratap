@@ -18,6 +18,7 @@ const PRODUCTION = {
   VEYRA_DATA_DIR: '/srv/veyra/data',
   VEYRA_ERP: 'fake',
   VEYRA_OLLAMA_URL: 'http://ollama.internal:11434',
+  DATABASE_URL: 'postgres://veyra:s3cret-db-pass@db.internal:5432/veyra',
 };
 
 describe('configuration (Phase 6)', () => {
@@ -44,7 +45,11 @@ describe('configuration (Phase 6)', () => {
       logLevel: 'info',
       storage: { kind: 'local', dir: '/srv/veyra/data/uploads' },
     });
-    expect(JSON.stringify(describeConfig(c))).not.toMatch(/ollama|srv|internal/);
+    expect(c.database).toMatchObject({
+      url: PRODUCTION.DATABASE_URL,
+      pool: { max: 10, connectTimeoutMs: 5000, statementTimeoutMs: 30000 },
+    });
+    expect(JSON.stringify(describeConfig(c))).not.toMatch(/ollama|srv|internal|s3cret|postgres:/);
   });
 
   it('NODE_ENV=production without VEYRA_ENV is production, never development', () => {
@@ -53,7 +58,22 @@ describe('configuration (Phase 6)', () => {
       expect.arrayContaining([
         'VEYRA_DATA_DIR is required in production',
         'VEYRA_ERP is required in production',
+        'DATABASE_URL is required in production (the PostgreSQL database)',
       ]),
+    );
+  });
+
+  it('DATABASE_URL: required when deployed, validated, never echoed; optional in development', () => {
+    const e = problems({ ...PRODUCTION, DATABASE_URL: 'mysql://root:hunter2@db/veyra' });
+    expect(e.problems).toEqual(['DATABASE_URL is not valid (a postgres:// or postgresql:// URL)']);
+    expect(e.message).not.toMatch(/hunter2|mysql|root/);
+    const staging = problems({ VEYRA_ENV: 'staging', VEYRA_DATA_DIR: '/srv/s', VEYRA_ERP: 'fake' });
+    expect(staging.problems).toEqual([
+      'DATABASE_URL is required in staging (the PostgreSQL database)',
+    ]);
+    expect(loadConfig({}, defaults).database.url).toBeNull(); // development: embedded PostgreSQL
+    expect(loadConfig({ ...PRODUCTION, VEYRA_DB_POOL_MAX: '25' }, defaults).database.pool.max).toBe(
+      25,
     );
   });
 
@@ -110,6 +130,7 @@ describe('configuration (Phase 6)', () => {
         VEYRA_DATA_DIR: '/srv/veyra-staging',
         VEYRA_ERP: 'fake',
         VEYRA_DEMO: 'true',
+        DATABASE_URL: 'postgresql://veyra@db-staging.internal/veyra_staging',
       },
       defaults,
     );

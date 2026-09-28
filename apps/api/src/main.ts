@@ -28,6 +28,7 @@ try {
   app = await createApp({
     environment: config.environment,
     dataDir: config.dataDir,
+    database: config.database,
     migrate: config.migrateOnStart,
     storage: createStorage(config.storage),
     demo: config.demo,

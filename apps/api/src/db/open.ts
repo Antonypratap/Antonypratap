@@ -1,83 +1,147 @@
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import Database from 'better-sqlite3';
-import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { PGlite } from '@electric-sql/pglite';
+import { sql, type ExtractTablesWithRelations } from 'drizzle-orm';
+import { drizzle as drizzleNodePg } from 'drizzle-orm/node-postgres';
+import { migrate as migrateNodePg } from 'drizzle-orm/node-postgres/migrator';
+import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
+import { migrate as migratePglite } from 'drizzle-orm/pglite/migrator';
+import type { PgDatabase, PgQueryResultHKT, PgTransaction } from 'drizzle-orm/pg-core';
+import pg from 'pg';
 import * as schema from './schema';
 
-export type VeyraDb = BetterSQLite3Database<typeof schema>;
-export type VeyraTx = Parameters<Parameters<VeyraDb['transaction']>[0]>[0];
+/**
+ * The Veyra application database (ARCHITECTURE §19): PostgreSQL, always, through Drizzle.
+ *
+ * - `DATABASE_URL` (staging, production, tests): a node-postgres connection POOL, created once per
+ *   process and closed on shutdown. Sessions run in UTC.
+ * - No URL (development and the local demo only): PGlite, the PostgreSQL engine embedded in the
+ *   process, persisted in a folder. Same SQL, same schema, same migrations; no server to install.
+ *
+ * Either way the application sees one `VeyraDb` (a PostgreSQL Drizzle database) and async access.
+ */
+export type VeyraDb = PgDatabase<PgQueryResultHKT, typeof schema>;
+export type VeyraTx = PgTransaction<
+  PgQueryResultHKT,
+  typeof schema,
+  ExtractTablesWithRelations<typeof schema>
+>;
 
-const MIGRATIONS_FOLDER = fileURLToPath(new URL('../../drizzle', import.meta.url));
+export const MIGRATIONS_FOLDER = fileURLToPath(new URL('../../drizzle', import.meta.url));
+
+export interface DatabaseOptions {
+  /** postgres:// URL. Absent: embedded PGlite in `pgliteDir` (development only). */
+  url?: string | null;
+  pgliteDir?: string;
+  /** Apply pending migrations (development, staging, `db:migrate`); off: refuse to run if any. */
+  migrate?: boolean;
+  pool?: { max?: number; connectTimeoutMs?: number; statementTimeoutMs?: number };
+}
+
+export interface VeyraDatabase {
+  db: VeyraDb;
+  kind: 'postgres' | 'pglite';
+  /** Readiness: a round trip to the database. */
+  ping(): Promise<void>;
+  /** Closes the pool (or the embedded engine). Idempotent. */
+  close(): Promise<void>;
+}
 
 export class PendingMigrationsError extends Error {
   constructor(readonly pending: string[]) {
     super(
-      `veyra.db has ${pending.length} pending migration(s): ${pending.join(', ')}. Run "npm run db:migrate -w @veyra/api" first.`,
+      `The Veyra database has ${pending.length} pending migration(s): ${pending.join(', ')}. Run "npm run db:migrate -w @veyra/api" first.`,
     );
     this.name = 'PendingMigrationsError';
   }
 }
 
 /** Migrations in the repository, oldest first. */
-function knownMigrations(): { tag: string; when: number }[] {
+export function knownMigrations(): { tag: string; when: number }[] {
   const journal = JSON.parse(readFileSync(`${MIGRATIONS_FOLDER}/meta/_journal.json`, 'utf8')) as {
     entries: { tag: string; when: number }[];
   };
   return journal.entries;
 }
 
-/** Migrations not yet applied to this database (drizzle records each by its timestamp). */
-export function pendingMigrations(sqlite: Database.Database): string[] {
-  const table = sqlite
-    .prepare(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'",
-    )
-    .get();
-  const applied = new Set<number>(
-    table
-      ? (
-          sqlite.prepare('SELECT created_at FROM __drizzle_migrations').all() as {
-            created_at: number;
-          }[]
-        ).map((r) => Number(r.created_at))
-      : [],
+/** Migrations not yet applied (Drizzle records each in drizzle.__drizzle_migrations). */
+export async function pendingMigrations(db: VeyraDb): Promise<string[]> {
+  const table = await db.execute<{ t: string | null }>(
+    sql`select to_regclass('drizzle.__drizzle_migrations')::text as t`,
   );
+  const applied = new Set<number>();
+  if (rowsOf<{ t: string | null }>(table)[0]?.t) {
+    const rows = await db.execute<{ created_at: string | number }>(
+      sql`select created_at from drizzle.__drizzle_migrations`,
+    );
+    for (const r of rowsOf<{ created_at: string | number }>(rows))
+      applied.add(Number(r.created_at));
+  }
   return knownMigrations()
     .filter((m) => !applied.has(m.when))
     .map((m) => m.tag);
 }
 
-/**
- * Opens (creating if needed) veyra.db. With `migrate` (development, staging, `db:migrate`) pending
- * migrations are applied; each runs once, in order, and is recorded, so running again is a no-op.
- * Without it (production startup) a database with pending migrations is refused: migrations are
- * a deliberate deployment step, after a backup, never a side effect of starting a server.
- */
-export function openVeyraDb(
-  filename: string,
-  options: { migrate?: boolean } = {},
-): { sqlite: Database.Database; db: VeyraDb } {
-  const sqlite = new Database(filename);
-  sqlite.pragma('busy_timeout = 5000');
-  if (filename !== ':memory:') sqlite.pragma('journal_mode = WAL');
-  const db = drizzle(sqlite, { schema });
+/** Rows of a raw `execute` result (node-postgres and PGlite shape them the same way). */
+export function rowsOf<T>(result: unknown): T[] {
+  return ((result as { rows?: T[] }).rows ?? []) as T[];
+}
+
+export async function openVeyraDb(options: DatabaseOptions): Promise<VeyraDatabase> {
+  let handle: VeyraDatabase;
+  if (options.url) {
+    const pool = new pg.Pool({
+      connectionString: options.url,
+      max: options.pool?.max ?? 10,
+      connectionTimeoutMillis: options.pool?.connectTimeoutMs ?? 5_000,
+      idleTimeoutMillis: 30_000,
+      // Every session in UTC; a runaway statement is cancelled instead of holding a connection.
+      options: `-c TimeZone=UTC -c statement_timeout=${options.pool?.statementTimeoutMs ?? 30_000}`,
+      application_name: 'veyra-api',
+    });
+    // An idle client losing its connection must not crash the process; the pool replaces it.
+    pool.on('error', () => undefined);
+    const db = drizzleNodePg(pool, { schema }) as unknown as VeyraDb;
+    let closed: Promise<void> | null = null;
+    handle = {
+      db,
+      kind: 'postgres',
+      ping: async () => {
+        await db.execute(sql`select 1`);
+      },
+      close: () => (closed ??= pool.end()),
+    };
+    try {
+      if (options.migrate !== false)
+        await migrateNodePg(db as never, { migrationsFolder: MIGRATIONS_FOLDER });
+    } catch (error) {
+      await handle.close();
+      throw error;
+    }
+  } else {
+    if (!options.pgliteDir) throw new Error('an embedded database needs a folder');
+    mkdirSync(options.pgliteDir, { recursive: true });
+    const client = await PGlite.create(options.pgliteDir);
+    await client.exec(`SET TIME ZONE 'UTC'`);
+    const db = drizzlePglite({ client, schema }) as unknown as VeyraDb;
+    let closed: Promise<void> | null = null;
+    handle = {
+      db,
+      kind: 'pglite',
+      ping: async () => {
+        await db.execute(sql`select 1`);
+      },
+      close: () => (closed ??= client.closed ? Promise.resolve() : client.close()),
+    };
+    if (options.migrate !== false)
+      await migratePglite(db as never, { migrationsFolder: MIGRATIONS_FOLDER });
+  }
   if (options.migrate === false) {
-    const pending = pendingMigrations(sqlite);
+    const pending = await pendingMigrations(handle.db);
     if (pending.length > 0) {
-      sqlite.close();
+      await handle.close();
       throw new PendingMigrationsError(pending);
     }
-    sqlite.pragma('foreign_keys = ON');
-    return { sqlite, db };
   }
-  // Table-rebuilding migrations need foreign keys off (ignored inside the migration's own
-  // transaction); references are verified before they are enforced again.
-  sqlite.pragma('foreign_keys = OFF');
-  migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
-  const violations = sqlite.pragma('foreign_key_check') as unknown[];
-  if (violations.length > 0)
-    throw new Error(`veyra.db migration left ${violations.length} broken references`);
-  sqlite.pragma('foreign_keys = ON');
-  return { sqlite, db };
+  return handle;
 }

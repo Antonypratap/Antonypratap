@@ -4,8 +4,9 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { renderScenario, scenarioById } from '@veyra/extractor';
 import type { ApiImport, ApiInvoiceDetail, ApiQuestion } from '@veyra/shared';
-import { createApp } from '../app';
+import type { createApp } from '../app';
 import { DEMO_NOW } from '../test/harness';
+import { createTestApp } from '../test/app';
 
 /**
  * Phase 3C proof: a business with no ERP connection provides its records in Excel, and the
@@ -18,7 +19,7 @@ const FIXTURES = new URL('../../../../fixtures/imports/', import.meta.url);
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'veyra-e2e-'));
-  app = await createApp({
+  app = await createTestApp({
     dataDir: dir,
     demo: true,
     allowFixtureExtractor: true,

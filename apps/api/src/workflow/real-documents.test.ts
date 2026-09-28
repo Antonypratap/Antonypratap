@@ -5,10 +5,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { BUYER, DOCUMENT_SAMPLES, renderScenario, scenarioById } from '@veyra/extractor';
 import type { ApiInvoiceDetail, ApiQuestion } from '@veyra/shared';
 import { eq } from 'drizzle-orm';
-import { createApp } from '../app';
+import type { createApp } from '../app';
 import * as t from '../db/schema';
 import type { LocalDocumentStorage } from '../storage';
 import { DEMO_NOW } from '../test/harness';
+import { createTestApp } from '../test/app';
 
 /**
  * Phase 3D proof: real documents (fixtures/documents) through the real local extractor (pdf.js
@@ -22,7 +23,7 @@ const IMPORTS = new URL('../../../../fixtures/imports/', import.meta.url);
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'veyra-docs-'));
-  app = await createApp({
+  app = await createTestApp({
     dataDir: dir,
     demo: true,
     allowFixtureExtractor: true,
@@ -69,7 +70,7 @@ async function upload(file: string): Promise<{ invoiceId: string; documentId: st
   expect(res.statusCode, res.body).toBe(201);
   const created = res.json<{ invoiceId: string; documentId: string }>();
   // Processing is a background job: the upload itself only stores and queues.
-  expect(app.veyra.invoiceRow(app.veyra.db, created.invoiceId).state).toBe('UPLOADED');
+  expect((await app.veyra.invoiceRow(app.veyra.db, created.invoiceId)).state).toBe('UPLOADED');
   await app.runner.drain();
   return created;
 }
@@ -267,7 +268,7 @@ describe('real documents through the real pipeline', () => {
 
   it('two invoices in one file: FAILED with the reason, reprocessable, never merged; rejected only explicitly', async () => {
     const { invoiceId } = await upload('D11-two-invoices.pdf');
-    const row = app.veyra.invoiceRow(app.veyra.db, invoiceId);
+    const row = await app.veyra.invoiceRow(app.veyra.db, invoiceId);
     expect(row).toMatchObject({ state: 'FAILED', failedStage: 'EXTRACTING' });
     expect(row.failureReason).toMatch(/more than one invoice/);
     const again = await app.server.inject({
@@ -294,11 +295,13 @@ describe('real documents through the real pipeline', () => {
     await app.runner.drain();
     const { invoiceId } = res.json<{ invoiceId: string }>();
     expect((await detail(invoiceId)).status).toBe('handled');
-    const x = app.veyra.db
-      .select({ extractorId: t.extractions.extractorId })
-      .from(t.extractions)
-      .where(eq(t.extractions.invoiceId, invoiceId))
-      .get();
+    const x = (
+      await app.veyra.db
+        .select({ extractorId: t.extractions.extractorId })
+        .from(t.extractions)
+        .where(eq(t.extractions.invoiceId, invoiceId))
+        .limit(1)
+    )[0];
     expect(x?.extractorId).toBe('fixture');
   });
 
@@ -346,7 +349,7 @@ describe('document upload safety', () => {
     const res = await uploadBytes('damaged.pdf', bytes);
     const { invoiceId } = res.json<{ invoiceId: string }>();
     await app.runner.drain();
-    expect(app.veyra.invoiceRow(app.veyra.db, invoiceId)).toMatchObject({
+    expect(await app.veyra.invoiceRow(app.veyra.db, invoiceId)).toMatchObject({
       state: 'FAILED',
       failedStage: 'EXTRACTING',
     });
@@ -355,7 +358,9 @@ describe('document upload safety', () => {
   it('a hostile filename is neutralised; the file is stored under the data directory by id', async () => {
     const res = await uploadBytes('../../../etc/passwd.pdf', doc('D01-clean-text.pdf'));
     const { documentId } = res.json<{ documentId: string }>();
-    const row = app.veyra.db.select().from(t.documents).where(eq(t.documents.id, documentId)).get();
+    const row = (
+      await app.veyra.db.select().from(t.documents).where(eq(t.documents.id, documentId)).limit(1)
+    )[0];
     expect(row?.filename).toBe('passwd.pdf');
     // Phase 6: stored under a key made of the id only, resolved inside the data directory.
     expect(row?.storagePath).toBe(`${documentId}.pdf`);

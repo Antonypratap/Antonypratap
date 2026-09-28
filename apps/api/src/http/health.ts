@@ -1,5 +1,4 @@
 import { describeConnection, type ErpConnectionStatus } from '@veyra/erp-connector';
-import { sql } from 'drizzle-orm';
 import type { Environment } from '../config';
 import type { DocumentStorage } from '../storage';
 import type { JobRunner } from '../workflow/runner';
@@ -38,19 +37,17 @@ export function readinessCheck(deps: {
   veyra: Veyra;
   storage: DocumentStorage;
   runner: JobRunner;
+  /** A round trip to PostgreSQL (no connection details are ever reported). */
+  pingDatabase: () => Promise<void>;
   environment: Environment;
   /** Whether this process runs the worker (false for an API-only instance). */
   expectWorker: boolean;
 }): () => Promise<ReadinessReport> {
   return async () => {
-    const database: Check = (() => {
-      try {
-        deps.veyra.db.get(sql`select 1`);
-        return { status: 'ok' as const };
-      } catch {
-        return { status: 'fail' as const, code: 'DATABASE_UNAVAILABLE' };
-      }
-    })();
+    const database: Check = await deps
+      .pingDatabase()
+      .then(() => ({ status: 'ok' as const }))
+      .catch(() => ({ status: 'fail' as const, code: 'DATABASE_UNAVAILABLE' }));
     const storage: Check = await deps.storage
       .check()
       .then(() => ({ status: 'ok' as const }))
@@ -69,7 +66,7 @@ export function readinessCheck(deps: {
     let jobs: ReadinessReport['jobs'] = null;
     if (database.status === 'ok') {
       try {
-        jobs = deps.veyra.jobStats(deps.runner.leaseMs);
+        jobs = await deps.veyra.jobStats(deps.runner.leaseMs);
       } catch {
         jobs = null;
       }

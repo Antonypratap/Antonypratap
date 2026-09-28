@@ -4,12 +4,13 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderScenario, scenarioById } from '@veyra/extractor';
 import type { ApiAuditEntry, ApiImport, ApiInvoiceDetail, ApiQuestion } from '@veyra/shared';
-import { createApp } from '../app';
+import type { createApp } from '../app';
 import { DEMO_NOW } from '../test/harness';
 import { readCsv } from '../spreadsheet/csv';
 import { readXlsx, writeXlsx, type OutCell } from '../spreadsheet/xlsx';
 import { dataSheet } from './templates';
 import type { TableKey } from './spec';
+import { createTestApp } from '../test/app';
 
 type App = Awaited<ReturnType<typeof createApp>>;
 let app: App;
@@ -22,7 +23,7 @@ const fixture = (name: string) => ({
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'veyra-import-'));
-  app = await createApp({
+  app = await createTestApp({
     dataDir: dir,
     demo: true,
     allowFixtureExtractor: true,

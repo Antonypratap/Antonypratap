@@ -99,7 +99,7 @@ export function questionDto(q: QuestionRow, invoice: ApiQuestion['invoice']): Ap
 export class Presenter {
   constructor(readonly v: Veyra) {}
 
-  private fields(invoiceId: string): Map<string, StoredField> {
+  private fields(invoiceId: string): Promise<Map<string, StoredField>> {
     return this.v.loadFields(this.v.db, invoiceId);
   }
 
@@ -109,13 +109,13 @@ export class Presenter {
     return r.value;
   }
 
-  private questionsOf(invoiceId: string): QuestionRow[] {
+  /** The invoice's questions in the order they were raised. */
+  private questionsOf(invoiceId: string): Promise<QuestionRow[]> {
     return this.v.db
       .select()
       .from(t.questions)
       .where(eq(t.questions.invoiceId, invoiceId))
-      .orderBy(asc(sql`rowid`))
-      .all();
+      .orderBy(asc(t.questions.seq));
   }
 
   /** What the ERP holds for this invoice: the order's goods receipts and the recorded invoice. */
@@ -149,8 +149,8 @@ export class Presenter {
   }
 
   async summary(inv: InvoiceRow, doc: DocumentRow): Promise<ApiInvoiceSummary> {
-    const f = this.fields(inv.id);
-    const qs = this.questionsOf(inv.id);
+    const f = await this.fields(inv.id);
+    const qs = await this.questionsOf(inv.id);
     const open = qs.find((q) => q.status === 'open');
     const answered = qs
       .filter((q) => q.status === 'answered')
@@ -181,8 +181,11 @@ export class Presenter {
       supplierName: this.shown<string>(f, 'header.vendorName'),
       invoiceDate: this.shown<string>(f, 'header.invoiceDate'),
       // Only a total Veyra can use is shown as the amount; an unclear reading stays in the question.
-      totalPaise: readField<number>(f, 'header.totalPaise', this.v.settings().confidenceMinBp)
-        .value,
+      totalPaise: readField<number>(
+        f,
+        'header.totalPaise',
+        (await this.v.settings()).confidenceMinBp,
+      ).value,
       source: doc.mime === 'application/pdf' ? 'PDF' : 'Photo',
       filename: doc.filename,
       receivedAt: doc.uploadedAt,
@@ -210,14 +213,15 @@ export class Presenter {
     if (inv.state === 'REJECTED')
       return inv.rejectedReason ? `Rejected: ${inv.rejectedReason}` : 'Rejected';
     if (inv.state !== 'VERIFIED_PENDING_PAYMENT') return null;
-    const committed = this.v.db
-      .select()
-      .from(t.creationActions)
-      .where(
-        and(eq(t.creationActions.invoiceId, inv.id), eq(t.creationActions.status, 'committed')),
-      )
-      .all()
-      .map((a) => a.entity);
+    const committed = (
+      await this.v.db
+        .select()
+        .from(t.creationActions)
+        .where(
+          and(eq(t.creationActions.invoiceId, inv.id), eq(t.creationActions.status, 'committed')),
+        )
+        .orderBy(asc(t.creationActions.seq))
+    ).map((a) => a.entity);
     const parts: string[] = [];
     if (committed.includes('vendor')) parts.push('New supplier added');
     if (committed.includes('vendor_reactivation')) parts.push('Supplier reactivated');
@@ -233,12 +237,11 @@ export class Presenter {
   }
 
   async inbox(): Promise<ApiInbox> {
-    const rows = this.v.db
+    const rows = await this.v.db
       .select()
       .from(t.invoices)
       .innerJoin(t.documents, eq(t.documents.id, t.invoices.documentId))
-      .orderBy(desc(t.documents.uploadedAt), desc(t.invoices.id))
-      .all();
+      .orderBy(desc(t.documents.uploadedAt), desc(t.invoices.seq));
     const invoices = await Promise.all(rows.map((r) => this.summary(r.invoices, r.documents)));
     const count = (s: UiStatus) => invoices.filter((i) => i.status === s).length;
     return {
@@ -256,24 +259,21 @@ export class Presenter {
   }
 
   async detail(invoiceId: string): Promise<ApiInvoiceDetail> {
-    const inv = this.v.invoiceRow(this.v.db, invoiceId);
-    const doc = this.v.db
-      .select()
-      .from(t.documents)
-      .where(eq(t.documents.id, inv.documentId))
-      .get();
+    const inv = await this.v.invoiceRow(this.v.db, invoiceId);
+    const doc = (
+      await this.v.db.select().from(t.documents).where(eq(t.documents.id, inv.documentId)).limit(1)
+    )[0];
     if (!doc) throw new Error('document missing');
     const base = await this.summary(inv, doc);
-    const f = this.fields(invoiceId);
-    const min = this.v.settings().confidenceMinBp;
+    const f = await this.fields(invoiceId);
+    const min = (await this.v.settings()).confidenceMinBp;
     const str = (p: string) => this.shown<string>(f, p);
     const num = (p: string) => this.shown<number>(f, p);
-    const lineNos = this.v.db
+    const lineNos = await this.v.db
       .select()
       .from(t.invoiceLines)
       .where(eq(t.invoiceLines.invoiceId, invoiceId))
-      .orderBy(asc(t.invoiceLines.lineNo))
-      .all();
+      .orderBy(asc(t.invoiceLines.lineNo));
     const vendorGstin = (f.get('header.vendorGstin')?.value as string | null) ?? null;
     const vendorState = vendorGstin ? validateGstin(vendorGstin) : null;
     const pos = readField<string>(f, 'header.placeOfSupply', min).value;
@@ -290,30 +290,37 @@ export class Presenter {
       })
       .map((x) => x.path);
     const latestRun = inv.runNo;
-    const checks = this.v.db
-      .select()
-      .from(t.validationResults)
-      .where(
-        and(eq(t.validationResults.invoiceId, invoiceId), eq(t.validationResults.runNo, latestRun)),
-      )
-      .orderBy(asc(sql`rowid`))
-      .all()
-      .map((r) => ({
-        rule: r.ruleCode,
-        name: RULES[r.ruleCode as RuleCode].name,
-        lineNo: r.lineNo,
-        outcome: r.outcome as 'pass',
-        naReason: r.naReason,
-        message: r.message,
-      }));
-    const records = this.v.db
-      .select()
-      .from(t.auditEvents)
-      .where(
-        and(eq(t.auditEvents.invoiceId, invoiceId), eq(t.auditEvents.event, 'creation.committed')),
-      )
-      .all()
-      .map((e) => String((JSON.parse(e.detailJson) as { label?: string }).label ?? ''));
+    const checks = (
+      await this.v.db
+        .select()
+        .from(t.validationResults)
+        .where(
+          and(
+            eq(t.validationResults.invoiceId, invoiceId),
+            eq(t.validationResults.runNo, latestRun),
+          ),
+        )
+        .orderBy(asc(t.validationResults.seq))
+    ).map((r) => ({
+      rule: r.ruleCode,
+      name: RULES[r.ruleCode as RuleCode].name,
+      lineNo: r.lineNo,
+      outcome: r.outcome as 'pass',
+      naReason: r.naReason,
+      message: r.message,
+    }));
+    const records = (
+      await this.v.db
+        .select()
+        .from(t.auditEvents)
+        .where(
+          and(
+            eq(t.auditEvents.invoiceId, invoiceId),
+            eq(t.auditEvents.event, 'creation.committed'),
+          ),
+        )
+        .orderBy(asc(t.auditEvents.seq))
+    ).map((e) => String((JSON.parse(e.detailJson) as { label?: string }).label ?? ''));
     const vendor = inv.vendorErpId ? await this.v.erp.getVendor(inv.vendorErpId as never) : null;
     const invoiceBrief = {
       number: base.number,
@@ -371,7 +378,7 @@ export class Presenter {
               invoicePaise: base.totalPaise,
             },
       unclearPaths: unclear,
-      questions: this.questionsOf(invoiceId)
+      questions: (await this.questionsOf(invoiceId))
         .filter((q) => q.status !== 'superseded')
         .map((q) => questionDto(q, invoiceBrief)),
       checks,
@@ -380,33 +387,36 @@ export class Presenter {
         poNumber: await this.poNumberOf(inv),
         purchaseInvoiceId: inv.erpPurchaseInvoiceId,
         records,
-        reconciling: inv.state === 'COMMITTING' && this.v.hasUnresolvedErpWrite(inv.id),
+        reconciling: inv.state === 'COMMITTING' && (await this.v.hasUnresolvedErpWrite(inv.id)),
         ...(await this.erpEvidence(inv)),
       },
     };
   }
 
   async questions(status: 'open' | 'answered'): Promise<ApiQuestion[]> {
-    const rows = this.v.db
+    const rows = await this.v.db
       .select()
       .from(t.questions)
       .where(eq(t.questions.status, status))
-      .orderBy(status === 'open' ? asc(sql`rowid`) : desc(t.questions.answerSeq))
-      .all();
-    return rows.map((q) => {
-      const f = this.fields(q.invoiceId);
-      return questionDto(q, {
-        number: this.shown<string>(f, 'header.invoiceNumber'),
-        supplierName: this.shown<string>(f, 'header.vendorName'),
-        totalPaise: this.shown<number>(f, 'header.totalPaise'),
-      });
-    });
+      .orderBy(status === 'open' ? asc(t.questions.seq) : desc(t.questions.answerSeq));
+    return Promise.all(
+      rows.map(async (q) => {
+        const f = await this.fields(q.invoiceId);
+        return questionDto(q, {
+          number: this.shown<string>(f, 'header.invoiceNumber'),
+          supplierName: this.shown<string>(f, 'header.vendorName'),
+          totalPaise: this.shown<number>(f, 'header.totalPaise'),
+        });
+      }),
+    );
   }
 
-  question(id: string): ApiQuestion | null {
-    const q = this.v.db.select().from(t.questions).where(eq(t.questions.id, id)).get();
+  async question(id: string): Promise<ApiQuestion | null> {
+    const q = (
+      await this.v.db.select().from(t.questions).where(eq(t.questions.id, id)).limit(1)
+    )[0];
     if (!q) return null;
-    const f = this.fields(q.invoiceId);
+    const f = await this.fields(q.invoiceId);
     return questionDto(q, {
       number: this.shown<string>(f, 'header.invoiceNumber'),
       supplierName: this.shown<string>(f, 'header.vendorName'),
@@ -415,23 +425,23 @@ export class Presenter {
   }
 
   /** Business-record import events (no invoice). */
-  recordsAudit(): ApiAuditEntry[] {
-    return this.v.db
-      .select()
-      .from(t.auditEvents)
-      .where(sql`${t.auditEvents.invoiceId} IS NULL AND ${t.auditEvents.event} LIKE 'records.%'`)
-      .orderBy(asc(sql`rowid`))
-      .all()
-      .flatMap((e) => auditEntry(e));
+  async recordsAudit(): Promise<ApiAuditEntry[]> {
+    return (
+      await this.v.db
+        .select()
+        .from(t.auditEvents)
+        .where(sql`${t.auditEvents.invoiceId} IS NULL AND ${t.auditEvents.event} LIKE 'records.%'`)
+        .orderBy(asc(t.auditEvents.seq))
+    ).flatMap((e) => auditEntry(e));
   }
 
-  audit(invoiceId: string | null): ApiAuditEntry[] {
-    const rows = this.v.db
+  /** The audit trail in the order it was written. */
+  async audit(invoiceId: string | null): Promise<ApiAuditEntry[]> {
+    const rows = await this.v.db
       .select()
       .from(t.auditEvents)
       .where(invoiceId ? eq(t.auditEvents.invoiceId, invoiceId) : undefined)
-      .orderBy(asc(sql`rowid`))
-      .all();
+      .orderBy(asc(t.auditEvents.seq));
     return rows.flatMap((e) => auditEntry(e));
   }
 }

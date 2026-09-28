@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { renderScenario, scenarioById } from '@veyra/extractor';
 import { purchaseInvoiceIdempotencyKey, type InvoiceId } from '@veyra/shared';
 import * as t from '../db/schema';
@@ -10,22 +10,33 @@ import { InvalidTransitionError, assertTransition } from './state-machine';
 import { DEMO_USER, VeyraError } from './veyra';
 
 let h: Harness;
-afterEach(() => h?.close());
+afterEach(async () => {
+  await h?.close();
+});
 
 const grn = (date: string, received: string, accepted = received, poLineNo = 1) => ({
   grnDate: date,
   lines: [{ poLineNo, received, accepted }],
 });
+/** The invoice's audit trail and staged creations, in the order they were written. */
 const audit = (id: string) =>
-  h.veyra.db.select().from(t.auditEvents).where(eq(t.auditEvents.invoiceId, id)).all();
+  h.veyra.db
+    .select()
+    .from(t.auditEvents)
+    .where(eq(t.auditEvents.invoiceId, id))
+    .orderBy(asc(t.auditEvents.seq));
 const actions = (id: string) =>
-  h.veyra.db.select().from(t.creationActions).where(eq(t.creationActions.invoiceId, id)).all();
+  h.veyra.db
+    .select()
+    .from(t.creationActions)
+    .where(eq(t.creationActions.invoiceId, id))
+    .orderBy(asc(t.creationActions.seq));
 
 describe('end to end: upload → … → VERIFIED_PENDING_PAYMENT', () => {
   it('S01 clean invoice verifies automatically, with no human step and no payment', async () => {
-    h = createHarness();
+    h = await createHarness();
     const id = await h.upload('S01');
-    expect(h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
+    expect(await h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
     const [pi] = await h.erp.listPurchaseInvoices();
     expect(pi).toMatchObject({
       vendorInvoiceNo: 'SSS/26-27/0451',
@@ -33,7 +44,7 @@ describe('end to end: upload → … → VERIFIED_PENDING_PAYMENT', () => {
       status: 'verified_pending_payment',
       veyraInvoiceId: id,
     });
-    const events = audit(id).map((e) => e.event);
+    const events = (await audit(id)).map((e) => e.event);
     expect(events).toEqual(
       expect.arrayContaining([
         'invoice.uploaded',
@@ -43,8 +54,8 @@ describe('end to end: upload → … → VERIFIED_PENDING_PAYMENT', () => {
         'commit.completed',
       ]),
     );
-    expect(audit(id).find((e) => e.event === 'extraction.completed')?.actorType).toBe('ai');
-    const states = audit(id)
+    expect((await audit(id)).find((e) => e.event === 'extraction.completed')?.actorType).toBe('ai');
+    const states = (await audit(id))
       .filter((e) => e.event === 'invoice.state_changed')
       .map((e) => e.toState);
     expect(states).toEqual([
@@ -58,13 +69,13 @@ describe('end to end: upload → … → VERIFIED_PENDING_PAYMENT', () => {
   });
 
   it('S03 new vendor: auto vendor + auto PO, GRN only by confirmation, all written at commit', async () => {
-    h = createHarness();
+    h = await createHarness();
     const id = await h.upload('S03');
-    expect(h.state(id)).toBe('NEEDS_INPUT');
+    expect(await h.state(id)).toBe('NEEDS_INPUT');
     // Nothing reaches the ERP before the whole transaction is valid.
     expect(await h.erp.findVendorsByNormalizedName('nandi stationers')).toEqual([]);
     await h.answer(id, 'CA_GRN', 'confirm', grn('2026-09-17', '40'));
-    expect(h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
+    expect(await h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
     const [vendor] = await h.erp.findVendorsByNormalizedName('nandi stationers');
     expect(vendor).toMatchObject({ origin: 'created_by_veyra', sourceInvoiceId: id });
     const po = (await h.erp.listPurchaseOrders()).find(
@@ -77,11 +88,10 @@ describe('end to end: upload → … → VERIFIED_PENDING_PAYMENT', () => {
       confirmedByUserId: DEMO_USER.id,
       grnDate: '2026-09-17',
     });
-    const last = h.veyra.db
+    const last = await h.veyra.db
       .select()
       .from(t.validationResults)
-      .where(eq(t.validationResults.invoiceId, id))
-      .all();
+      .where(eq(t.validationResults.invoiceId, id));
     const maxRun = Math.max(...last.map((r) => r.runNo));
     for (const code of ['R21', 'R22', 'R23', 'R24'])
       expect(last.find((r) => r.runNo === maxRun && r.ruleCode === code)).toMatchObject({
@@ -91,11 +101,11 @@ describe('end to end: upload → … → VERIFIED_PENDING_PAYMENT', () => {
   });
 
   it('S04 above threshold asks before creating a PO; the PO records the approver', async () => {
-    h = createHarness();
+    h = await createHarness();
     const id = await h.upload('S04');
     await h.answer(id, 'CA_PO', 'approve');
     await h.answer(id, 'CA_GRN', 'confirm', grn('2026-09-18', '12'));
-    expect(h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
+    expect(await h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
     const po = (await h.erp.listPurchaseOrders()).find((p) => p.sourceInvoiceId === id);
     expect(po).toMatchObject({
       origin: 'created_from_invoice_on_approval',
@@ -104,7 +114,7 @@ describe('end to end: upload → … → VERIFIED_PENDING_PAYMENT', () => {
   });
 
   it('S05 missing item: approved item, then the PO under the limit, then the receipt', async () => {
-    h = createHarness();
+    h = await createHarness();
     const id = await h.upload('S05');
     await h.answer(id, 'CA_ITEM', 'approve', {
       name: 'Whiteboard Marker Box of 10',
@@ -112,42 +122,44 @@ describe('end to end: upload → … → VERIFIED_PENDING_PAYMENT', () => {
       uom: 'BOX',
       gstRate: '18%',
     });
-    expect(h.openQuestions(id).map((q) => q.code)).toEqual(['CA_GRN']);
+    expect((await h.openQuestions(id)).map((q) => q.code)).toEqual(['CA_GRN']);
     await h.answer(id, 'CA_GRN', 'confirm', grn('2026-09-19', '30'));
-    expect(h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
+    expect(await h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
     expect(await h.erp.findItemsByHsn('9608')).toHaveLength(1);
   });
 
   it('S07 ambiguous open PO: the user picks, never Veyra', async () => {
-    h = createHarness();
+    h = await createHarness();
     const id = await h.upload('S07');
-    const q = h.openQuestions(id)[0];
+    const q = (await h.openQuestions(id))[0];
     const pick = q?.options.find((o) => o.label === 'PO-2026-0106');
     await h.answer(id, 'AM_OPEN_PO', pick?.id ?? '');
-    expect(h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
+    expect(await h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
   });
 
   it('S10 quantity differs → record additional receipt → verified', async () => {
-    h = createHarness();
+    h = await createHarness();
     const id = await h.upload('S10');
     await h.answer(id, 'VF_R26', 'receipt');
-    expect(h.openQuestions(id).map((q) => q.code)).toEqual(['CA_GRN']);
+    expect((await h.openQuestions(id)).map((q) => q.code)).toEqual(['CA_GRN']);
     await h.answer(id, 'CA_GRN', 'confirm', grn('2026-09-22', '20'));
-    expect(h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
+    expect(await h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
   });
 
   it('S14 blurry total: the user enters it; it is marked human_corrected and re-validated', async () => {
-    h = createHarness();
+    h = await createHarness();
     const id = await h.upload('S14');
     await h.answer(id, 'MD_FIELD', 'set:header.totalPaise', '16,048.00');
-    expect(h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
-    const f = h.veyra.db
-      .select()
-      .from(t.extractedFields)
-      .where(
-        and(eq(t.extractedFields.invoiceId, id), eq(t.extractedFields.path, 'header.totalPaise')),
-      )
-      .get();
+    expect(await h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
+    const f = (
+      await h.veyra.db
+        .select()
+        .from(t.extractedFields)
+        .where(
+          and(eq(t.extractedFields.invoiceId, id), eq(t.extractedFields.path, 'header.totalPaise')),
+        )
+        .limit(1)
+    )[0];
     expect(f).toMatchObject({
       source: 'human_corrected',
       valueJson: '1604800',
@@ -156,54 +168,54 @@ describe('end to end: upload → … → VERIFIED_PENDING_PAYMENT', () => {
   });
 
   it('S14 confirming the misread total does not verify it: the totals still have to agree', async () => {
-    h = createHarness();
+    h = await createHarness();
     const id = await h.upload('S14');
     await h.answer(id, 'MD_FIELD', 'confirm');
-    expect(h.openQuestions(id).map((q) => q.code)).toEqual(['VF_R09']);
+    expect((await h.openQuestions(id)).map((q) => q.code)).toEqual(['VF_R09']);
   });
 
   it('S16 inactive vendor: reactivation is committed with the invoice', async () => {
-    h = createHarness();
+    h = await createHarness();
     const id = await h.upload('S16');
     expect((await h.erp.getVendor('V003' as never))?.status).toBe('inactive');
     await h.answer(id, 'BD_VENDOR_INACTIVE', 'reactivate');
-    expect(h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
+    expect(await h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
     expect((await h.erp.getVendor('V003' as never))?.status).toBe('active');
   });
 
   it('S17 unreadable GSTIN: picking V005 verifies; picking V006 fails the PO vendor check', async () => {
-    h = createHarness();
+    h = await createHarness();
     const id = await h.upload('S17');
     await h.answer(id, 'AM_VENDOR', 'vendor:V005');
-    expect(h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
-    h.close();
-    h = createHarness();
+    expect(await h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
+    await h.close();
+    h = await createHarness();
     const other = await h.upload('S17');
     await h.answer(other, 'AM_VENDOR', 'vendor:V006');
-    expect(h.openQuestions(other).map((q) => q.code)).toEqual(['VF_R18']);
+    expect((await h.openQuestions(other)).map((q) => q.code)).toEqual(['VF_R18']);
   });
 
   it('S19 unit mismatch: no conversion is invented; correcting a misread unit re-validates', async () => {
-    h = createHarness();
+    h = await createHarness();
     const id = await h.upload('S19');
     await h.answer(id, 'VF_R27', 'set:lines[1].uom', 'NOS');
-    expect(h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
+    expect(await h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
   });
 });
 
 describe('rejection', () => {
   it('S09 one paisa: only correct, re-check or reject; reject is explicit and final', async () => {
-    h = createHarness();
+    h = await createHarness();
     const id = await h.upload('S09');
-    const q = h.openQuestions(id)[0];
+    const q = (await h.openQuestions(id))[0];
     expect(q?.options.map((o) => o.id)).toEqual([
       'set:lines[1].unitPricePaise',
       'recheck',
       'reject',
     ]);
     await h.answer(id, 'VF_R21', 'reject');
-    expect(h.state(id)).toBe('REJECTED');
-    expect(h.veyra.invoiceRow(h.veyra.db, id)).toMatchObject({
+    expect(await h.state(id)).toBe('REJECTED');
+    expect(await h.veyra.invoiceRow(h.veyra.db, id)).toMatchObject({
       rejectedByUserId: DEMO_USER.id,
       rejectedReason: 'Reject this invoice',
     });
@@ -211,33 +223,33 @@ describe('rejection', () => {
   });
 
   it('S08b short receipt then reject: the confirmed GRN never reaches the ERP but stays in the audit (D1)', async () => {
-    h = createHarness();
+    h = await createHarness();
     const id = await h.upload('S08');
     await h.answer(id, 'CA_GRN', 'confirm', grn('2026-09-20', '50', '40'));
-    expect(h.openQuestions(id).map((q) => q.code)).toEqual(['VF_R26']);
+    expect((await h.openQuestions(id)).map((q) => q.code)).toEqual(['VF_R26']);
     await h.answer(id, 'VF_R26', 'reject');
-    expect(h.state(id)).toBe('REJECTED');
+    expect(await h.state(id)).toBe('REJECTED');
     expect(await h.erp.listGrnsForPo('PO-2026-0104' as never)).toEqual([]);
-    expect(actions(id).map((a) => [a.entity, a.status])).toEqual([['grn', 'discarded']]);
-    expect(audit(id).some((e) => e.event === 'creation.discarded')).toBe(true);
+    expect((await actions(id)).map((a) => [a.entity, a.status])).toEqual([['grn', 'discarded']]);
+    expect((await audit(id)).some((e) => e.event === 'creation.discarded')).toBe(true);
   });
 
   it('S06 cited PO not in the ERP: no PO is fabricated', async () => {
-    h = createHarness();
+    h = await createHarness();
     const before = (await createHarnessErpPos()).length;
     const id = await h.upload('S06');
     await h.answer(id, 'VF_R17', 'reject');
-    expect(h.state(id)).toBe('REJECTED');
+    expect(await h.state(id)).toBe('REJECTED');
     expect((await h.erp.listPurchaseOrders()).length).toBe(before);
   });
 
   it('S11b business duplicate after S01 is asked, then rejected', async () => {
-    h = createHarness();
+    h = await createHarness();
     await h.upload('S01');
     const dup = await h.upload('S11b');
-    expect(h.openQuestions(dup).map((q) => q.code)).toEqual(['VF_R11']);
+    expect((await h.openQuestions(dup)).map((q) => q.code)).toEqual(['VF_R11']);
     await h.answer(dup, 'VF_R11', 'reject');
-    expect(h.state(dup)).toBe('REJECTED');
+    expect(await h.state(dup)).toBe('REJECTED');
     expect(await h.erp.listPurchaseInvoices()).toHaveLength(1);
   });
 });
@@ -248,32 +260,32 @@ async function createHarnessErpPos() {
 
 describe('boundaries: the backend is authoritative', () => {
   it('refuses unknown options, bad input, answered questions and other users', async () => {
-    h = createHarness();
+    h = await createHarness();
     const id = await h.upload('S08');
-    const q = h.openQuestions(id)[0];
+    const q = (await h.openQuestions(id))[0];
     if (!q) throw new Error('no question');
-    const ans =
-      (body: { optionId: string; input: unknown }, user: string = DEMO_USER.id) =>
-      () =>
-        h.veyra.answer(q.id, body, user);
-    expect(ans({ optionId: 'override', input: null })).toThrow(/not one of the options/);
-    expect(ans({ optionId: 'confirm', input: grn('2026-09-20', '50', '60') })).toThrow(
-      /Accepted cannot be more/,
+    const ans = (body: { optionId: string; input: unknown }, user: string = DEMO_USER.id) =>
+      h.veyra.answer(q.id, body, user);
+    await expect(ans({ optionId: 'override', input: null })).rejects.toThrow(
+      /not one of the options/,
     );
-    expect(ans({ optionId: 'confirm', input: grn('2026-10-20', '50') })).toThrow(
+    await expect(
+      ans({ optionId: 'confirm', input: grn('2026-09-20', '50', '60') }),
+    ).rejects.toThrow(/Accepted cannot be more/);
+    await expect(ans({ optionId: 'confirm', input: grn('2026-10-20', '50') })).rejects.toThrow(
       /between the order date and today/,
     );
-    expect(
+    await expect(
       ans({ optionId: 'confirm', input: grn('2026-09-20', '50') }, '01K00000000000000000000009'),
-    ).toThrow(VeyraError);
+    ).rejects.toThrow(VeyraError);
     await h.answer(id, 'CA_GRN', 'confirm', grn('2026-09-20', '50'));
-    expect(ans({ optionId: 'confirm', input: grn('2026-09-20', '50') })).toThrow(
+    await expect(ans({ optionId: 'confirm', input: grn('2026-09-20', '50') })).rejects.toThrow(
       /already been answered/,
     );
   });
 
   it('rejects files that are not invoices, and the same file twice', async () => {
-    h = createHarness();
+    h = await createHarness();
     await expect(
       h.veyra.upload({ filename: 'x.pdf', bytes: new TextEncoder().encode('hello') }),
     ).rejects.toThrow(/PDF, JPEG or PNG/);
@@ -286,22 +298,22 @@ describe('boundaries: the backend is authoritative', () => {
   });
 
   it('an unknown document fails visibly; it can be retried or rejected, never guessed', async () => {
-    h = createHarness();
+    h = await createHarness();
     const { invoiceId } = await h.veyra.upload({
       filename: 'scan.pdf',
       // A complete-looking PDF whose body is damaged: accepted, then unreadable.
       bytes: new TextEncoder().encode('%PDF-1.4\n1 0 obj << /Garbage >>\ntrailer\n%%EOF\n'),
     });
     await h.runner.drain();
-    expect(h.veyra.invoiceRow(h.veyra.db, invoiceId)).toMatchObject({
+    expect(await h.veyra.invoiceRow(h.veyra.db, invoiceId)).toMatchObject({
       state: 'FAILED',
       failedStage: 'EXTRACTING',
     });
-    h.veyra.reprocess(invoiceId, DEMO_USER.id);
+    await h.veyra.reprocess(invoiceId, DEMO_USER.id);
     await h.runner.drain();
-    expect(h.state(invoiceId)).toBe('FAILED');
-    h.veyra.reject(invoiceId, 'Not an invoice', DEMO_USER.id);
-    expect(h.state(invoiceId)).toBe('REJECTED');
+    expect(await h.state(invoiceId)).toBe('FAILED');
+    await h.veyra.reject(invoiceId, 'Not an invoice', DEMO_USER.id);
+    expect(await h.state(invoiceId)).toBe('REJECTED');
   });
 
   it('illegal transitions throw; there is no transition out of the terminal states', () => {
@@ -315,17 +327,17 @@ describe('boundaries: the backend is authoritative', () => {
   });
 
   it('NEEDS_INPUT waits indefinitely: nothing escalates or times out', async () => {
-    h = createHarness();
+    h = await createHarness();
     const id = await h.upload('S09');
     for (let i = 0; i < 3; i++) await h.runner.drain();
-    expect(h.state(id)).toBe('NEEDS_INPUT');
-    expect(h.veyra.pendingJobs()).toBe(0);
+    expect(await h.state(id)).toBe('NEEDS_INPUT');
+    expect(await h.veyra.pendingJobs()).toBe(0);
   });
 });
 
 describe('idempotency and crash recovery', () => {
   it('running the same pipeline and commit jobs again creates nothing new', async () => {
-    h = createHarness();
+    h = await createHarness();
     const id = await h.upload('S03');
     await h.answer(id, 'CA_GRN', 'confirm', grn('2026-09-17', '40'));
     const before = {
@@ -336,7 +348,7 @@ describe('idempotency and crash recovery', () => {
     };
     await h.veyra.runPipeline(id);
     await h.veyra.runCommit(id);
-    h.veyra.db.transaction((tx) => h.veyra.enqueue(tx, id, 'pipeline'));
+    await h.veyra.db.transaction((tx) => h.veyra.enqueue(tx, id, 'pipeline'));
     await h.runner.drain();
     expect({
       pos: (await h.erp.listPurchaseOrders()).length,
@@ -344,13 +356,13 @@ describe('idempotency and crash recovery', () => {
       vendors: (await h.erp.listVendors()).length,
       invoices: (await h.erp.listPurchaseInvoices()).length,
     }).toEqual(before);
-    expect(h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
+    expect(await h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
   });
 
   for (const crashAt of ['vendor', 'po', 'grn', 'purchase_invoice']) {
     it(`a crash right after the ERP wrote the ${crashAt} resumes without duplicates`, async () => {
       let armed = true;
-      h = createHarness({
+      h = await createHarness({
         commitHooks: {
           afterErpWrite: (entity) => {
             if (armed && entity === crashAt) {
@@ -361,19 +373,22 @@ describe('idempotency and crash recovery', () => {
         },
       });
       const id = await h.upload('S03');
-      const q = h.openQuestions(id)[0];
-      h.veyra.answer(
+      const q = (await h.openQuestions(id))[0];
+      await h.veyra.answer(
         q?.id ?? '',
         { optionId: 'confirm', input: grn('2026-09-17', '40') },
         DEMO_USER.id,
       );
       await expect(h.runner.drain()).rejects.toThrow(CrashSignal);
-      expect(h.state(id)).toBe('COMMITTING');
+      expect(await h.state(id)).toBe('COMMITTING');
 
-      h = h.restart();
-      expect(h.veyra.recoverJobs()).toBe(1);
+      h = await h.restart();
+      // The restarted worker recovers the job once its lease has expired (the process died, so
+      // nothing renewed it). Simulated here by ageing the lease instead of waiting.
+      await h.veyra.db.update(t.jobs).set({ lockedAt: '2026-09-28T05:00:00.000Z' });
+      expect(await h.runner.recoverExpired()).toBe(1);
       await h.runner.drain();
-      expect(h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
+      expect(await h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
       expect(await h.erp.findVendorsByNormalizedName('nandi stationers')).toHaveLength(1);
       expect(
         (await h.erp.listPurchaseOrders()).filter((p) => p.sourceInvoiceId === id),
@@ -387,7 +402,7 @@ describe('idempotency and crash recovery', () => {
 
   it('a transient ERP outage is retried with the same keys', async () => {
     let failures = 1;
-    h = createHarness({
+    h = await createHarness({
       erpHooks: {
         failpoint: (name) => {
           if (name === 'purchase_invoice.header_inserted' && failures-- > 0)
@@ -396,26 +411,25 @@ describe('idempotency and crash recovery', () => {
       },
     });
     const id = await h.upload('S01');
-    const job = h.veyra.latestJobs(id).find((j) => j.type === 'commit');
+    const job = (await h.veyra.latestJobs(id)).find((j) => j.type === 'commit');
     expect(job).toMatchObject({ status: 'queued', attempts: 1 });
-    expect(h.state(id)).toBe('COMMITTING');
-    h.veyra.db
+    expect(await h.state(id)).toBe('COMMITTING');
+    await h.veyra.db
       .update(t.jobs)
       .set({ runAfter: '2000-01-01T00:00:00.000Z' })
-      .where(eq(t.jobs.id, job?.id ?? ''))
-      .run();
+      .where(eq(t.jobs.id, job?.id ?? ''));
     await h.runner.drain();
-    expect(h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
+    expect(await h.state(id)).toBe('VERIFIED_PENDING_PAYMENT');
     expect(await h.erp.listPurchaseInvoices()).toHaveLength(1);
   });
 
   it('pre-commit re-check: if the ERP changed after validation, the invoice goes back to MATCHING', async () => {
-    h = createHarness();
+    h = await createHarness();
     const s = scenarioById('S01');
     if (!s) throw new Error('S01');
     const { invoiceId } = await h.veyra.upload({ filename: s.file, bytes: renderScenario(s) });
     await h.runner.step(); // pipeline: validated, COMMITTING, commit job queued
-    expect(h.state(invoiceId)).toBe('COMMITTING');
+    expect(await h.state(invoiceId)).toBe('COMMITTING');
     // Meanwhile someone records the same supplier invoice in the ERP directly.
     const outsider = '01K0000000000000000000ZZZZ' as InvoiceId;
     await h.erp.recordPurchaseInvoice(
@@ -461,9 +475,9 @@ describe('idempotency and crash recovery', () => {
       purchaseInvoiceIdempotencyKey(outsider),
     );
     await h.runner.drain();
-    expect(audit(invoiceId).some((e) => e.event === 'commit.conflict')).toBe(true);
-    expect(h.state(invoiceId)).toBe('NEEDS_INPUT');
-    expect(h.openQuestions(invoiceId).map((q) => q.code)).toEqual(['VF_R11']);
+    expect((await audit(invoiceId)).some((e) => e.event === 'commit.conflict')).toBe(true);
+    expect(await h.state(invoiceId)).toBe('NEEDS_INPUT');
+    expect((await h.openQuestions(invoiceId)).map((q) => q.code)).toEqual(['VF_R11']);
     expect(await h.erp.listPurchaseInvoices()).toHaveLength(1);
   });
 });

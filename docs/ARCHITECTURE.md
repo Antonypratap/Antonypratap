@@ -836,3 +836,42 @@ Infrastructure and operational hardening only. SQLite stays the application data
 
 **Constraints**
 - **TECHNICAL CONSTRAINT** SQLite and local documents: one process per data directory, on a persistent disk; no horizontal scaling until PostgreSQL. No authentication yet: deploy behind network access control only.
+
+## 19. Phase 6A: PostgreSQL application database
+
+A persistence-layer change only. The Veyra application database moved from SQLite (better-sqlite3, synchronous) to PostgreSQL (Drizzle, asynchronous). The fake ERP stays SQLite behind `ErpConnector`, and the two databases are never combined. Unchanged: the workflow, state machine, questions, rules, matching, validation, the ERP contract and reconciliation, extraction/OCR, document storage, demo scenarios and the UI. This supersedes the SQLite notes in §4.2 and the single-instance constraint in §18. Operations: [DEPLOYMENT.md](DEPLOYMENT.md). Labels as in §13.
+
+**Schema and data types**
+- **IMPLEMENTATION DECISION** Schema (`apps/api/src/db/schema.ts`, `pg-core`): the same 15 tables, columns, relationships, foreign keys, unique rules (including the partial unique index on open questions), check constraints and indexes, generated as one migration (`drizzle/0000_init.sql`).
+  - Veyra still generates its ULID ids.
+  - Integers stay integers (money, quantities and rates live inside validated JSON as integers, as before; there are no float columns). JSON stays text, byte for byte.
+  - SQLite-only checks (`typeof(x) = 'integer'`) are enforced by the column types instead.
+- **IMPLEMENTATION DECISION** Time: instants (created/updated/answered/committed/confirmed/locked/run-after) are `timestamp(3) with time zone`. They are read and written as the same ISO-8601 UTC strings as before, and sessions run in UTC. There are no business-date columns: invoice and receipt dates stay YYYY-MM-DD inside the validated JSON and are never converted.
+- **IMPLEMENTATION DECISION** Order: SQLite returned rows in rowid order, or in the order of the index it used. ULIDs do not give insertion order (random tail), and PostgreSQL has no stable physical order. So:
+  - 13 tables gain `seq` (an identity column recording insertion order).
+  - Every list whose order reaches the UI, the audit trail or the engine now orders explicitly: by `seq`, by `answer_seq`, by line number, or, for extracted fields, by path in byte order (what SQLite's `(invoice_id, path)` index returned).
+
+**Access, transactions and concurrency**
+- **IMPLEMENTATION DECISION** Access: every persistence call is async.
+  - Transaction boundaries are unchanged, with each atomic unit still one transaction: upload, extraction, evaluation, answer, rejection, reprocess, each commit step, import confirmation and the demo reset.
+  - `rowid` ordering, `.changes` counts and SQLite-only SQL are replaced by `seq`, `RETURNING` and portable SQL.
+  - The raw SQL left is `select 1`, advisory locks, and the demo reset's `DELETE`s.
+- **CLIENT REQUIREMENT** Concurrency: several API/worker processes may share one database. What SQLite's single writer guaranteed is now explicit:
+  - Job claims are serialised by a transaction-scoped advisory lock, and the update is conditional on `queued`, so a job is never claimed twice.
+  - A job is not claimed while another job of the same invoice runs.
+  - Evaluation locks the invoice row (`FOR UPDATE`).
+  - Answer numbering is serialised, and a second concurrent answer to one question is refused and rolled back.
+  - A concurrent duplicate upload is refused by the unique checksum.
+  - A concurrent import confirmation records once.
+  - ERP writes stay idempotent by key (the ERP contract).
+- **IMPLEMENTATION DECISION** Jobs: the existing `jobs` table, with no Redis. Recovery at startup is now lease-based only (a blanket re-queue would steal live workers' jobs). The default lease is 5 minutes, renewed every lease/3 while a job runs. `drain()` waits for the runner's own loop, so "drained" means nothing of that runner is still running.
+
+**Connections, migrations and tests**
+- **IMPLEMENTATION DECISION** Connections: one node-postgres pool per process (`DATABASE_URL`, `VEYRA_DB_POOL_MAX`, connect and statement timeouts). The pool is closed on graceful shutdown. Readiness checks a round trip. The URL is a secret: validated without echoing and never logged.
+- **IMPLEMENTATION DECISION** Development without `DATABASE_URL` uses PGlite: PostgreSQL embedded in the process, same SQL, schema and migrations, persisted in `<dataDir>/pgdata`. It runs one statement at a time (transactions are serialised, not interleaved; tested). It is refused outside development and in tests.
+- **IMPLEMENTATION DECISION** Migrations: versioned Drizzle SQL, applied once each, recorded, never destructive.
+  - `db:migrate` is explicit in production, and the API refuses to start with pending migrations.
+  - `db:verify` catches schema/migration drift.
+  - A test rebuilds the schema from the migrations and compares tables, columns, nullability, types, foreign keys, checks and indexes with the declared schema.
+- **CLIENT REQUIREMENT** Data migration: `db:migrate-from-sqlite` (`src/db/sqlite-import.ts`) is non-destructive (it reads a backup copy of the SQLite file) and copies into an empty, migrated database in one transaction, verified inside it (every value of every row, counts, order, states, relationships). Any difference rolls everything back. The retired SQLite migrations (`drizzle-sqlite/`) exist only for this tool.
+- **TECHNICAL CONSTRAINT** Tests run against real PostgreSQL (`TEST_DATABASE_URL`, one throwaway database per test cloned from a migrated template) and fail explicitly without it; CI provides a PostgreSQL service. Documents remain on local disk, so multi-host deployments wait for an object-storage adapter.

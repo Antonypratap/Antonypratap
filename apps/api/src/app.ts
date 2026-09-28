@@ -41,6 +41,14 @@ export interface AppConfig {
   storage?: DocumentStorage;
   /** Apply pending migrations on open (default true; production runs `db:migrate` instead). */
   migrate?: boolean;
+  /**
+   * The Veyra application database (PostgreSQL). `url` is required outside development; without
+   * it, development uses the embedded engine in `<dataDir>/pgdata`. Tests always pass a URL.
+   */
+  database?: {
+    url?: string | null;
+    pool?: { max?: number; connectTimeoutMs?: number; statementTimeoutMs?: number };
+  };
   /** Structured logger; absent: silent. */
   log?: Logger;
   limits?: { maxUploadBytes: number; maxJsonBodyBytes: number } & ConfigurableDocumentLimits;
@@ -88,9 +96,18 @@ export async function createApp(config: AppConfig) {
   const demoMode = config.demo && environment !== 'production';
   if (config.limits) configureDocumentLimits(config.limits);
   mkdirSync(config.dataDir, { recursive: true });
-  const { sqlite, db } = openVeyraDb(join(config.dataDir, 'veyra.db'), {
+  const url = config.database?.url ?? null;
+  if (!url && environment !== 'development')
+    throw new Error('The Veyra database URL (DATABASE_URL) is required outside development.');
+  if (!url && process.env.VITEST)
+    throw new Error('Tests run against PostgreSQL: pass a database URL (see TEST_DATABASE_URL).');
+  const database = await openVeyraDb({
+    url,
+    pgliteDir: join(config.dataDir, 'pgdata'),
     migrate: config.migrate ?? true,
+    ...(config.database?.pool ? { pool: config.database.pool } : {}),
   });
+  const db = database.db;
   const erp = FakeErpConnector.open({
     filename: join(config.dataDir, 'fake_erp.db'),
     ...(config.clock ? { clock: config.clock } : {}),
@@ -110,6 +127,7 @@ export async function createApp(config: AppConfig) {
     initialSettings,
     ...(config.clock ? { clock: config.clock } : {}),
   });
+  await veyra.init();
   // A fresh ERP file gets the DEMO.md seed.
   if ((await erp.listVendors()).length === 0 && demoMode) erp.reset('demo');
   const runner = new JobRunner(veyra, {
@@ -124,26 +142,20 @@ export async function createApp(config: AppConfig) {
 
   // Demo only (never registered in production): wipe Veyra's data and its stored documents.
   const resetDemo = async (mode: 'demo' | 'empty' = 'demo') => {
-    runner.stop();
+    await runner.shutdown(10_000);
     erp.reset(mode === 'empty' ? 'company-only' : 'demo');
     const keys = [
-      ...db
-        .select()
-        .from(t.documents)
-        .all()
-        .map((d) => veyra.documentKey(d)),
-      ...db
-        .select({ filesJson: t.imports.filesJson, id: t.imports.id })
-        .from(t.imports)
-        .all()
-        .flatMap((i) =>
-          (JSON.parse(i.filesJson) as { key?: string; path?: string }[]).map(
-            (f) => f.key ?? `imports/${i.id}/${(f.path ?? '').split(/[\\/]/).pop() ?? ''}`,
-          ),
+      ...(await db.select().from(t.documents)).map((d) => veyra.documentKey(d)),
+      ...(
+        await db.select({ filesJson: t.imports.filesJson, id: t.imports.id }).from(t.imports)
+      ).flatMap((i) =>
+        (JSON.parse(i.filesJson) as { key?: string; path?: string }[]).map(
+          (f) => f.key ?? `imports/${i.id}/${(f.path ?? '').split(/[\\/]/).pop() ?? ''}`,
         ),
+      ),
     ];
     for (const key of keys) await storage.delete(key).catch(() => undefined);
-    db.transaction((tx) => {
+    await db.transaction(async (tx) => {
       for (const table of [
         'imports',
         'erp_writes',
@@ -159,7 +171,7 @@ export async function createApp(config: AppConfig) {
         'invoices',
         'documents',
       ]) {
-        tx.run(sql.raw(`DELETE FROM ${table}`));
+        await tx.execute(sql.raw(`DELETE FROM ${table}`));
       }
     });
     runner.start();
@@ -173,7 +185,14 @@ export async function createApp(config: AppConfig) {
     ...(config.limits ? { limits: config.limits } : {}),
     ...(config.rateLimits ? { rateLimits: config.rateLimits } : {}),
     ...(config.trustProxy !== undefined ? { trustProxy: config.trustProxy } : {}),
-    readiness: readinessCheck({ veyra, storage, runner, environment, expectWorker: true }),
+    readiness: readinessCheck({
+      veyra,
+      storage,
+      runner,
+      pingDatabase: database.ping,
+      environment,
+      expectWorker: true,
+    }),
   });
   let closed: Promise<void> | null = null;
   return {
@@ -182,6 +201,7 @@ export async function createApp(config: AppConfig) {
     server,
     storage,
     environment,
+    database,
     /**
      * Graceful shutdown: stop taking requests (in-flight ones finish), let the current job finish
      * or put it back in the queue, then close the database, the ERP and the document readers.
@@ -190,7 +210,7 @@ export async function createApp(config: AppConfig) {
       (closed ??= (async () => {
         await server.close();
         await runner.shutdown(graceMs);
-        sqlite.close();
+        await database.close();
         erp.close();
         await extractor.close?.();
       })()),

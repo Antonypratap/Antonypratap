@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import {
   normalizeInvoiceNumber,
   purchaseInvoiceIdempotencyKey,
@@ -57,20 +57,22 @@ class PlanChanged extends Error {}
 
 type LedgerStatus = (typeof t.erpWrites.$inferSelect)['status'];
 
-function ledgerRow(v: Veyra, key: IdempotencyKey) {
-  return v.db.select().from(t.erpWrites).where(eq(t.erpWrites.idempotencyKey, key)).get();
+async function ledgerRow(v: Veyra, key: IdempotencyKey) {
+  return (
+    await v.db.select().from(t.erpWrites).where(eq(t.erpWrites.idempotencyKey, key)).limit(1)
+  )[0];
 }
 
-function mark(
+async function mark(
   v: Veyra,
   invoiceId: string,
   operation: ErpWriteOperation,
   key: IdempotencyKey,
   status: LedgerStatus,
   more: { erpId?: string; externalRef?: string | null; errorCode?: string } = {},
-): void {
+): Promise<void> {
   const now = v.now();
-  v.db
+  await v.db
     .insert(t.erpWrites)
     .values({
       idempotencyKey: key,
@@ -92,8 +94,7 @@ function mark(
         errorCode: more.errorCode ?? null,
         updatedAt: now,
       },
-    })
-    .run();
+    });
 }
 
 async function reconcile(v: Veyra, key: IdempotencyKey): Promise<ErpWriteReconciliation> {
@@ -116,62 +117,65 @@ async function ledgerWrite<T>(
   send: () => Promise<T>,
   identify: (r: T) => { erpId: string; externalRef: string | null },
 ): Promise<T> {
-  const before = ledgerRow(v, key)?.status;
-  if (before !== 'confirmed') mark(v, invoiceId, operation, key, 'pending');
-  const confirmed = (r: T, reconciled: boolean) => {
-    mark(v, invoiceId, operation, key, 'confirmed', identify(r));
+  const before = (await ledgerRow(v, key))?.status;
+  if (before !== 'confirmed') await mark(v, invoiceId, operation, key, 'pending');
+  const confirmed = async (r: T, reconciled: boolean) => {
+    await mark(v, invoiceId, operation, key, 'confirmed', identify(r));
     if (reconciled || before === 'unknown')
-      v.db.transaction((tx) =>
-        v.audit(tx, invoiceId, { type: 'system' }, 'erp.reconciled', {
-          operation,
-          erpId: identify(r).erpId,
-        }),
+      await v.db.transaction(
+        async (tx) =>
+          await v.audit(tx, invoiceId, { type: 'system' }, 'erp.reconciled', {
+            operation,
+            erpId: identify(r).erpId,
+          }),
       );
     return r;
   };
   try {
-    return confirmed(await send(), false);
+    return await confirmed(await send(), false);
   } catch (error) {
     if (error instanceof ErpUnavailableError) {
       if (error.writeOutcome === 'unknown') {
         const r = await reconcile(v, key);
         if (r.outcome === 'created') {
-          mark(v, invoiceId, operation, key, 'confirmed', { erpId: r.recordId });
-          return confirmed(await send(), true);
+          await mark(v, invoiceId, operation, key, 'confirmed', { erpId: r.recordId });
+          return await confirmed(await send(), true);
         }
         if (r.outcome === 'unknown') {
-          mark(v, invoiceId, operation, key, 'unknown', { errorCode: error.code });
+          await mark(v, invoiceId, operation, key, 'unknown', { errorCode: error.code });
           if (before !== 'unknown')
-            v.db.transaction((tx) =>
-              v.audit(tx, invoiceId, { type: 'system' }, 'erp.reconciliation_required', {
-                operation,
-              }),
+            await v.db.transaction(
+              async (tx) =>
+                await v.audit(tx, invoiceId, { type: 'system' }, 'erp.reconciliation_required', {
+                  operation,
+                }),
             );
           throw error;
         }
       }
-      mark(v, invoiceId, operation, key, 'not_created', { errorCode: error.code });
+      await mark(v, invoiceId, operation, key, 'not_created', { errorCode: error.code });
       // Once per outage, not once per retry.
       if (before !== 'not_created')
-        v.db.transaction((tx) =>
-          v.audit(tx, invoiceId, { type: 'system' }, 'erp.unavailable', { operation }),
+        await v.db.transaction(
+          async (tx) =>
+            await v.audit(tx, invoiceId, { type: 'system' }, 'erp.unavailable', { operation }),
         );
       throw error;
     }
     if (isErpConnectorError(error))
-      mark(v, invoiceId, operation, key, 'failed', { errorCode: error.code });
+      await mark(v, invoiceId, operation, key, 'failed', { errorCode: error.code });
     throw error;
   }
 }
 
 /** Whether an ERP write for this invoice may already have been sent (so no fresh re-check). */
-function writeMayHaveBeenSent(v: Veyra, invoiceId: string): boolean {
-  return v.db
-    .select({ status: t.erpWrites.status })
-    .from(t.erpWrites)
-    .where(eq(t.erpWrites.invoiceId, invoiceId))
-    .all()
-    .some((r) => r.status === 'pending' || r.status === 'confirmed' || r.status === 'unknown');
+async function writeMayHaveBeenSent(v: Veyra, invoiceId: string): Promise<boolean> {
+  return (
+    await v.db
+      .select({ status: t.erpWrites.status })
+      .from(t.erpWrites)
+      .where(eq(t.erpWrites.invoiceId, invoiceId))
+  ).some((r) => r.status === 'pending' || r.status === 'confirmed' || r.status === 'unknown');
 }
 
 /**
@@ -219,33 +223,39 @@ export async function executeCommit(
   if (!plan) throw new Error('COMMITTING without a commit plan');
   const erp = v.erp;
   const sys = { type: 'system' as const };
-  const inv = v.invoiceRow(v.db, invoiceId);
+  const inv = await v.invoiceRow(v.db, invoiceId);
   const rows = () =>
-    v.db.select().from(t.creationActions).where(eq(t.creationActions.invoiceId, invoiceId)).all();
+    v.db
+      .select()
+      .from(t.creationActions)
+      .where(eq(t.creationActions.invoiceId, invoiceId))
+      .orderBy(asc(t.creationActions.seq));
+  // The invoice's creation actions as last read (refreshed after each committed action).
+  let actions = await rows();
   // Once a write may have reached the ERP, the frozen plan is resumed with the same keys: a fresh
   // re-check would see Veyra's own records and mistake them for changes (ARCHITECTURE §17).
   const started =
-    rows().some((r) => plan.actionIds.includes(r.id) && r.status === 'committed') ||
+    actions.some((r) => plan.actionIds.includes(r.id) && r.status === 'committed') ||
     inv.erpPurchaseInvoiceId !== null ||
-    writeMayHaveBeenSent(v, invoiceId);
+    (await writeMayHaveBeenSent(v, invoiceId));
 
-  const backToMatching = (reason: string, detail: Record<string, JsonValue> = {}) => {
-    v.db.transaction((tx) => {
-      for (const a of tx
+  const backToMatching = async (reason: string, detail: Record<string, JsonValue> = {}) => {
+    await v.db.transaction(async (tx) => {
+      for (const a of await tx
         .select()
         .from(t.creationActions)
         .where(
           and(eq(t.creationActions.invoiceId, invoiceId), eq(t.creationActions.status, 'staged')),
         )
-        .all()) {
-        tx.update(t.creationActions)
+        .orderBy(asc(t.creationActions.seq))) {
+        await tx
+          .update(t.creationActions)
           .set({ status: 'discarded' })
-          .where(eq(t.creationActions.id, a.id))
-          .run();
+          .where(eq(t.creationActions.id, a.id));
       }
-      v.audit(tx, invoiceId, sys, 'commit.conflict', { reason, ...detail });
-      v.transition(tx, invoiceId, 'COMMITTING', 'MATCHING', sys, { commitPlanJson: null });
-      v.enqueue(tx, invoiceId, 'pipeline');
+      await v.audit(tx, invoiceId, sys, 'commit.conflict', { reason, ...detail });
+      await v.transition(tx, invoiceId, 'COMMITTING', 'MATCHING', sys, { commitPlanJson: null });
+      await v.enqueue(tx, invoiceId, 'pipeline');
     });
     v.onEnqueue();
   };
@@ -254,17 +264,18 @@ export async function executeCommit(
   if (!started) {
     const fresh = await v.engine(invoiceId);
     if (!fresh.plan || canonical(fresh.plan) !== canonical(plan)) {
-      backToMatching(
+      await backToMatching(
         'Your records changed since the invoice was checked, so Veyra is checking it again.',
       );
       return;
     }
-    v.db.transaction((tx) =>
-      v.audit(tx, invoiceId, sys, 'commit.started', { actions: plan.actionIds.length }),
+    await v.db.transaction(
+      async (tx) =>
+        await v.audit(tx, invoiceId, sys, 'commit.started', { actions: plan.actionIds.length }),
     );
   }
 
-  const actionById = (id: string) => rows().find((r) => r.id === id);
+  const actionById = (id: string) => actions.find((r) => r.id === id);
   const refId = (ref: Ref): ErpId => {
     if (ref.kind === 'erp') return ref.id as ErpId;
     const a = actionById(ref.actionId);
@@ -452,12 +463,12 @@ export async function executeCommit(
       }
       v.commitHooks.afterErpWrite?.(a.entity, erpId);
       const now = v.now();
-      v.db.transaction((tx) => {
-        tx.update(t.creationActions)
+      await v.db.transaction(async (tx) => {
+        await tx
+          .update(t.creationActions)
           .set({ status: 'committed', erpId, committedAt: now })
-          .where(eq(t.creationActions.id, a.id))
-          .run();
-        v.audit(tx, invoiceId, sys, 'creation.committed', {
+          .where(eq(t.creationActions.id, a.id));
+        await v.audit(tx, invoiceId, sys, 'creation.committed', {
           actionId: a.id,
           entity: a.entity,
           erpId,
@@ -465,6 +476,7 @@ export async function executeCommit(
           policyCode: a.policyCode,
         });
       });
+      actions = await rows();
     }
 
     // 3. The purchase invoice, after checking its natural key.
@@ -478,7 +490,7 @@ export async function executeCommit(
       fy,
     );
     if (existing && existing.veyraInvoiceId !== invoiceId) {
-      backToMatching('The same invoice was recorded in the ERP meanwhile.', {
+      await backToMatching('The same invoice was recorded in the ERP meanwhile.', {
         existing: existing.id,
       });
       return;
@@ -501,17 +513,18 @@ export async function executeCommit(
     const invoiceKey = purchaseInvoiceIdempotencyKey(source);
     if (existing) {
       // Veyra's own record is already there (a lost response, found by its natural key).
-      const before = ledgerRow(v, invoiceKey)?.status;
-      mark(v, invoiceId, 'recordPurchaseInvoice', invoiceKey, 'confirmed', {
+      const before = (await ledgerRow(v, invoiceKey))?.status;
+      await mark(v, invoiceId, 'recordPurchaseInvoice', invoiceKey, 'confirmed', {
         erpId: existing.id,
         externalRef: existing.vendorInvoiceNo,
       });
       if (before !== 'confirmed')
-        v.db.transaction((tx) =>
-          v.audit(tx, invoiceId, sys, 'erp.reconciled', {
-            operation: 'recordPurchaseInvoice',
-            erpId: existing.id,
-          }),
+        await v.db.transaction(
+          async (tx) =>
+            await v.audit(tx, invoiceId, sys, 'erp.reconciled', {
+              operation: 'recordPurchaseInvoice',
+              erpId: existing.id,
+            }),
         );
     }
     const recorded =
@@ -544,14 +557,14 @@ export async function executeCommit(
     v.commitHooks.afterErpWrite?.('purchase_invoice', recorded.id);
 
     // 4. Verified. Payment stays outside Veyra.
-    v.db.transaction((tx) => {
-      v.audit(tx, invoiceId, sys, 'commit.completed', {
+    await v.db.transaction(async (tx) => {
+      await v.audit(tx, invoiceId, sys, 'commit.completed', {
         purchaseInvoiceId: recorded.id,
         vendorErpId: vendorId,
         poErpId: poId,
         status: recorded.status,
       });
-      v.transition(tx, invoiceId, 'COMMITTING', 'VERIFIED_PENDING_PAYMENT', sys, {
+      await v.transition(tx, invoiceId, 'COMMITTING', 'VERIFIED_PENDING_PAYMENT', sys, {
         erpPurchaseInvoiceId: recorded.id,
         vendorErpId: vendorId,
         poErpId: poId,
@@ -559,14 +572,14 @@ export async function executeCommit(
     });
   } catch (error) {
     if (error instanceof ErpConflictError) {
-      backToMatching(
+      await backToMatching(
         'A record Veyra was about to create now exists in your ERP. Veyra is checking again.',
         { entity: error.entity, existingId: error.existingId },
       );
       return;
     }
     if (error instanceof PlanChanged) {
-      backToMatching(error.message);
+      await backToMatching(error.message);
       return;
     }
     throw error;

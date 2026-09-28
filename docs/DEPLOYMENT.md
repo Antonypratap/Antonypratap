@@ -1,9 +1,9 @@
 # Deploying Veyra
 
-How to run Veyra as a hosted application today: prerequisites, configuration, build, migrations,
-startup, health, shutdown, storage, logs, backups and rollback. What is **not** production-ready
-yet is in [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md); design background is in
-[ARCHITECTURE §18](ARCHITECTURE.md).
+How to run Veyra as a hosted application: prerequisites, configuration, build, database
+migrations, startup, health, shutdown, storage, logs, backups and rollback. What is **not**
+production-ready yet is in [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md); design background is
+in [ARCHITECTURE §18–19](ARCHITECTURE.md).
 
 > **Read this first.** Veyra has **no user authentication**. The demo PIN is a curtain in the
 > browser for demos, not security: the API does not check it, and production does not depend on
@@ -12,12 +12,15 @@ yet is in [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md); design background 
 
 ## 1. Prerequisites
 
-- Linux VM or container host with **Node.js ≥ 22.12** and `npm`.
-- A **persistent disk** mounted for Veyra's data (for example `/var/lib/veyra`). It holds the SQLite
-  database and the uploaded documents, and it must survive restarts and redeploys. A container's
-  own filesystem is not enough.
+- **PostgreSQL 14 or newer** (16 recommended) for the Veyra application database. A managed
+  service (AWS RDS, DigitalOcean Managed PostgreSQL, …) or your own server. Staging and production
+  each get their **own** database.
+- A Linux VM or container host with **Node.js ≥ 22.12** and `npm`.
+- A **persistent disk** mounted for Veyra's data (for example `/var/lib/veyra`). It holds the
+  uploaded documents and, while it is the ERP, the fake ERP's SQLite file. It must survive restarts
+  and redeploys; a container's own filesystem is not enough.
 - A reverse proxy for TLS and access control (Caddy, Nginx, a cloud load balancer, …).
-- `sqlite3` command-line tool for backups (section 10).
+- `pg_dump` / `pg_restore` (PostgreSQL client tools) for backups (section 10).
 
 ## 2. Configuration
 
@@ -28,26 +31,38 @@ All configuration comes from environment variables, read and validated once at s
 |---|---|---|---|
 | `VEYRA_ENV` | `development` (default) | `staging` | `production` (also implied by `NODE_ENV=production`) |
 | `NODE_ENV` | any | `production` recommended | **must be** `production` |
+| `DATABASE_URL` | optional (see below) | **required** | **required** |
 | `VEYRA_DATA_DIR` | `<repo>/data/veyra` | **required**, absolute | **required**, absolute |
 | `VEYRA_ERP` | `fake` | **required** (`fake`) | **required** (`fake`) |
 | `VEYRA_DEMO` | on | allowed | **refused** |
 | `VEYRA_ALLOW_FIXTURE_EXTRACTOR` | allowed | allowed | **refused** |
 | Migrations at startup | yes | yes | **no** (`VEYRA_MIGRATE_ON_START` defaults off) |
 
-If something is missing or invalid, the API prints what is wrong **by variable name** and exits
-with status 1. It never prints values and never starts half-configured.
+- **`DATABASE_URL`**: `postgres://user:password@host:5432/veyra?sslmode=require` (use TLS to a
+  managed database). It is a **secret**: keep it in the platform's secret store. Veyra never
+  prints, logs or returns it; a malformed URL is reported by name only.
+- **Pool:**
+  - `VEYRA_DB_POOL_MAX` (default 10) is the number of connections per API process.
+  - `VEYRA_DB_CONNECT_TIMEOUT_MS` (default 5 s) bounds a connection attempt.
+  - `VEYRA_DB_STATEMENT_TIMEOUT_MS` (default 30 s) cancels a runaway statement.
+  - Keep `processes × VEYRA_DB_POOL_MAX` below the server's `max_connections`.
+- **Development without `DATABASE_URL`:** Veyra runs PostgreSQL **embedded in the process** (PGlite,
+  stored in `<VEYRA_DATA_DIR>/pgdata`). It is the same SQL, schema and migrations, with nothing to
+  install, so `npm run demo` works out of the box. It is refused outside development. Point
+  `DATABASE_URL` at a real server to develop against one.
 
-Veyra needs **no secrets** today: the only ERP is the built-in fake ERP and documents are on
-local disk. When a real ERP connector or object storage arrives, its credentials go in the
-platform's secret store (not Git, the image, the database or the frontend). The web app is static
-files with no configuration; anything given to a frontend build is public.
+If something is missing or invalid, the API prints what is wrong **by variable name** and exits
+with status 1. It never prints values and never starts half-configured. Secrets (today:
+`DATABASE_URL`; later ERP and storage credentials) go in the platform's secret store, never in
+Git, the image or the frontend. The web app is static files with no configuration; anything given
+to a frontend build is public.
 
 **Environment identity.** The environment name is in every log line (`env`), in
 `/api/v1/health/ready` and in `/api/v1/health`. Nothing else about the configuration is exposed.
 
-**Staging** is a separate copy with its own data directory, its own documents and, once one
-exists, its own ERP connection and credentials. Never point staging at production data. Staging
-may run the demo; production cannot.
+**Staging** is a separate copy: its own PostgreSQL database, data directory, documents and, once
+one exists, its own ERP connection and credentials. Never point staging at production data.
+Staging may run the demo; production cannot.
 
 ## 3. Build
 
@@ -55,28 +70,66 @@ may run the demo; production cannot.
 git fetch && git checkout <release tag or commit>
 npm ci                          # exact versions from package-lock.json (dev dependencies included:
                                 # the API runs its TypeScript with tsx)
-npm run check                   # in CI; optional on the host
+npm run check                   # in CI (needs TEST_DATABASE_URL, section 13); optional on the host
 npm run build -w @veyra/web     # → apps/web/dist (static files)
 ```
 
 ## 4. Database migrations
 
-The application database is **SQLite** (`<VEYRA_DATA_DIR>/veyra.db`). Migrations are the
-versioned files in `apps/api/drizzle/`. Each applies once, in order, and is recorded in
-`__drizzle_migrations`. Running them again is a no-op.
+The Veyra application database is **PostgreSQL**. Migrations are the versioned SQL files in
+`apps/api/drizzle/`:
 
-- **Development:** applied automatically at startup. To change the schema, edit
-  `apps/api/src/db/schema.ts`, then run `npm run db:generate -w @veyra/api` and
-  `npm run db:verify`, and commit both files.
+- Each applies once, in order, inside a transaction.
+- Each is recorded in `drizzle.__drizzle_migrations`, so running them again is a no-op.
+- None drops or resets data.
+
+**Per environment:**
+
+- **Development:** applied automatically at startup. To change the schema:
+  1. Edit `apps/api/src/db/schema.ts`.
+  2. Run `npm run db:generate -w @veyra/api`.
+  3. Run `npm run db:verify` (it fails when the schema and the migrations drift apart).
+  4. Commit both files. The API tests also rebuild the schema from the migrations and compare it
+     with the declared one.
 - **Staging:** applied automatically at startup. Deploying to staging first is the rehearsal.
 - **Production:** never automatic. Take a backup (section 10), then:
 
   ```
-  npm run db:migrate -w @veyra/api    # "applied N migration(s)…" or "already up to date"
+  DATABASE_URL=… npm run db:migrate -w @veyra/api   # "applied N migration(s): …" or "already up to date"
   ```
 
   If this step is skipped, the API refuses to start and names the pending migrations. Nothing in
-  Veyra resets or deletes production data.
+  Veyra resets or deletes production data (`/dev/reset` does not exist in production).
+
+### Moving an existing SQLite database (once)
+
+Veyra used SQLite (`veyra.db`) before Phase 6A. To carry an existing installation over:
+
+1. Stop the old version. Keep `veyra.db`, `fake_erp.db` and the `uploads/` folder where they are.
+2. Create the PostgreSQL database and run `npm run db:migrate -w @veyra/api` against it.
+3. Rehearse: `npm run db:migrate-from-sqlite -w @veyra/api -- --from /var/lib/veyra/veyra.db --dry-run`.
+   This copies and verifies everything, then rolls back.
+4. For real: run the same command without `--dry-run`.
+5. Start the new version with the same `VEYRA_DATA_DIR`, since documents and the fake ERP stay on
+   disk. Check the app, then keep `veyra.db` as a backup.
+
+What the import does:
+
+- **Reads** the SQLite file (an online backup copy, so the source is never written) and brings the
+  copy up to the last SQLite schema.
+- **Refuses** a target that is not empty.
+- **Copies** every table in one PostgreSQL transaction. Ids, text, JSON and integers are copied
+  unchanged. 0/1 becomes boolean, ISO timestamps become `timestamptz`, and insertion order is
+  kept as `seq`.
+- **Verifies inside that transaction:**
+  - row counts per table and every value of every row;
+  - insertion order;
+  - invoices by state, questions by status, ERP writes by status;
+  - audit events per invoice, invoice ↔ document, the order of answers, jobs by status.
+
+Any difference, or any value it would have to reinterpret (such as a timestamp not in Veyra's
+format), rolls everything back and names the problem. The report prints the counts per table on
+both sides.
 
 ## 5. Startup
 
@@ -86,8 +139,14 @@ npm run start -w @veyra/api
 
 - One Node.js process serves the REST API **and** runs the background worker (reading documents,
   matching, ERP commits). There is no separate worker to start.
-- With SQLite, run **exactly one** process per data directory. Do not scale horizontally or run a
-  second instance against the same disk.
+- **Several processes may share one PostgreSQL database.**
+  - Job claims are atomic: no job is taken twice, and one invoice is never worked on by two
+    workers at once.
+  - Answers are serialised, and duplicates are refused.
+  - Abandoned jobs are recovered by lease expiry.
+  - **But** documents are on local disk (section 8), so every process must see the *same*
+    documents folder: one host, or a shared filesystem. Across separate hosts, wait for the
+    object-storage adapter.
 - **Frontend:** serve `apps/web/dist/` as static files and route `/api/` to the API on the same
   origin.
 - **Proxy:** set `VEYRA_TRUST_PROXY` to the number of proxies in front, so rate limits see the
@@ -99,7 +158,7 @@ Example systemd unit:
 ```
 [Service]
 WorkingDirectory=/srv/veyra
-EnvironmentFile=/etc/veyra/production.env      # mode 600, owned by root
+EnvironmentFile=/etc/veyra/production.env      # mode 600, owned by root; holds DATABASE_URL
 ExecStart=/usr/bin/npm run start -w @veyra/api
 Restart=on-failure
 TimeoutStopSec=30
@@ -127,16 +186,17 @@ veyra.example.com {
 | Endpoint | Answers | Use for |
 |---|---|---|
 | `GET /api/v1/health/live` | `200 {"status":"ok"}` whenever the process is up. Checks nothing else, not even the database. | Liveness probe (restart when it fails) |
-| `GET /api/v1/health/ready` | `200 ready` or `503 not_ready`. Checks the database, document storage and the worker loop, and reports ERP status and job counts. | Readiness probe, uptime monitor |
+| `GET /api/v1/health/ready` | `200 ready` or `503 not_ready`. Checks that PostgreSQL answers, document storage and the worker loop, and reports ERP status and job counts. | Readiness probe, uptime monitor |
 | `GET /api/v1/health` | Kept for compatibility: environment, whether the demo is on, ERP and extractor identity. | Diagnostics |
 
-The ERP does not make the instance unready: while it is unavailable, work waits and retries and
-the UI keeps working. Responses hold only statuses, codes and counts, never paths, URLs or errors.
+The ERP does not make the instance unready: while it is unavailable, work waits and retries, and
+the UI keeps working. Responses hold only statuses, codes and counts, never URLs, paths or errors.
 
 **Worth alerting on:**
 
-- `/health/ready` not 200 for more than 2 minutes.
-- `jobs.expired > 0` (a worker stopped mid-job; recovered automatically, but frequent means crashes).
+- `/health/ready` not 200 for more than 2 minutes (`checks.database` names a database outage).
+- `jobs.expired > 0`: a worker stopped mid-job. It is recovered automatically, but frequent expiry
+  means crashes.
 - `jobs.failedLast24h` rising.
 - `jobs.oldestQueuedAgeMs` above a few minutes.
 - `checks.erp.status` not `CONNECTED`.
@@ -148,16 +208,20 @@ On SIGTERM or SIGINT the process:
 1. Stops accepting connections and lets in-flight requests finish.
 2. Stops claiming jobs.
 3. Gives the running job up to `VEYRA_SHUTDOWN_GRACE_MS` (default 25 s) to finish. A job that has
-   not finished is put back in the queue for the next start, never left running.
-4. Closes the database, the ERP connection and the OCR workers, then exits 0.
+   not finished is put back in the queue, never left running.
+4. Closes the PostgreSQL pool, the ERP connection and the OCR workers, then exits 0.
+
+No database transaction spans slow work: document reading and ERP calls happen outside
+transactions.
 
 Set the platform's stop timeout above the grace period (systemd `TimeoutStopSec=30`, Docker
 `--stop-timeout 30`).
 
-If the process is killed hard, a job may be left `running`. At the next start it is re-queued. A
-running instance also re-queues any job whose lease (`VEYRA_JOB_LEASE_MS`, 15 min) expired. A
-re-run is safe: every step no-ops when already done, and ERP writes reuse their idempotency keys,
-so nothing is recorded twice.
+**If the process is killed hard,** a job may be left `running`. Its lease (`VEYRA_JOB_LEASE_MS`,
+default 5 min) is no longer renewed, and any worker, including the restarted one, re-queues it
+once the lease expires. A job that keeps being abandoned fails visibly after 5 attempts. A re-run
+is safe: every step no-ops when already done, and ERP writes reuse their idempotency keys, so
+nothing is recorded twice.
 
 ## 8. Document storage
 
@@ -185,53 +249,44 @@ JSON lines on stdout. Every line has `time`, `level`, `service`, `env` and `msg`
   safe `errorCode` (and `erpOperation` when the ERP names one).
 - **Unexpected errors:** logged in full, server-side only. Clients get `INTERNAL` and the
   request id.
-- **Correlation:** every response has `x-request-id`, and every error body has `error.requestId`.
 
-Never logged: credentials, authorization headers, cookies, request or response bodies, document
-contents, OCR text, ERP payloads (a redaction list is the second line of defence).
-
-Logs are operational. The **business audit trail** (who uploaded, what Veyra read and matched,
-who decided, what was recorded in the ERP) lives in the database table `audit_events` and the
-product's Audit screen, and is backed up with the database.
+Never logged: credentials, the database URL, authorization headers, cookies, request or response
+bodies, document contents, OCR text, ERP payloads. The business audit trail lives in the database
+(`audit_events`) and the product's Audit screen, not in logs.
 
 ## 10. Backups and recovery
-
-SQLite has no built-in replication or point-in-time recovery. Backups are file copies taken on a
-schedule, so anything after the last backup can be lost. PostgreSQL, with managed backups and
-point-in-time recovery, is a **future phase**; until then these steps are the whole story.
 
 **What to back up**
 
 | What | Where | How |
 |---|---|---|
-| Application database | `<VEYRA_DATA_DIR>/veyra.db` | SQLite online backup (below) |
-| Fake ERP database (while it is the ERP) | `<VEYRA_DATA_DIR>/fake_erp.db` | the same |
+| Veyra application database (all workflow data and the audit trail) | PostgreSQL | managed backups with point-in-time recovery, plus `pg_dump` |
 | Documents | `VEYRA_STORAGE_DIR` (default `<VEYRA_DATA_DIR>/uploads`) | `rsync` to another machine or bucket |
+| Fake ERP database (while it is the ERP) | `<VEYRA_DATA_DIR>/fake_erp.db` (SQLite) | `sqlite3 … ".backup …"` |
 | Configuration and secrets | your secret store / `/etc/veyra/*.env` | handled separately, never with the data |
 
 **Frequency and retention (recommendation)**
 
-- Databases: every hour, and always immediately before `db:migrate`. Keep hourly backups for
-  48 h, daily for 30 days and monthly for 12 months, or longer if your accounting records require
-  it.
-- Documents: at least daily. They never change after upload, so copies only ever add files.
+- **PostgreSQL:** turn on the provider's automated backups with point-in-time recovery (7–35 days).
+  Also take a nightly logical dump kept for 30 days, and monthly dumps for 12 months (or as your
+  accounting-record policy requires). Always take a dump right before `db:migrate`.
+- **Documents:** at least daily. They never change after upload.
 
-**Taking a database backup (safe while Veyra runs)**
+**Taking backups**
 
 ```
-sqlite3 /var/lib/veyra/veyra.db ".backup '/backups/veyra-$(date -u +%Y%m%dT%H%M%SZ).db'"
-sqlite3 /var/lib/veyra/fake_erp.db ".backup '/backups/fake_erp-$(date -u +%Y%m%dT%H%M%SZ).db'"
+pg_dump --format=custom --no-owner "$DATABASE_URL" --file=/backups/veyra-$(date -u +%Y%m%dT%H%M%SZ).dump
 rsync -a /var/lib/veyra/uploads/ backup-host:/backups/veyra-uploads/
+sqlite3 /var/lib/veyra/fake_erp.db ".backup '/backups/fake_erp-$(date -u +%Y%m%dT%H%M%SZ).db'"
 ```
 
-Do not copy `veyra.db` with `cp` while the service runs: recent writes are in `veyra.db-wal`.
-Copy backups off the server and encrypt them at rest.
+Copy backups off the server and encrypt them at rest. The dump file contains every invoice.
 
-**Verifying (weekly, automated)**
+**Verifying (weekly, automated).** Restore the latest dump into a scratch database and check it:
 
 ```
-sqlite3 /backups/veyra-….db "PRAGMA integrity_check;"      # must print: ok
-sqlite3 /backups/veyra-….db "SELECT count(*) FROM invoices; SELECT max(created_at) FROM audit_events;"
+createdb veyra_verify && pg_restore --no-owner --dbname=veyra_verify /backups/veyra-….dump
+psql veyra_verify -c "select count(*) from invoices; select max(created_at) from audit_events;"
 ```
 
 A backup is only proven by restoring it. Once a month, restore the latest set into staging and
@@ -240,11 +295,12 @@ open the app.
 **Restoring**
 
 1. Stop the service.
-2. Move `veyra.db`, `veyra.db-wal` and `veyra.db-shm` aside (and the same for `fake_erp.db`).
-3. Copy the backups into place as `veyra.db` / `fake_erp.db`.
-4. Restore the documents folder from its copy.
-5. Run `npm run db:migrate -w @veyra/api`, in case the backup is older than the code.
-6. Start the service and check `/api/v1/health/ready`.
+2. Restore into a new, empty database: `pg_restore --no-owner --dbname=<new db> <dump>`, or use the
+   provider's point-in-time restore.
+3. Point `DATABASE_URL` at it and restore the documents folder and `fake_erp.db` from the same
+   point in time.
+4. Run `npm run db:migrate -w @veyra/api`, in case the backup is older than the code.
+5. Start the service and check `/api/v1/health/ready`.
 
 An invoice whose document is missing answers "not available" when opened; restore that file.
 
@@ -252,23 +308,39 @@ An invoice whose document is missing answers "not available" when opened; restor
 
 - **Release without a migration:** check out the previous commit, `npm ci`, rebuild the web app and
   restart.
-- **Release with a migration:** migrations only go forward. Stop the service, restore the
-  database backup taken just before `db:migrate`, deploy the previous commit and start. Work done
-  after that backup is lost, so prefer fixing forward once real data has changed.
+- **Release with a migration:** migrations only go forward. Stop the service, restore the dump taken
+  just before `db:migrate` (or restore to that point in time), deploy the previous commit and
+  start. Work done after that point is lost, so prefer fixing forward once real data has changed.
 
 ## 12. Limits and protection (defaults)
 
 - **Uploads:** PDF, PNG or JPEG decided by the file's bytes (never its name or the browser), up to
-  20 MB (`VEYRA_MAX_UPLOAD_BYTES` can lower it). An identical file (same SHA-256) is refused.
+  20 MB (`VEYRA_MAX_UPLOAD_BYTES` can lower it). An identical file (same SHA-256) is refused,
+  including two uploads at the same moment.
 - **Documents:** PDFs up to 20 pages; images up to 12,000 px a side and 40 MP. Both can be lowered.
 - **Imports:** up to 8 files of 5 MB.
 - **JSON bodies:** up to 1 MB.
-- **Rate limits, per client address per minute:** uploads 60, processing actions (answer, reject,
-  reprocess, confirm import) 120, demo endpoints 60. Over the limit: 429 with `Retry-After`.
-  These limits are **per process**. That covers the whole service while there is one instance,
-  but they are not a distributed limiter; add edge limits at the proxy for anything
-  internet-facing.
+- **Rate limits, per client address per minute:** uploads 60, processing actions 120, demo endpoints
+  60. Over the limit: 429 with `Retry-After`. These limits are **per process**, not a distributed
+  limiter; with several processes each counts its own. Add edge limits at the proxy.
 - **Errors:** a stable `code`, a safe `message` and the `requestId`; never stack traces, SQL,
   paths, headers or credentials.
 - **Production:** no `/dev/*` endpoints (reset, demo scenarios), no demo seed and no fixture
   extractor. These are enforced by the server.
+
+## 13. Test database
+
+The API tests run against **real PostgreSQL** and never fall back to SQLite or the embedded
+engine. Set `TEST_DATABASE_URL` to a **disposable** server whose user may create databases:
+
+```
+# e.g. a throwaway container
+docker run -d --name veyra-test-pg -p 5432:5432 -e POSTGRES_USER=veyra_test \
+  -e POSTGRES_PASSWORD=veyra_test -e POSTGRES_DB=veyra_test postgres:16
+export TEST_DATABASE_URL=postgres://veyra_test:veyra_test@127.0.0.1:5432/veyra_test
+npm run check
+```
+
+Each test gets its own database, cloned from a migrated template, and drops it afterwards.
+Without `TEST_DATABASE_URL` the API tests fail at once with that instruction. CI
+(`.github/workflows/ci.yml`) provides a PostgreSQL 16 service.

@@ -106,15 +106,13 @@ export async function auditTable(present: Presenter): Promise<Table> {
     sheet: 'Audit trail',
     headers: ['Date/time', 'Invoice', 'Action', 'Actor', 'Description'],
     widths: [17, 22, 30, 8, 70],
-    rows: present
-      .audit(null)
-      .map((e) => [
-        istDateTime(e.at),
-        e.invoiceId ? (numbers.get(e.invoiceId) ?? '') : 'Business records',
-        e.title,
-        e.by,
-        e.detail,
-      ]),
+    rows: (await present.audit(null)).map((e) => [
+      istDateTime(e.at),
+      e.invoiceId ? (numbers.get(e.invoiceId) ?? '') : 'Business records',
+      e.title,
+      e.by,
+      e.detail,
+    ]),
   };
 }
 

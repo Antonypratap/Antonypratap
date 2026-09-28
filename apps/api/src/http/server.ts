@@ -257,33 +257,35 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   });
 
   app.get('/api/v1/documents', async () =>
-    veyra.db
-      .select()
-      .from(t.documents)
-      .innerJoin(t.invoices, eq(t.invoices.documentId, t.documents.id))
-      .orderBy(desc(t.documents.uploadedAt))
-      .all()
-      .map(({ documents: d, invoices: i }) => ({
-        id: d.id,
-        filename: d.filename,
-        mime: d.mime,
-        sizeBytes: d.sizeBytes,
-        sha256: d.sha256,
-        uploadedAt: d.uploadedAt,
-        invoiceId: i.id,
-        state: i.state,
-      })),
+    (
+      await veyra.db
+        .select()
+        .from(t.documents)
+        .innerJoin(t.invoices, eq(t.invoices.documentId, t.documents.id))
+        .orderBy(desc(t.documents.uploadedAt), desc(t.documents.seq))
+    ).map(({ documents: d, invoices: i }) => ({
+      id: d.id,
+      filename: d.filename,
+      mime: d.mime,
+      sizeBytes: d.sizeBytes,
+      sha256: d.sha256,
+      uploadedAt: d.uploadedAt,
+      invoiceId: i.id,
+      state: i.state,
+    })),
   );
 
-  const documentRow = (id: string) => {
-    const d = veyra.db.select().from(t.documents).where(eq(t.documents.id, id)).get();
+  const documentRow = async (id: string) => {
+    const d = (await veyra.db.select().from(t.documents).where(eq(t.documents.id, id)).limit(1))[0];
     if (!d) throw new VeyraError('NOT_FOUND', 'Document not found.');
     return d;
   };
 
   app.get('/api/v1/documents/:id', async (req) => {
-    const d = documentRow(Id.parse(req.params).id);
-    const inv = veyra.db.select().from(t.invoices).where(eq(t.invoices.documentId, d.id)).get();
+    const d = await documentRow(Id.parse(req.params).id);
+    const inv = (
+      await veyra.db.select().from(t.invoices).where(eq(t.invoices.documentId, d.id)).limit(1)
+    )[0];
     return {
       id: d.id,
       filename: d.filename,
@@ -294,25 +296,28 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       invoiceId: inv?.id ?? null,
       state: inv?.state ?? null,
       failureReason: inv?.failureReason ?? null,
-      extraction: inv ? latestExtraction(inv.id) : null,
+      extraction: inv ? await latestExtraction(inv.id) : null,
     };
   });
 
   /** How the document was last read: which extractor, how many pages, which read methods. */
-  const latestExtraction = (invoiceId: string) => {
-    const x = veyra.db
-      .select()
-      .from(t.extractions)
-      .where(eq(t.extractions.invoiceId, invoiceId))
-      .orderBy(desc(t.extractions.createdAt))
-      .get();
+  const latestExtraction = async (invoiceId: string) => {
+    const x = (
+      await veyra.db
+        .select()
+        .from(t.extractions)
+        .where(eq(t.extractions.invoiceId, invoiceId))
+        .orderBy(desc(t.extractions.createdAt), desc(t.extractions.seq))
+        .limit(1)
+    )[0];
     if (!x) return null;
     const raw = JSON.parse(x.rawJson) as { pages?: number; warnings?: string[] };
-    const methods = veyra.db
-      .selectDistinct({ method: t.extractedFields.method })
-      .from(t.extractedFields)
-      .where(eq(t.extractedFields.extractionId, x.id))
-      .all()
+    const methods = (
+      await veyra.db
+        .selectDistinct({ method: t.extractedFields.method })
+        .from(t.extractedFields)
+        .where(eq(t.extractedFields.extractionId, x.id))
+    )
       .map((r) => r.method)
       .filter((m): m is string => m !== null)
       .sort();
@@ -327,7 +332,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   };
 
   app.get('/api/v1/documents/:id/file', async (req, reply) => {
-    const d = documentRow(Id.parse(req.params).id);
+    const d = await documentRow(Id.parse(req.params).id);
     return reply
       .header('content-type', d.mime)
       .header('content-disposition', `inline; filename="${d.filename.replace(/"/g, '')}"`)
@@ -347,14 +352,14 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     const { reason } = z
       .object({ reason: z.string().trim().min(1).max(300) })
       .parse(req.body ?? {});
-    veyra.reject(id, reason, user());
-    return { invoiceId: id, state: veyra.invoiceRow(veyra.db, id).state };
+    await veyra.reject(id, reason, await user());
+    return { invoiceId: id, state: (await veyra.invoiceRow(veyra.db, id)).state };
   });
 
   app.post('/api/v1/invoices/:id/reprocess', async (req) => {
     const { id } = Id.parse(req.params);
-    veyra.reprocess(id, user());
-    return { invoiceId: id, state: veyra.invoiceRow(veyra.db, id).state };
+    await veyra.reprocess(id, await user());
+    return { invoiceId: id, state: (await veyra.invoiceRow(veyra.db, id)).state };
   });
 
   // ── Questions ────────────────────────────────────────────────────────────
@@ -366,7 +371,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   });
 
   app.get('/api/v1/questions/:id', async (req) => {
-    const q = present.question(Id.parse(req.params).id);
+    const q = await present.question(Id.parse(req.params).id);
     if (!q) throw new VeyraError('NOT_FOUND', 'Question not found.');
     return send(ApiQuestionSchema, q);
   });
@@ -374,12 +379,12 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   app.post('/api/v1/questions/:id/answer', async (req) => {
     const { id } = Id.parse(req.params);
     const body = ApiAnswerBodySchema.parse(req.body ?? {});
-    veyra.answer(id, { optionId: body.optionId, input: body.input ?? null }, user());
-    const q = present.question(id);
+    await veyra.answer(id, { optionId: body.optionId, input: body.input ?? null }, await user());
+    const q = await present.question(id);
     return {
       questionId: id,
       invoiceId: q?.invoiceId ?? null,
-      state: q ? veyra.invoiceRow(veyra.db, q.invoiceId).state : null,
+      state: q ? (await veyra.invoiceRow(veyra.db, q.invoiceId)).state : null,
     };
   });
 
@@ -394,8 +399,9 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
         scope: z.enum(['records']).optional(),
       })
       .parse(req.query ?? {});
-    if (scope === 'records') return send(z.array(ApiAuditEntrySchema), present.recordsAudit());
-    return send(z.array(ApiAuditEntrySchema), present.audit(invoiceId ?? null));
+    if (scope === 'records')
+      return send(z.array(ApiAuditEntrySchema), await present.recordsAudit());
+    return send(z.array(ApiAuditEntrySchema), await present.audit(invoiceId ?? null));
   });
 
   // ── ERP (read-only, through ErpConnector) ────────────────────────────────
@@ -532,14 +538,14 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     for await (const part of req.files())
       files.push({ filename: part.filename, bytes: await part.toBuffer() });
     if (files.length === 0) throw new VeyraError('INVALID_INPUT', 'Attach a file to import.');
-    return reply.status(201).send(send(ApiImportSchema, await imports.check(files, user())));
+    return reply.status(201).send(send(ApiImportSchema, await imports.check(files, await user())));
   });
-  app.get('/api/v1/imports', async () => send(z.array(ApiImportSchema), imports.list()));
+  app.get('/api/v1/imports', async () => send(z.array(ApiImportSchema), await imports.list()));
   app.get('/api/v1/imports/:id', async (req) =>
-    send(ApiImportSchema, imports.get(Id.parse(req.params).id)),
+    send(ApiImportSchema, await imports.get(Id.parse(req.params).id)),
   );
   app.post('/api/v1/imports/:id/confirm', async (req) =>
-    send(ApiImportSchema, await imports.confirm(Id.parse(req.params).id, user())),
+    send(ApiImportSchema, await imports.confirm(Id.parse(req.params).id, await user())),
   );
 
   app.get('/api/v1/exports/:name', async (req, reply) => {

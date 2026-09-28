@@ -28,6 +28,14 @@ export interface VeyraConfig {
   host: string;
   port: number;
   dataDir: string;
+  /**
+   * The Veyra application database: PostgreSQL. `url` is required in staging and production;
+   * in development it may be null (the embedded engine in `<dataDir>/pgdata` is used).
+   */
+  database: {
+    url: string | null;
+    pool: { max: number; connectTimeoutMs: number; statementTimeoutMs: number };
+  };
   /** Apply pending database migrations at startup (off in production: run `db:migrate`). */
   migrateOnStart: boolean;
   storage: StorageConfig;
@@ -61,6 +69,21 @@ const VARS = {
   VEYRA_API_HOST: z.string().min(1).max(255),
   VEYRA_API_PORT: int(1, 65_535),
   VEYRA_DATA_DIR: z.string().min(1),
+  // Never echoed: it usually contains the database password.
+  DATABASE_URL: z
+    .string()
+    .max(2048)
+    .refine((v) => {
+      try {
+        const u = new URL(v);
+        return (u.protocol === 'postgres:' || u.protocol === 'postgresql:') && u.hostname !== '';
+      } catch {
+        return false;
+      }
+    }),
+  VEYRA_DB_POOL_MAX: int(1, 200),
+  VEYRA_DB_CONNECT_TIMEOUT_MS: int(100, 120_000),
+  VEYRA_DB_STATEMENT_TIMEOUT_MS: int(100, 3_600_000),
   VEYRA_MIGRATE_ON_START: bool,
   VEYRA_STORAGE_DIR: z.string().min(1),
   VEYRA_ERP: z.enum(['fake']),
@@ -143,12 +166,23 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
 
   const ollamaUrl = read('VEYRA_OLLAMA_URL');
   const migrateOnStart = read('VEYRA_MIGRATE_ON_START') ?? environment !== 'production';
+  const databaseUrl = deployed
+    ? require('DATABASE_URL', `in ${environment} (the PostgreSQL database)`)
+    : read('DATABASE_URL');
 
   const config: VeyraConfig = {
     environment,
     host: read('VEYRA_API_HOST') ?? '127.0.0.1',
     port: read('VEYRA_API_PORT') ?? 8787,
     dataDir,
+    database: {
+      url: databaseUrl ?? null,
+      pool: {
+        max: read('VEYRA_DB_POOL_MAX') ?? 10,
+        connectTimeoutMs: read('VEYRA_DB_CONNECT_TIMEOUT_MS') ?? 5_000,
+        statementTimeoutMs: read('VEYRA_DB_STATEMENT_TIMEOUT_MS') ?? 30_000,
+      },
+    },
     migrateOnStart,
     storage: { kind: 'local', dir: resolve(storageDirRaw ?? resolve(dataDir, 'uploads')) },
     erp: erp ?? 'fake',
@@ -172,7 +206,7 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
       devPerMinute: read('VEYRA_RATE_LIMIT_DEV_PER_MINUTE') ?? 60,
     },
     jobs: {
-      leaseMs: read('VEYRA_JOB_LEASE_MS') ?? 15 * 60 * 1000,
+      leaseMs: read('VEYRA_JOB_LEASE_MS') ?? 5 * 60 * 1000,
       shutdownGraceMs: read('VEYRA_SHUTDOWN_GRACE_MS') ?? 25_000,
     },
   };
@@ -184,6 +218,7 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
 function describe(name: VarName): string {
   const schema = VARS[name] as z.ZodType;
   if (schema instanceof z.ZodEnum) return `one of ${schema.options.join(', ')}`;
+  if (name === 'DATABASE_URL') return 'a postgres:// or postgresql:// URL';
   if (name.endsWith('_URL')) return 'an http(s) URL';
   if (/_(PORT|BYTES|PAGES|SIDE|PIXELS|MINUTE|MS|PROXY)$/.test(name))
     return 'a whole number in range';
@@ -194,6 +229,7 @@ function describe(name: VarName): string {
 export function describeConfig(c: VeyraConfig) {
   return {
     environment: c.environment,
+    database: c.database.url ? 'postgres' : 'embedded-postgres',
     storage: c.storage.kind,
     erp: c.erp,
     demo: c.demo,

@@ -46,6 +46,7 @@ export class JobRunner {
   #timer: NodeJS.Timeout | null = null;
   #sweeper: NodeJS.Timeout | null = null;
   #busy = false;
+  #draining: Promise<void> | null = null;
   #stopping = false;
   #current: { jobId: string; done: Promise<unknown> } | null = null;
   #lastTick: number | null = null;
@@ -57,13 +58,13 @@ export class JobRunner {
     options: JobRunnerOptions = {},
   ) {
     this.#log = options.logger ?? silent;
-    this.leaseMs = options.leaseMs ?? 15 * 60 * 1000;
+    this.leaseMs = options.leaseMs ?? 5 * 60 * 1000;
   }
 
   /** Runs one job. Returns false when nothing is ready. */
   async step(): Promise<boolean> {
     if (this.#stopping) return false;
-    const job = this.veyra.claimJob();
+    const job = await this.veyra.claimJob();
     if (!job) return false;
     const started = Date.now();
     const context = {
@@ -73,7 +74,7 @@ export class JobRunner {
       attempt: job.attempts,
     };
     const heartbeat = setInterval(
-      () => this.veyra.touchJob(job.id),
+      () => void this.veyra.touchJob(job.id).catch(() => undefined),
       Math.max(1000, Math.floor(this.leaseMs / 3)),
     );
     const work = (async () => {
@@ -83,11 +84,11 @@ export class JobRunner {
     this.#current = { jobId: job.id, done: work.catch(() => undefined) };
     try {
       await work;
-      this.veyra.finishJob(job.id, { status: 'succeeded' });
+      await this.veyra.finishJob(job.id, { status: 'succeeded' });
       this.#log.info({ ...context, durationMs: Date.now() - started }, 'job succeeded');
     } catch (error) {
       if (error instanceof CrashSignal) throw error; // the "process" died: leave the job running
-      this.#handleFailure(job, error, context);
+      await this.#handleFailure(job, error, context);
     } finally {
       clearInterval(heartbeat);
       this.#current = null;
@@ -95,11 +96,11 @@ export class JobRunner {
     return true;
   }
 
-  #handleFailure(
+  async #handleFailure(
     job: { id: string; invoiceId: string; attempts: number },
     error: unknown,
     context: object,
-  ): void {
+  ): Promise<void> {
     const code = safeErrorCode(error);
     const safe = isErpConnectorError(error)
       ? `${error.code}: ${error.userMessage}`
@@ -111,15 +112,15 @@ export class JobRunner {
     if (isRetryable(error)) {
       if (job.attempts < MAX_ATTEMPTS) {
         const delayMs = job.attempts * 1000;
-        this.veyra.finishJob(job.id, { status: 'retry', error: safe, delayMs });
+        await this.veyra.finishJob(job.id, { status: 'retry', error: safe, delayMs });
         this.#log.warn(
           { ...context, errorCode: code, ...erpOperationOf(error), delayMs },
           'job will be retried',
         );
         return;
       }
-      if (this.veyra.hasUnresolvedErpWrite(job.invoiceId)) {
-        this.veyra.finishJob(job.id, {
+      if (await this.veyra.hasUnresolvedErpWrite(job.invoiceId)) {
+        await this.veyra.finishJob(job.id, {
           status: 'retry',
           error: safe,
           delayMs: RECONCILE_EVERY_MS,
@@ -131,7 +132,7 @@ export class JobRunner {
         return;
       }
     }
-    this.veyra.finishJob(job.id, { status: 'failed', error: safe });
+    await this.veyra.finishJob(job.id, { status: 'failed', error: safe });
     // Internal errors are logged in full here (server-side only); people see a generic reason.
     this.#log.error(
       {
@@ -142,46 +143,68 @@ export class JobRunner {
       },
       'job failed',
     );
-    this.veyra.fail(job.invoiceId, error);
+    await this.veyra.fail(job.invoiceId, error);
   }
 
-  /** Re-queues (or, when out of attempts, fails) jobs whose worker disappeared. */
-  recoverExpired(): number {
-    const expired = this.veyra.expiredJobs(this.leaseMs);
+  /**
+   * Re-queues (or, when out of attempts, fails) jobs whose worker disappeared: their lease
+   * expired. Safe with several workers: a live worker renews its jobs' leases, so only abandoned
+   * jobs are touched. Also run at startup, which is how a restarted worker recovers its own jobs.
+   */
+  async recoverExpired(): Promise<number> {
+    const expired = await this.veyra.expiredJobs(this.leaseMs);
     for (const job of expired) {
       if (job.id === this.#current?.jobId) continue;
-      if (job.attempts >= MAX_ATTEMPTS && !this.veyra.hasUnresolvedErpWrite(job.invoiceId)) {
+      if (
+        job.attempts >= MAX_ATTEMPTS &&
+        !(await this.veyra.hasUnresolvedErpWrite(job.invoiceId))
+      ) {
         const reason = 'Processing stopped repeatedly before it could finish.';
-        this.veyra.finishJob(job.id, { status: 'failed', error: 'WORKER_LOST' });
-        this.veyra.fail(job.invoiceId, new Error(reason));
+        await this.veyra.finishJob(job.id, { status: 'failed', error: 'WORKER_LOST' });
+        await this.veyra.fail(job.invoiceId, new Error(reason));
         this.#log.error({ jobId: job.id, invoiceId: job.invoiceId }, 'abandoned job failed');
       } else {
-        this.veyra.releaseJob(job.id);
+        await this.veyra.releaseJob(job.id);
         this.#log.warn({ jobId: job.id, invoiceId: job.invoiceId }, 'abandoned job re-queued');
       }
     }
     return expired.length;
   }
 
-  /** Runs every ready job, including ones queued by earlier jobs. */
+  /**
+   * Runs every ready job, including ones queued by earlier jobs. One drain loop per runner at a
+   * time: a caller arriving while the background loop is working waits for it, then drains what
+   * is left, so "drained" really means no job of this runner is still in progress.
+   */
   async drain(): Promise<void> {
-    while (await this.step()) {
-      // keep going
+    while (this.#draining) await this.#draining;
+    const loop = (async () => {
+      while (await this.step()) {
+        // keep going
+      }
+    })();
+    this.#draining = loop.catch(() => undefined);
+    try {
+      await loop;
+    } finally {
+      this.#draining = null;
     }
   }
 
-  /** Starts the background loop (after re-queuing jobs a previous process left running). */
+  /** Starts the background loop, after recovering jobs whose worker is gone (expired leases). */
   start(intervalMs = 250): void {
     this.#stopping = false;
-    const recovered = this.veyra.recoverJobs();
-    if (recovered)
-      this.#log.warn({ recovered }, 'jobs left running by a previous process re-queued');
+    const sweep = () =>
+      void this.recoverExpired().catch((error: unknown) =>
+        this.#log.error({ err: error, errorCode: safeErrorCode(error) }, 'job recovery error'),
+      );
+    sweep();
     this.veyra.onEnqueue = () => this.kick();
     this.#timer = setInterval(() => {
       this.#lastTick = Date.now();
       this.kick();
     }, intervalMs);
-    this.#sweeper = setInterval(() => this.recoverExpired(), LEASE_SWEEP_MS);
+    this.#sweeper = setInterval(sweep, LEASE_SWEEP_MS);
     this.#lastTick = Date.now();
     this.kick();
   }
@@ -223,18 +246,21 @@ export class JobRunner {
   async shutdown(graceMs: number): Promise<void> {
     this.#stopping = true;
     this.stop();
-    const current = this.#current;
-    if (!current) return;
+    // Wait for the whole drain loop, not just the job we know of: a step may be between its
+    // "stopping?" check and its claim. With #stopping set, the loop ends after that step.
+    const inFlight = this.#draining ?? this.#current?.done;
+    if (!inFlight) return;
     let timer: NodeJS.Timeout | undefined;
     const finished = await Promise.race([
-      current.done.then(() => true),
+      inFlight.then(() => true),
       new Promise<boolean>((resolve) => {
         timer = setTimeout(() => resolve(false), graceMs);
       }),
     ]);
     clearTimeout(timer);
-    if (!finished) {
-      this.veyra.releaseJob(current.jobId);
+    const current = this.#current;
+    if (!finished && current) {
+      await this.veyra.releaseJob(current.jobId);
       this.#log.warn({ jobId: current.jobId }, 'job released at shutdown');
     }
   }

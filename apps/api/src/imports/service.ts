@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, ne } from 'drizzle-orm';
 import { importIdempotencyKey, type ApiImport } from '@veyra/shared';
 import { isErpConnectorError, type ImportBusinessRecordsResult } from '@veyra/erp-connector';
 import * as t from '../db/schema';
@@ -51,7 +51,7 @@ export class BusinessImports {
 
   /** Validates an upload and stores it with its preview. Nothing is imported yet. */
   async check(files: readonly UploadedFile[], userId: string): Promise<ApiImport> {
-    this.requireDesignated(userId);
+    await this.requireDesignated(userId);
     const id = ulid();
     const stored: StoredFile[] = [];
     for (const [i, f] of files.entries()) {
@@ -71,22 +71,20 @@ export class BusinessImports {
     );
     const now = this.veyra.now();
     const kinds = check.tables.map((x) => x.label).join(', ') || 'No records';
-    this.veyra.db.transaction((tx) => {
-      tx.insert(t.imports)
-        .values({
-          id,
-          filesJson: JSON.stringify(stored),
-          kinds,
-          status: check.errors.length ? 'invalid' : 'ready',
-          checkJson: JSON.stringify(check),
-          resultJson: null,
-          uploadedByUserId: userId,
-          confirmedByUserId: null,
-          createdAt: now,
-          confirmedAt: null,
-        })
-        .run();
-      this.veyra.audit(tx, null, { type: 'user', userId }, 'records.import_checked', {
+    await this.veyra.db.transaction(async (tx) => {
+      await tx.insert(t.imports).values({
+        id,
+        filesJson: JSON.stringify(stored),
+        kinds,
+        status: check.errors.length ? 'invalid' : 'ready',
+        checkJson: JSON.stringify(check),
+        resultJson: null,
+        uploadedByUserId: userId,
+        confirmedByUserId: null,
+        createdAt: now,
+        confirmedAt: null,
+      });
+      await this.veyra.audit(tx, null, { type: 'user', userId }, 'records.import_checked', {
         importId: id,
         files: stored.map((f) => f.filename),
         tables: check.tables.map((x) => ({
@@ -99,7 +97,7 @@ export class BusinessImports {
         errorCount: check.errors.length,
       });
     });
-    return this.dto(this.row(id));
+    return this.dto(await this.row(id));
   }
 
   /**
@@ -107,8 +105,8 @@ export class BusinessImports {
    * interrupted after the ERP write replays through the connector's idempotency key.
    */
   async confirm(id: string, userId: string): Promise<ApiImport> {
-    this.requireDesignated(userId);
-    const row = this.row(id);
+    await this.requireDesignated(userId);
+    const row = await this.row(id);
     if (row.status === 'imported') return this.dto(row);
     const files = await Promise.all(
       (JSON.parse(row.filesJson) as StoredFile[]).map(async (f) => ({
@@ -117,12 +115,13 @@ export class BusinessImports {
       })),
     );
     const check = await this.run(files);
-    const save = (patch: Partial<typeof t.imports.$inferInsert>) =>
-      this.veyra.db.update(t.imports).set(patch).where(eq(t.imports.id, id)).run();
+    const save = async (patch: Partial<typeof t.imports.$inferInsert>) => {
+      await this.veyra.db.update(t.imports).set(patch).where(eq(t.imports.id, id));
+    };
     if (check.errors.length) {
-      save({ status: 'invalid', checkJson: JSON.stringify(check) });
+      await save({ status: 'invalid', checkJson: JSON.stringify(check) });
       throw new VeyraError('INVALID_STATE', 'This upload has problems. Nothing was imported.', {
-        import: this.dto(this.row(id)),
+        import: this.dto(await this.row(id)),
       });
     }
     let result: ImportBusinessRecordsResult;
@@ -135,18 +134,22 @@ export class BusinessImports {
       if (!isErpConnectorError(e) || e.retryable) throw e;
       // The ERP refused the batch (e.g. a record changed since the check): nothing was written.
       const again = await this.run(files);
-      save({ status: again.errors.length ? 'invalid' : 'ready', checkJson: JSON.stringify(again) });
+      await save({
+        status: again.errors.length ? 'invalid' : 'ready',
+        checkJson: JSON.stringify(again),
+      });
       throw new VeyraError(
         'INVALID_STATE',
         'Your business records changed since this upload was checked. Nothing was imported.',
         {
-          import: this.dto(this.row(id)),
+          import: this.dto(await this.row(id)),
         },
       );
     }
     const now = this.veyra.now();
-    this.veyra.db.transaction((tx) => {
-      tx.update(t.imports)
+    await this.veyra.db.transaction(async (tx) => {
+      const marked = await tx
+        .update(t.imports)
         .set({
           status: 'imported',
           checkJson: JSON.stringify(check),
@@ -154,42 +157,47 @@ export class BusinessImports {
           confirmedByUserId: userId,
           confirmedAt: now,
         })
-        .where(eq(t.imports.id, id))
-        .run();
-      this.veyra.audit(tx, null, { type: 'user', userId }, 'records.import_confirmed', {
+        .where(and(eq(t.imports.id, id), ne(t.imports.status, 'imported')))
+        .returning({ id: t.imports.id });
+      // Confirmed concurrently by another request: the ERP write was idempotent (same key) and
+      // that request recorded it; nothing more to record here.
+      if (marked.length === 0) return;
+      await this.veyra.audit(tx, null, { type: 'user', userId }, 'records.import_confirmed', {
         importId: id,
         files: files.map((f) => f.filename),
       });
-      this.veyra.audit(tx, null, { type: 'system' }, 'records.imported', {
+      await this.veyra.audit(tx, null, { type: 'system' }, 'records.imported', {
         importId: id,
         created: { ...result.created },
         skipped: { ...result.skipped },
       });
     });
-    return this.dto(this.row(id));
+    return this.dto(await this.row(id));
   }
 
-  list(): ApiImport[] {
-    return this.veyra.db
-      .select()
-      .from(t.imports)
-      .orderBy(desc(t.imports.createdAt), desc(t.imports.id))
-      .all()
-      .map((r) => this.dto(r));
+  async list(): Promise<ApiImport[]> {
+    return (
+      await this.veyra.db
+        .select()
+        .from(t.imports)
+        .orderBy(desc(t.imports.createdAt), desc(t.imports.seq))
+    ).map((r) => this.dto(r));
   }
 
-  get(id: string): ApiImport {
-    return this.dto(this.row(id));
+  async get(id: string): Promise<ApiImport> {
+    return this.dto(await this.row(id));
   }
 
-  private row(id: string): ImportRow {
-    const row = this.veyra.db.select().from(t.imports).where(eq(t.imports.id, id)).get();
+  private async row(id: string): Promise<ImportRow> {
+    const row = (
+      await this.veyra.db.select().from(t.imports).where(eq(t.imports.id, id)).limit(1)
+    )[0];
     if (!row) throw new VeyraError('NOT_FOUND', 'Import not found.');
     return row;
   }
 
-  private requireDesignated(userId: string): void {
-    if (userId !== this.veyra.designatedUserId())
+  private async requireDesignated(userId: string): Promise<void> {
+    if (userId !== (await this.veyra.designatedUserId()))
       throw new VeyraError(
         'NOT_DESIGNATED_USER',
         'Only the designated user can import business records.',

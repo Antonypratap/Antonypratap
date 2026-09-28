@@ -9,8 +9,9 @@ import type {
   ApiInvoiceDetail,
   ApiQuestion,
 } from '@veyra/shared';
-import { createApp } from '../app';
+import type { createApp } from '../app';
 import { DEMO_NOW } from '../test/harness';
+import { createTestApp } from '../test/app';
 
 /**
  * Phase 3E: the demo scenarios drive the real workflow (real extractor, unchanged engine), and
@@ -22,7 +23,7 @@ let dir: string;
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'veyra-scenarios-'));
-  app = await createApp({
+  app = await createTestApp({
     dataDir: dir,
     demo: true,
     allowFixtureExtractor: true,
@@ -276,7 +277,7 @@ describe('reset restores the known demo state', () => {
 describe('outside the demo', () => {
   it('scenario and reset routes do not exist', async () => {
     const d = mkdtempSync(join(tmpdir(), 'veyra-nodemo-'));
-    const plain = await createApp({
+    const plain = await createTestApp({
       dataDir: d,
       demo: false,
       allowFixtureExtractor: false,

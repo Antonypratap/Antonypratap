@@ -14,9 +14,11 @@
     "db:generate": "drizzle-kit generate",
     "db:verify": "drizzle-kit generate --name drift | tee /dev/stderr | grep -q 'No schema changes'",
     "db:migrate": "tsx src/cli/migrate.ts",
-    "fixtures": "tsx src/cli/generate-import-fixtures.ts"
+    "fixtures": "tsx src/cli/generate-import-fixtures.ts",
+    "db:migrate-from-sqlite": "tsx src/cli/migrate-from-sqlite.ts"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@fastify/multipart": "^10.1.2",
     "@veyra/erp-connector": "*",
     "@veyra/extractor": "*",
@@ -26,6 +28,7 @@
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.45.3",
     "fastify": "^5.12.5",
+    "pg": "^8.23.0",
     "pino": "^10.3.1",
     "zod": "^4.6.5"
   }

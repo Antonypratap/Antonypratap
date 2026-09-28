@@ -2,12 +2,18 @@ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Writable } from 'node:stream';
-import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { DemoRoutedExtractor, renderScenario, scenarioById } from '@veyra/extractor';
 import { createApp, type AppConfig } from './app';
-import { openVeyraDb, pendingMigrations, PendingMigrationsError } from './db/open';
+import {
+  knownMigrations,
+  openVeyraDb,
+  pendingMigrations,
+  PendingMigrationsError,
+  rowsOf,
+} from './db/open';
+import { createTestDatabase, type TestDatabase } from './test/database';
 import * as t from './db/schema';
 import { createLogger } from './http/logging';
 import { LocalDocumentStorage, StorageUnavailableError, type DocumentStorage } from './storage';
@@ -20,28 +26,31 @@ import { CrashSignal } from './workflow/commit';
  * storage failures, job leases and graceful shutdown.
  */
 type App = Awaited<ReturnType<typeof createApp>>;
-const opened: { app: App; dir: string }[] = [];
+const opened: { app: App; dir: string; database: TestDatabase }[] = [];
 let h: Harness | undefined;
 afterEach(async () => {
-  for (const { app, dir } of opened.splice(0)) {
+  for (const { app, dir, database } of opened.splice(0)) {
     await app.close(0);
+    await database.drop();
     rmSync(dir, { recursive: true, force: true });
   }
-  h?.close();
+  await h?.close();
   h = undefined;
 });
 
 async function open(extra: Partial<AppConfig> = {}): Promise<App> {
   const dir = mkdtempSync(join(tmpdir(), 'veyra-prod-'));
+  const database = await createTestDatabase();
   const app = await createApp({
     dataDir: dir,
     demo: true,
     allowFixtureExtractor: true,
     nodeEnv: 'test',
     clock: () => DEMO_NOW,
+    database: { url: database.url },
     ...extra,
   });
-  opened.push({ app, dir });
+  opened.push({ app, dir, database });
   return app;
 }
 
@@ -157,7 +166,7 @@ describe('health', () => {
   it('readiness fails when the database is gone', async () => {
     const app = await open();
     app.runner.start(60_000);
-    (app.veyra.db as unknown as { $client: Database.Database }).$client.close();
+    await app.database.close(); // the database goes away
     const res = await app.server.inject({ method: 'GET', url: '/api/v1/health/ready' });
     expect(res.statusCode).toBe(503);
     expect(res.json()).toMatchObject({
@@ -165,8 +174,6 @@ describe('health', () => {
       jobs: null,
     });
     app.runner.stop();
-    opened.pop(); // closed by hand below
-    await app.server.close();
   });
 });
 
@@ -202,21 +209,24 @@ describe('production lock-down', () => {
   });
 
   it('refuses to start on a database with pending migrations when auto-migration is off', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'veyra-mig-'));
-    const file = join(dir, 'veyra.db');
-    const raw = new Database(file);
-    expect(pendingMigrations(raw)).toHaveLength(4);
-    raw.close();
-    expect(() => openVeyraDb(file, { migrate: false })).toThrow(PendingMigrationsError);
-    openVeyraDb(file, { migrate: true }).sqlite.close();
-    // Applied once; applying again is a no-op; now it opens without migrating.
-    openVeyraDb(file, { migrate: true }).sqlite.close();
-    const again = new Database(file);
-    expect(pendingMigrations(again)).toEqual([]);
-    expect(again.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 4 });
-    again.close();
-    openVeyraDb(file, { migrate: false }).sqlite.close();
-    rmSync(dir, { recursive: true, force: true });
+    const empty = await createTestDatabase({ bare: true });
+    try {
+      await expect(openVeyraDb({ url: empty.url, migrate: false })).rejects.toThrow(
+        PendingMigrationsError,
+      );
+      // Applied once; applying again is a no-op; then it opens without migrating.
+      await (await openVeyraDb({ url: empty.url, migrate: true })).close();
+      await (await openVeyraDb({ url: empty.url, migrate: true })).close();
+      const db = await openVeyraDb({ url: empty.url, migrate: false });
+      expect(await pendingMigrations(db.db)).toEqual([]);
+      const applied = await db.db.execute(
+        sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
+      );
+      expect(rowsOf(applied)).toEqual([{ n: knownMigrations().length }]);
+      await db.close();
+    } finally {
+      await empty.drop();
+    }
   });
 });
 
@@ -290,9 +300,7 @@ describe('errors and request ids', () => {
   it('an internal failure answers 500 INTERNAL with a request id: no stack, SQL or path', async () => {
     const { lines, log } = logCapture();
     const app = await open({ log });
-    (app.veyra.db as unknown as { $client: Database.Database }).$client.exec(
-      'DROP TABLE questions',
-    );
+    await app.veyra.db.execute(sql`drop table questions`);
     const res = await app.server.inject({ method: 'GET', url: '/api/v1/questions' });
     expect(res.statusCode).toBe(500);
     expect(res.json()).toEqual({
@@ -355,7 +363,9 @@ describe('uploads and input safety', () => {
     });
     expect(res.statusCode).toBe(201);
     const { documentId } = res.json<{ documentId: string }>();
-    const doc = app.veyra.db.select().from(t.documents).where(eq(t.documents.id, documentId)).get();
+    const doc = (
+      await app.veyra.db.select().from(t.documents).where(eq(t.documents.id, documentId)).limit(1)
+    )[0];
     expect(doc?.storagePath).toBe(`${documentId}.pdf`);
     expect(doc?.filename).not.toMatch(/\.\.|\//);
     const back = await app.server.inject({
@@ -381,11 +391,9 @@ describe('uploads and input safety', () => {
     ].entries()) {
       const copy = new Uint8Array([...bytes, ...new TextEncoder().encode(`\n% ${i}\n`)]);
       const { documentId } = await app.veyra.upload({ filename: name, bytes: copy });
-      const doc = app.veyra.db
-        .select()
-        .from(t.documents)
-        .where(eq(t.documents.id, documentId))
-        .get();
+      const doc = (
+        await app.veyra.db.select().from(t.documents).where(eq(t.documents.id, documentId)).limit(1)
+      )[0];
       expect(doc?.storagePath).toBe(`${documentId}.pdf`);
       expect(doc?.filename).toMatch(/^[\w.\- ()]+$/);
       expect(doc?.filename).not.toMatch(/\.\.|\/|\\/);
@@ -408,7 +416,7 @@ describe('uploads and input safety', () => {
     });
     expect(again.statusCode).toBe(409);
     expect(again.json()).toMatchObject({ error: { code: 'DUPLICATE_UPLOAD' } });
-    expect(app.veyra.db.select().from(t.documents).all()).toHaveLength(1);
+    expect(await app.veyra.db.select().from(t.documents)).toHaveLength(1);
     expect(readdirSync((app.storage as LocalDocumentStorage).root)).toHaveLength(1);
   });
 
@@ -543,19 +551,21 @@ describe('jobs: retries, leases and shutdown', () => {
     const { file, bytes } = S01();
     const { invoiceId } = await app.veyra.upload({ filename: file, bytes });
     await app.runner.drain();
-    const job = app.veyra.latestJobs(invoiceId)[0];
+    const job = (await app.veyra.latestJobs(invoiceId))[0];
     expect(job).toMatchObject({
       status: 'queued',
       attempts: 1,
       lastError: 'Document storage is not available right now.',
     });
-    expect(app.veyra.invoiceRow(app.veyra.db, invoiceId).state).toBe('EXTRACTING');
+    expect((await app.veyra.invoiceRow(app.veyra.db, invoiceId)).state).toBe('EXTRACTING');
     storage.down = false;
-    app.veyra.db.update(t.jobs).set({ runAfter: '2000-01-01T00:00:00.000Z' }).run();
+    await app.veyra.db.update(t.jobs).set({ runAfter: '2000-01-01T00:00:00.000Z' });
     await app.runner.drain();
-    expect(app.veyra.invoiceRow(app.veyra.db, invoiceId).state).toBe('VERIFIED_PENDING_PAYMENT');
-    expect(app.veyra.db.select().from(t.invoices).all()).toHaveLength(1);
-    expect(app.veyra.db.select().from(t.extractions).all()).toHaveLength(1);
+    expect((await app.veyra.invoiceRow(app.veyra.db, invoiceId)).state).toBe(
+      'VERIFIED_PENDING_PAYMENT',
+    );
+    expect(await app.veyra.db.select().from(t.invoices)).toHaveLength(1);
+    expect(await app.veyra.db.select().from(t.extractions)).toHaveLength(1);
     expect(await app.veyra.erp.listPurchaseInvoices()).toHaveLength(1);
     rmSync(dir, { recursive: true, force: true });
   });
@@ -567,11 +577,14 @@ describe('jobs: retries, leases and shutdown', () => {
     const { file, bytes } = S01();
     const { invoiceId } = await app.veyra.upload({ filename: file, bytes });
     for (let i = 0; i < 6; i++) {
-      app.veyra.db.update(t.jobs).set({ runAfter: '2000-01-01T00:00:00.000Z' }).run();
+      await app.veyra.db.update(t.jobs).set({ runAfter: '2000-01-01T00:00:00.000Z' });
       await app.runner.drain();
     }
-    expect(app.veyra.latestJobs(invoiceId)[0]).toMatchObject({ status: 'failed', attempts: 5 });
-    expect(app.veyra.invoiceRow(app.veyra.db, invoiceId)).toMatchObject({
+    expect((await app.veyra.latestJobs(invoiceId))[0]).toMatchObject({
+      status: 'failed',
+      attempts: 5,
+    });
+    expect(await app.veyra.invoiceRow(app.veyra.db, invoiceId)).toMatchObject({
       state: 'FAILED',
       failureReason: 'Document storage is not available right now.',
     });
@@ -579,34 +592,37 @@ describe('jobs: retries, leases and shutdown', () => {
   });
 
   it('a job whose worker disappeared is re-queued after its lease, then completes once', async () => {
-    h = createHarness();
+    h = await createHarness();
     const { file, bytes } = S01();
     const { invoiceId } = await h.veyra.upload({ filename: file, bytes });
-    const claimed = h.veyra.claimJob(); // a worker takes it… and dies
+    const claimed = await h.veyra.claimJob(); // a worker takes it… and dies
     expect(claimed).toMatchObject({ invoiceId, attempts: 1 });
-    expect(h.runner.recoverExpired()).toBe(0); // lease still valid
-    h.veyra.db.update(t.jobs).set({ lockedAt: '2026-09-28T05:00:00.000Z' }).run();
-    expect(h.veyra.jobStats(h.runner.leaseMs)).toMatchObject({ running: 1, expired: 1 });
-    expect(h.runner.recoverExpired()).toBe(1);
-    expect(h.veyra.latestJobs(invoiceId)[0]).toMatchObject({ status: 'queued', attempts: 1 });
+    expect(await h.runner.recoverExpired()).toBe(0); // lease still valid
+    await h.veyra.db.update(t.jobs).set({ lockedAt: '2026-09-28T05:00:00.000Z' });
+    expect(await h.veyra.jobStats(h.runner.leaseMs)).toMatchObject({ running: 1, expired: 1 });
+    expect(await h.runner.recoverExpired()).toBe(1);
+    expect((await h.veyra.latestJobs(invoiceId))[0]).toMatchObject({
+      status: 'queued',
+      attempts: 1,
+    });
     await h.runner.drain();
-    expect(h.state(invoiceId)).toBe('VERIFIED_PENDING_PAYMENT');
+    expect(await h.state(invoiceId)).toBe('VERIFIED_PENDING_PAYMENT');
     expect(await h.erp.listPurchaseInvoices()).toHaveLength(1);
-    expect(h.openQuestions(invoiceId)).toEqual([]);
+    expect(await h.openQuestions(invoiceId)).toEqual([]);
   });
 
   it('an abandoned job that has used its attempts fails the invoice instead of looping', async () => {
-    h = createHarness();
+    h = await createHarness();
     const { file, bytes } = S01();
     const { invoiceId } = await h.veyra.upload({ filename: file, bytes });
-    h.veyra.claimJob();
-    h.veyra.db.update(t.jobs).set({ attempts: 5, lockedAt: '2026-09-28T05:00:00.000Z' }).run();
-    h.runner.recoverExpired();
-    expect(h.veyra.latestJobs(invoiceId)[0]).toMatchObject({
+    await h.veyra.claimJob();
+    await h.veyra.db.update(t.jobs).set({ attempts: 5, lockedAt: '2026-09-28T05:00:00.000Z' });
+    await h.runner.recoverExpired();
+    expect((await h.veyra.latestJobs(invoiceId))[0]).toMatchObject({
       status: 'failed',
       lastError: 'WORKER_LOST',
     });
-    expect(h.veyra.invoiceRow(h.veyra.db, invoiceId)).toMatchObject({
+    expect(await h.veyra.invoiceRow(h.veyra.db, invoiceId)).toMatchObject({
       state: 'FAILED',
       failureReason: 'Processing stopped repeatedly before it could finish.',
     });
@@ -614,7 +630,7 @@ describe('jobs: retries, leases and shutdown', () => {
 
   it('a commit job whose worker died right after the ERP write is recovered without a second write', async () => {
     let crash = true;
-    h = createHarness({
+    h = await createHarness({
       commitHooks: {
         afterErpWrite: (entity) => {
           if (entity === 'purchase_invoice' && crash) throw new CrashSignal('after the ERP write');
@@ -624,20 +640,21 @@ describe('jobs: retries, leases and shutdown', () => {
     const { file, bytes } = S01();
     const { invoiceId } = await h.veyra.upload({ filename: file, bytes });
     await expect(h.runner.drain()).rejects.toThrow(CrashSignal); // the worker dies mid-commit
-    const commit = () => h?.veyra.latestJobs(invoiceId).find((j) => j.type === 'commit');
-    expect(commit()).toMatchObject({ status: 'running' });
+    const commit = async () =>
+      (await h?.veyra.latestJobs(invoiceId))?.find((j) => j.type === 'commit');
+    expect(await commit()).toMatchObject({ status: 'running' });
     expect(await h.erp.listPurchaseInvoices()).toHaveLength(1); // the ERP has the invoice
-    expect(h.state(invoiceId)).toBe('COMMITTING'); // Veyra has not recorded it yet
+    expect(await h.state(invoiceId)).toBe('COMMITTING'); // Veyra has not recorded it yet
     crash = false;
-    h.veyra.db.update(t.jobs).set({ lockedAt: '2026-09-28T05:00:00.000Z' }).run(); // lease expires
-    expect(h.runner.recoverExpired()).toBe(1);
-    expect(commit()).toMatchObject({ status: 'queued' });
+    await h.veyra.db.update(t.jobs).set({ lockedAt: '2026-09-28T05:00:00.000Z' }); // lease expires
+    expect(await h.runner.recoverExpired()).toBe(1);
+    expect(await commit()).toMatchObject({ status: 'queued' });
     await h.runner.drain(); // claimed again
-    expect(commit()).toMatchObject({ status: 'succeeded', attempts: 2 });
-    expect(h.state(invoiceId)).toBe('VERIFIED_PENDING_PAYMENT');
+    expect(await commit()).toMatchObject({ status: 'succeeded', attempts: 2 });
+    expect(await h.state(invoiceId)).toBe('VERIFIED_PENDING_PAYMENT');
     expect(await h.erp.listPurchaseInvoices()).toHaveLength(1); // no duplicate ERP write
     expect(
-      h.veyra.db.select().from(t.erpWrites).where(eq(t.erpWrites.invoiceId, invoiceId)).all(),
+      await h.veyra.db.select().from(t.erpWrites).where(eq(t.erpWrites.invoiceId, invoiceId)),
     ).toMatchObject([{ operation: 'recordPurchaseInvoice', status: 'confirmed' }]);
   });
 
@@ -651,7 +668,7 @@ describe('jobs: retries, leases and shutdown', () => {
     expect(app.runner.health()).toMatchObject({ running: false });
     await app.server.close();
     expect(app.server.server.listening).toBe(false);
-    const job = app.veyra.latestJobs(invoiceId)[0];
+    const job = (await app.veyra.latestJobs(invoiceId))[0];
     expect(['queued', 'succeeded']).toContain(job?.status); // never left running
   });
 
@@ -677,9 +694,12 @@ describe('jobs: retries, leases and shutdown', () => {
     const { invoiceId } = await app.veyra.upload({ filename: file, bytes });
     const running = app.runner.step();
     await new Promise((r) => setTimeout(r, 20));
-    expect(app.veyra.latestJobs(invoiceId)[0]).toMatchObject({ status: 'running' });
+    expect((await app.veyra.latestJobs(invoiceId))[0]).toMatchObject({ status: 'running' });
     await app.runner.shutdown(50); // the job does not finish in time
-    expect(app.veyra.latestJobs(invoiceId)[0]).toMatchObject({ status: 'queued', lockedAt: null });
+    expect((await app.veyra.latestJobs(invoiceId))[0]).toMatchObject({
+      status: 'queued',
+      lockedAt: null,
+    });
     release();
     await running;
     rmSync(dir, { recursive: true, force: true });
