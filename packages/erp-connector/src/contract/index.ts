@@ -24,7 +24,12 @@ import {
   type InvoiceId,
 } from '@veyra/shared';
 import { financialYearOf, validateGstin, type Gstin, type Pan } from '@veyra/india-tax';
+import { ERP_CAPABILITIES, supportsOperation } from '../capabilities';
+import { ERP_CONNECTION_STATUSES } from '../connection';
 import type { ErpConnector } from '../connector';
+import { isErpConnectorError, type ErpConnectorError } from '../errors';
+import { describeConnection, guardCapabilities } from '../guard';
+import { ERP_READ_OPERATIONS, ERP_WRITE_OPERATIONS } from '../operations';
 import {
   CompanySchema,
   GrnSchema,
@@ -98,7 +103,10 @@ const itemInput = (overrides: Partial<CreateItemInput> = {}): CreateItemInput =>
 
 const code = (error: unknown): unknown => (error as { code?: unknown }).code;
 
-async function expectErpError(promise: Promise<unknown>, expected: string): Promise<unknown> {
+async function expectErpError(
+  promise: Promise<unknown>,
+  expected: string,
+): Promise<ErpConnectorError> {
   const error = await promise.then(
     () => {
       throw new Error(`expected ${expected}, but the call succeeded`);
@@ -106,6 +114,9 @@ async function expectErpError(promise: Promise<unknown>, expected: string): Prom
     (e: unknown) => e,
   );
   expect(code(error)).toBe(expected);
+  // Every error a connector throws is typed and safe to show (Phase 4).
+  if (!isErpConnectorError(error)) throw new Error('expected an ErpConnectorError');
+  expect(error.userMessage).toMatch(/\S/);
   return error;
 }
 
@@ -790,6 +801,86 @@ export function describeErpConnectorContract(options: ErpConnectorContractOption
           'VALIDATION',
         );
         expect(await erp.getInvoicedQtyByPoLine(chain.poLineId)).toBe(0);
+      });
+    });
+
+    // ── Phase 4: the boundary every connector must honour ──────────────────
+    describe('boundary: capabilities, connection, errors, reconciliation', () => {
+      it('reports its identity and a set of known capabilities', () => {
+        expect(erp.info.type).toMatch(/\S/);
+        expect(erp.info.displayName).toMatch(/\S/);
+        const caps = erp.capabilities();
+        expect(new Set(caps).size).toBe(caps.length);
+        for (const c of caps) expect(ERP_CAPABILITIES).toContain(c);
+      });
+
+      it('checks its connection without throwing, and names the business when connected', async () => {
+        const check = await erp.checkConnection();
+        expect(ERP_CONNECTION_STATUSES).toContain(check.status);
+        if (check.status === 'CONNECTED') expect(check.company?.name).toMatch(/\S/);
+        const described = await describeConnection(erp);
+        expect(described).toMatchObject({ type: erp.info.type, status: check.status });
+        // Safe metadata only: no credentials, tokens, keys or hosts.
+        expect(JSON.stringify(described)).not.toMatch(/password|secret|token|api[_-]?key|:\/\//i);
+      });
+
+      it('an operation outside its capabilities is UNSUPPORTED, before anything else happens', async () => {
+        const caps = erp.capabilities();
+        const missing = [...ERP_READ_OPERATIONS, ...ERP_WRITE_OPERATIONS].filter(
+          (op) => !supportsOperation(caps, op),
+        );
+        for (const op of missing) {
+          const call = (erp[op] as (...a: unknown[]) => Promise<unknown>).bind(erp);
+          const error = await expectErpError(call({}, newKey()), 'UNSUPPORTED');
+          expect(error.retryable).toBe(false);
+        }
+        // The guard enforces the same for any connector, whatever it would have done.
+        const narrowed = guardCapabilities(
+          Object.assign(Object.create(erp) as ErpConnector, {
+            capabilities: () => caps.filter((c) => c !== 'purchase_invoice.create'),
+          }),
+        );
+        await expectErpError(
+          narrowed.recordPurchaseInvoice({} as RecordPurchaseInvoiceInput, newKey()),
+          'UNSUPPORTED',
+        );
+      });
+
+      it('errors are typed, with a safe message and a retryable flag', async () => {
+        const error = await expectErpError(
+          erp.createVendor(vendorInput({ gstin: BAD_CHECKSUM_GSTIN }), newKey()),
+          'VALIDATION',
+        );
+        expect(error.retryable).toBe(false);
+        expect(error.toSafeJSON()).toMatchObject({ code: 'VALIDATION', retryable: false });
+        expect(error.userMessage).not.toMatch(/SQLITE|stack|at \//);
+      });
+
+      it('reconciles a write by its key: created (with the same record) or not created; never creates', async () => {
+        if (!erp.capabilities().includes('write.reconcile')) return;
+        const key = newKey();
+        expect(await erp.reconcileWrite(key)).toEqual({ outcome: 'not_created' });
+        expect(await erp.findVendorByGstin(gstin(NANDI_GSTIN))).toBeNull();
+        const vendor = await erp.createVendor(vendorInput(), key);
+        expect(await erp.reconcileWrite(key)).toEqual({
+          outcome: 'created',
+          operation: 'createVendor',
+          recordId: vendor.id,
+        });
+        const invoiceKey = purchaseInvoiceIdempotencyKey(OTHER_INVOICE);
+        expect(await erp.reconcileWrite(invoiceKey)).toEqual({ outcome: 'not_created' });
+      });
+
+      it('a repeated write never duplicates; the same key with other details is refused', async () => {
+        const key = newKey();
+        const a = await erp.createVendor(vendorInput(), key);
+        const b = await erp.createVendor(vendorInput(), key);
+        expect(b.id).toBe(a.id);
+        expect((await erp.listVendors()).filter((v) => v.gstin === NANDI_GSTIN)).toHaveLength(1);
+        await expectErpError(
+          erp.createVendor(vendorInput({ name: 'Someone Else Pvt Ltd' }), key),
+          'IDEMPOTENCY_CONFLICT',
+        );
       });
     });
   });

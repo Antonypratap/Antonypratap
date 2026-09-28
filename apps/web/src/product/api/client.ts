@@ -129,6 +129,7 @@ export const api = {
       request(ApiImportSchema, `/imports/${encodeURIComponent(id)}/confirm`, { method: 'POST' }),
   },
   erp: {
+    connection: () => request(ApiErpSchema.connection, '/erp/connection'),
     vendors: () => request(ApiErpSchema.vendors, '/erp/vendors'),
     items: () => request(ApiErpSchema.items, '/erp/items'),
     purchaseOrders: () => request(ApiErpSchema.purchaseOrders, '/erp/purchase-orders'),

@@ -8,6 +8,12 @@ import { ERP_TABS, hrefFor, type ErpTab } from '../router';
 import { useResource } from '../state/data';
 import { ErpData } from './ErpData';
 import { erpStatusText } from '../state/decision';
+import {
+  capabilityList,
+  connectionIdentity,
+  connectionStatusText,
+  type ErpConnectionView,
+} from '../state/connection';
 import styles from './Erp.module.css';
 
 const TAB_LABEL: Record<ErpTab, string> = {
@@ -17,6 +23,7 @@ const TAB_LABEL: Record<ErpTab, string> = {
   receipts: 'Goods receipts',
   invoices: 'Purchase invoices',
   data: 'Import and export',
+  connection: 'Business system',
 };
 
 function Table({
@@ -106,6 +113,7 @@ function useTab(tab: ErpTab) {
           origin(g.origin),
         ]);
       case 'data':
+      case 'connection':
         return [];
       case 'invoices':
         return (await api.erp.purchaseInvoices()).map((i) => [
@@ -132,13 +140,50 @@ const HEAD: Record<ErpTab, { head: string[]; numeric?: number[] }> = {
     numeric: [5, 6],
   },
   data: { head: [] },
+  connection: { head: [] },
 };
+
+/**
+ * The business system Veyra works with (Phase 4): reference only. There is nothing to connect,
+ * no credentials and no settings here; the connection is configured where Veyra is deployed.
+ */
+function Connection({ connection }: { connection: ErpConnectionView | null }) {
+  if (!connection) return <p className={styles.none}>Loading…</p>;
+  const connected = connection.status === 'CONNECTED';
+  return (
+    <section className={styles.system} aria-label="Your business system">
+      <p className={styles.eyebrow}>Your business system</p>
+      <div className={styles.systemHead}>
+        <div>
+          <h2 className={styles.systemName}>{connection.displayName}</h2>
+          <p className={styles.company}>{connection.company?.name ?? 'Company not available'}</p>
+        </div>
+        <StatusPill status={connected ? 'handled' : 'attention'}>
+          {connectionStatusText(connection.status)}
+        </StatusPill>
+      </div>
+      <p className={styles.eyebrow}>What Veyra can do in it</p>
+      <ul className={styles.capabilities}>
+        {capabilityList(connection).map((c) => (
+          <li key={c.label} className={c.supported ? undefined : styles.unsupported}>
+            <span aria-hidden="true">{c.supported ? '✓' : '–'}</span>
+            {c.label}
+            {c.supported ? null : <span className={styles.sr}> (not supported)</span>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 export function Erp({ tab }: { tab: ErpTab }) {
   const { data, error } = useTab(tab);
+  const { data: connection } = useResource(() => api.erp.connection(), 'erp:connection');
   const spec = HEAD[tab];
   const body: ReactNode =
-    tab === 'data' ? (
+    tab === 'connection' ? (
+      <Connection connection={connection} />
+    ) : tab === 'data' ? (
       <ErpData />
     ) : data === null ? (
       <p className={styles.none}>{error ?? 'Loading…'}</p>
@@ -154,9 +199,21 @@ export function Erp({ tab }: { tab: ErpTab }) {
     <div className={styles.page}>
       <PageHeader
         title="ERP"
-        sub="Business records Veyra checks invoices against."
+        sub={
+          <>
+            Business records Veyra checks invoices against.
+            {connection && (
+              <>
+                {' '}
+                <a className={styles.identity} href={hrefFor({ name: 'erp', tab: 'connection' })}>
+                  {connectionIdentity(connection)}
+                </a>
+              </>
+            )}
+          </>
+        }
         aside={
-          tab === 'data' ? undefined : (
+          tab === 'data' || tab === 'connection' ? undefined : (
             <a className={styles.action} href={hrefFor({ name: 'erp', tab: 'data' })}>
               Import business records
             </a>

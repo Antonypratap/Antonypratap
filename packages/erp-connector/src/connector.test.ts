@@ -10,8 +10,10 @@ import {
 import { describeErpConnectorContract } from './contract';
 
 describe('ErpConnector type contract', () => {
-  it('its methods are exactly the declared read and write operations', () => {
-    expectTypeOf<Exclude<keyof ErpConnector, 'info'>>().toEqualTypeOf<ErpOperation>();
+  it('its methods are exactly the declared read and write operations, plus the boundary metadata', () => {
+    expectTypeOf<
+      Exclude<keyof ErpConnector, 'info' | 'capabilities' | 'checkConnection'>
+    >().toEqualTypeOf<ErpOperation>();
     expectTypeOf<ErpReadOperation & ErpWriteOperation>().toBeNever();
   });
 

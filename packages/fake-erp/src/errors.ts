@@ -1,12 +1,14 @@
 import Database from 'better-sqlite3';
 import {
+  ErpConfigurationError,
   ErpUnavailableError,
   ErpValidationError,
   isErpConnectorError,
   type ErpOperation,
 } from '@veyra/erp-connector';
 
-const UNAVAILABLE = /^SQLITE_(BUSY|LOCKED|IOERR|CANTOPEN|FULL|READONLY|PROTOCOL)/;
+const UNAVAILABLE = /^SQLITE_(BUSY|LOCKED|IOERR|FULL|PROTOCOL)/;
+const CONFIGURATION = /^SQLITE_(CANTOPEN|READONLY|NOTADB|CORRUPT)/;
 
 /**
  * Maps storage errors onto the connector's typed errors. Connector errors pass through; lock and
@@ -16,11 +18,12 @@ const UNAVAILABLE = /^SQLITE_(BUSY|LOCKED|IOERR|CANTOPEN|FULL|READONLY|PROTOCOL)
 export function mapError(operation: ErpOperation, error: unknown): unknown {
   if (isErpConnectorError(error)) return error;
   if (error instanceof Database.SqliteError) {
-    if (UNAVAILABLE.test(error.code))
-      return new ErpUnavailableError(`${operation}: ${error.message}`, { cause: error });
+    // The SQLite text stays in `cause` only: it never reaches a message, log line or screen.
+    if (UNAVAILABLE.test(error.code)) return new ErpUnavailableError({ cause: error });
+    if (CONFIGURATION.test(error.code)) return new ErpConfigurationError({ cause: error });
     if (error.code.startsWith('SQLITE_CONSTRAINT')) {
       return new ErpValidationError(operation, [
-        { path: '', message: `${error.code}: ${error.message}` },
+        { path: '', message: 'The record breaks a rule of the business system.' },
       ]);
     }
   }

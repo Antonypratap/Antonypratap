@@ -25,6 +25,16 @@ import {
   VALIDATION_OUTCOMES,
 } from '@veyra/shared';
 
+/** What Veyra knows about one ERP write (see `erpWrites`). */
+export const ERP_WRITE_STATUSES = [
+  'pending',
+  'confirmed',
+  'not_created',
+  'unknown',
+  'failed',
+] as const;
+export type ErpWriteStatus = (typeof ERP_WRITE_STATUSES)[number];
+
 /**
  * veyra.db (ARCHITECTURE §4.2). Veyra's own workflow data; ERP records live behind ErpConnector.
  * Ids are ULIDs, timestamps ISO-8601 UTC text. Money, quantities and rates never appear as
@@ -294,6 +304,35 @@ export const questions = sqliteTable(
     uniqueIndex('questions_open_subject')
       .on(t.invoiceId, t.code, t.subjectKey)
       .where(sql`${t.status} = 'open'`),
+  ],
+);
+
+/**
+ * Every ERP write Veyra makes for an invoice (Phase 4): the explicit link between a Veyra
+ * invoice and the ERP's record (`erp_id`, opaque, and the ERP's own reference such as an invoice
+ * or receipt number), and what Veyra knows about the write. `pending` is recorded before the call
+ * (write-ahead); `unknown` means the response was lost and the write must be reconciled, never
+ * re-sent as a new transaction.
+ */
+export const erpWrites = sqliteTable(
+  'erp_writes',
+  {
+    idempotencyKey: text('idempotency_key').primaryKey(),
+    invoiceId: text('invoice_id')
+      .notNull()
+      .references(() => invoices.id),
+    operation: text('operation').notNull(),
+    status: text('status').notNull(),
+    erpId: text('erp_id'),
+    externalRef: text('external_ref'),
+    errorCode: text('error_code'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => [
+    index('erp_writes_invoice').on(t.invoiceId),
+    check('erp_writes_status', inList(t.status, ERP_WRITE_STATUSES)),
+    check('erp_writes_confirmed', sql`${t.status} <> 'confirmed' OR ${t.erpId} IS NOT NULL`),
   ],
 );
 

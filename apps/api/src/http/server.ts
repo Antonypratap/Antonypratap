@@ -19,7 +19,12 @@ import {
   paise,
 } from '@veyra/shared';
 import { stateName } from '@veyra/india-tax';
-import { isErpConnectorError } from '@veyra/erp-connector';
+import {
+  CAPABILITY_LABEL,
+  ERP_CAPABILITIES,
+  describeConnection,
+  isErpConnectorError,
+} from '@veyra/erp-connector';
 import * as t from '../db/schema';
 import { InvalidTransitionError } from '../workflow/state-machine';
 import { VeyraError, type Veyra } from '../workflow/veyra';
@@ -91,8 +96,11 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       );
     if ('code' in err && err.code === 'FST_REQ_FILE_TOO_LARGE')
       return reply.status(413).send(error('TOO_LARGE', 'Files up to 20 MB are accepted.'));
+    // ERP failures carry only a stable code and a safe message: never the underlying error.
     if (isErpConnectorError(err))
-      return reply.status(503).send(error('ERP_UNAVAILABLE', 'Your ERP could not be reached.'));
+      return err.retryable
+        ? reply.status(503).send(error('ERP_UNAVAILABLE', 'Your ERP could not be reached.'))
+        : reply.status(502).send(error(`ERP_${err.code}`, err.userMessage));
     app.log.error(err);
     return reply.status(500).send(error('INTERNAL', 'Something went wrong.'));
   });
@@ -259,6 +267,22 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   // ── ERP (read-only, through ErpConnector) ────────────────────────────────
   const erp = veyra.erp;
   app.get('/api/v1/erp/company', async () => erp.getCompany());
+  // Read-only (Phase 4): which business system, whether it is connected, what it can do.
+  app.get('/api/v1/erp/connection', async () => {
+    const c = await describeConnection(erp);
+    return send(ApiErpSchema.connection, {
+      type: c.type,
+      displayName: c.displayName,
+      version: c.version,
+      status: c.status,
+      company: c.company,
+      capabilities: ERP_CAPABILITIES.map((key) => ({
+        key,
+        label: CAPABILITY_LABEL[key],
+        supported: c.capabilities.includes(key),
+      })),
+    });
+  });
   app.get('/api/v1/erp/vendors', async () =>
     send(
       ApiErpSchema.vendors,

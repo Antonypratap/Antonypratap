@@ -1,6 +1,7 @@
 import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
+import { guardCapabilities, type ErpConnector } from '@veyra/erp-connector';
 import { FakeErpConnector } from '@veyra/fake-erp';
 import {
   DemoRoutedExtractor,
@@ -22,6 +23,8 @@ export interface AppConfig {
   nodeEnv: string | undefined;
   /** Optional local Ollama assist (VEYRA_OLLAMA_URL / VEYRA_OLLAMA_MODEL). Off when absent. */
   ollama?: { baseUrl: string; model: string } | null;
+  /** Tests only: wraps the ERP connector (e.g. the scripted connector that injects failures). */
+  wrapErp?: (erp: ErpConnector) => ErpConnector;
   /** Tests only: replaces the real document extractor. */
   documentExtractor?: Extractor & { close?: () => Promise<void> };
   clock?: () => Date;
@@ -66,9 +69,12 @@ export async function createApp(config: AppConfig) {
   const initialSettings = config.demo ? DEMO_SETTINGS : DEFAULT_SETTINGS;
   const storageDir = join(config.dataDir, 'uploads');
   const extractor = makeExtractor(initialSettings.extractorMode, config);
+  // The workflow sees only the ErpConnector port, behind the capability guard: an operation the
+  // connector does not declare is UNSUPPORTED, never a silent fallback (ARCHITECTURE §17).
+  const connector = guardCapabilities(config.wrapErp ? config.wrapErp(erp) : erp);
   const veyra = new Veyra({
     db,
-    erp,
+    erp: connector,
     extractor,
     storageDir,
     initialSettings,
@@ -84,6 +90,7 @@ export async function createApp(config: AppConfig) {
     db.transaction((tx) => {
       for (const table of [
         'imports',
+        'erp_writes',
         'jobs',
         'audit_events',
         'questions',

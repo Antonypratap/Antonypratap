@@ -493,7 +493,7 @@ GET    /questions/:id
 POST   /questions/:id/answer           { optionId, input? } → effect applied, re-run (designated user)
 
 ERP (read-only, via ErpConnector)
-GET    /erp/company
+GET    /erp/company         /erp/connection            (read-only: system, status, capabilities)
 GET    /erp/vendors         /erp/vendors/:id
 GET    /erp/items           /erp/items/:id
 GET    /erp/purchase-orders /erp/purchase-orders/:id   (lines, GRNs, invoiced qty)
@@ -755,3 +755,41 @@ Presentation and demo tooling only. No change to the state machine, question cod
 - **IMPLEMENTATION DECISION** Colour semantics kept strict: green only for handled / ready; amber for attention; processing, your decision and rejected are neutral.
 - **TECHNICAL CONSTRAINT** The 142 / 131 / 11 narrative stays on the homepage (labelled illustrative). The product shows the workspace's real counts; it does not display invented figures.
 
+
+## 17. Phase 4: production-grade ERP boundary
+
+Strengthens the ERP integration boundary only. No change to the state machine, question codes or rules, extraction/OCR, demo scenarios, payment behaviour, authentication or tenancy, and `VERIFIED_PENDING_PAYMENT` keeps its meaning. No real ERP, credentials, OAuth or webhooks. Labels as in §13.
+
+**Boundary**
+- **CLIENT REQUIREMENT** The application reaches the ERP only through the `ErpConnector` port (`packages/erp-connector`). Reads and writes are declared separately (`ERP_READ_OPERATIONS` / `ERP_WRITE_OPERATIONS`); every write takes an idempotency key. The only imports of `@veyra/fake-erp` remain the composition root (`apps/api/src/app.ts`), the dev fixtures and tests (lint rule unchanged). No direct-access violations were found; none were removed.
+- **IMPLEMENTATION DECISION** Capabilities: a connector declares them (`capabilities()`, `ERP_CAPABILITIES`, `supports()`); every operation maps to the capability it needs (`OPERATION_CAPABILITY`). The composition root wraps every connector in `guardCapabilities`, so an undeclared operation fails with `UNSUPPORTED` before the connector is called. Veyra never falls back to another behaviour. The fake ERP declares everything except one-time suppliers.
+- **IMPLEMENTATION DECISION** Connection metadata: `info` gains `type` and `displayName`; `checkConnection()` never throws and returns a typed status (`CONNECTED`, `AUTHENTICATION_FAILED`, `UNAVAILABLE`, `CONFIGURATION_ERROR`, `UNKNOWN`) plus the company. `GET /api/v1/erp/connection` (read-only) returns system, status, company and each capability with a plain label. The response schema is strict, so it cannot carry settings or secrets.
+
+**Errors and retries**
+- **IMPLEMENTATION DECISION** Errors: `NOT_FOUND`, `CONFLICT`, `VALIDATION`, `IDEMPOTENCY_CONFLICT`, `UNAVAILABLE`, `AUTHENTICATION_FAILED`, `UNSUPPORTED`, `CONFIGURATION_ERROR`.
+  - Each has a stable code, a fixed safe `userMessage`, `retryable`, an optional `externalReference` and `toSafeJSON()`.
+  - The underlying failure is kept only as `cause` and is never shown, stored or logged.
+  - The fake ERP maps SQLite failures onto these codes (busy/locked/IO → `UNAVAILABLE`; cannot open/corrupt → `CONFIGURATION_ERROR`).
+  - The API answers ERP failures with `ERP_UNAVAILABLE` (503) or `ERP_<CODE>` (502) and the safe message.
+  - Failure reasons and job errors store `CODE: safe message` only.
+- **IMPLEMENTATION DECISION** Retries: only `UNAVAILABLE` (unreachable, network, timeout) is retryable. It gets 4 retries at 1 s, 2 s, 3 s and 4 s, always with the same idempotency keys. All other errors fail the invoice at once, visibly.
+
+**Writes: ledger, reconciliation and commit failures**
+- **IMPLEMENTATION DECISION** Every commit write goes through a write ledger (`erp_writes`, migration 0003). Each row holds the idempotency key, operation and status (`pending`, `confirmed`, `not_created`, `unknown`, `failed`), plus the ERP's opaque record id, the external reference (supplier code, PO/GRN number, supplier invoice number), and the safe error code.
+- **IMPLEMENTATION DECISION** Reconciliation: `reconcileWrite(key)` (capability `write.reconcile`) is a read. It reports whether the ERP applied a write with that key (`created` with the record id, `not_created`, or `unknown`). The fake ERP answers from its idempotency log.
+- **CLIENT REQUIREMENT** Commit failure semantics: `ErpUnavailableError.writeOutcome` says whether a write was `not_sent` or had an `unknown` outcome.
+  - **Not sent:** safe to retry with the same key; audited once as *ERP unavailable*.
+  - **Unknown (response lost):** Veyra reconciles before anything else. If the ERP has the write, the record is taken with the same key (the idempotency contract returns the stored record) and audited as *Confirmed the ERP transaction*. If the ERP cannot say, the ledger row is `unknown`, audited once as *ERP transaction outcome requires reconciliation*, and the invoice stays unresolved.
+  - An unresolved write is never retried as a new transaction and never shown as *Invoice ready*. The UI says Veyra is confirming the transaction with the business system.
+  - For the purchase invoice, the natural-key lookup (vendor, number, financial year) also finds Veyra's own record, keyed by `veyraInvoiceId`.
+- **TECHNICAL CONSTRAINT** An unresolved invoice stays in `COMMITTING`. The state machine allows `FAILED → EXTRACTING/MATCHING/REJECTED` only, so a failed invoice cannot resume its commit. Reprocessing through `MATCHING` would make R11 (duplicate purchase invoice) flag Veyra's own ERP record. Changing either is out of scope, so the commit job keeps reconciling an unresolved write once a minute with the same keys; it is not failed.
+- **CLIENT REQUIREMENT** Pre-commit re-check kept (§4.3). It runs before the first write only. Once the ledger shows a write may have reached the ERP, the frozen plan is resumed with the same keys: a fresh re-check would see Veyra's own records as changes.
+
+**Audit and UI**
+- **IMPLEMENTATION DECISION** Audit wording: *Matched supplier* / *Matched purchase order* (read from the ERP), *Validated ERP references* (the re-check before recording), *Recorded ERP transaction*, *ERP unavailable*, *ERP transaction outcome requires reconciliation*, *Confirmed the ERP transaction*. Audit details carry operation and ERP record id only.
+- **IMPLEMENTATION DECISION** UI: the ERP screen shows the identity line (*Fake ERP · Veyra Demo Industries Pvt Ltd · Connected*) and a **Business system** tab with status and capabilities (✓). It is reference only: there is no connect, API key, OAuth or credential UI.
+
+**Testing**
+- **IMPLEMENTATION DECISION** Tests use `@veyra/erp-connector/testing` (`scriptedConnector`), which is never wired into the app. It wraps a connector and injects faults: unavailable, timeout before/after a write, authentication, configuration, validation, not found, missing capabilities, overridden reads (a changed PO) and scripted connection status.
+  - Its fault causes contain fake secrets; tests assert they never appear in errors, API responses, audit, failure reasons or job errors.
+  - The contract suite gained boundary tests (identity, connection, capabilities, typed errors, reconciliation, idempotency) and runs against the fake ERP both directly and through the scripted wrapper.

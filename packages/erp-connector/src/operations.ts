@@ -19,6 +19,8 @@ export const ERP_READ_OPERATIONS = [
   'listPurchaseOrders',
   'listGrns',
   'listPurchaseInvoices',
+  // Phase 4: what did a write with this key do? (reconciliation of a lost response)
+  'reconcileWrite',
 ] as const;
 export type ErpReadOperation = (typeof ERP_READ_OPERATIONS)[number];
 

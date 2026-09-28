@@ -43,6 +43,11 @@ import {
   VendorSchema,
   decideIdempotentWrite,
   payloadHash,
+  ERP_CAPABILITIES,
+  connectionStatusOf,
+  type ErpCapability,
+  type ErpConnectionCheck,
+  type ErpWriteReconciliation,
   type Company,
   type CreateGrnInput,
   type CreateItemInput,
@@ -118,13 +123,22 @@ export interface FakeErpOptions {
   testHooks?: FakeErpTestHooks;
 }
 
+const FAKE_ERP_CAPABILITIES: readonly ErpCapability[] = ERP_CAPABILITIES.filter(
+  (c) => c !== 'vendor.one_time',
+);
+
 /**
  * ErpConnector over a local SQLite file (`fake_erp.db`). The database is private to this class:
  * no SQL, connection or table object is exposed. Business decisions (which PO, whether to create)
  * stay outside; this class stores, looks up and enforces referential and natural-key integrity.
  */
 export class FakeErpConnector implements ErpConnector {
-  readonly info: ErpConnectorInfo = { name: 'fake-erp', version: '1' };
+  readonly info: ErpConnectorInfo = {
+    name: 'fake-erp',
+    version: '1',
+    type: 'fake-erp',
+    displayName: 'Fake ERP',
+  };
 
   readonly #sqlite: Database.Database;
   readonly #db: FakeErpDb;
@@ -153,6 +167,36 @@ export class FakeErpConnector implements ErpConnector {
 
   close(): void {
     this.#sqlite.close();
+  }
+
+  // ── Boundary (Phase 4) ───────────────────────────────────────────────────
+
+  /** Everything except one-time suppliers, which this ERP has no concept of. */
+  capabilities(): readonly ErpCapability[] {
+    return FAKE_ERP_CAPABILITIES;
+  }
+
+  async checkConnection(): Promise<ErpConnectionCheck> {
+    try {
+      const c = await this.getCompany();
+      return { status: 'CONNECTED', company: { name: c.name, identifier: c.gstin } };
+    } catch (error) {
+      return { status: connectionStatusOf(error), company: null };
+    }
+  }
+
+  /** The idempotency log answers exactly: a key it holds was written; any other key was not. */
+  async reconcileWrite(key: IdempotencyKey): Promise<ErpWriteReconciliation> {
+    return this.#read('reconcileWrite', (q) => {
+      const row = q.select().from(idempotencyLog).where(eq(idempotencyLog.key, key)).get();
+      return row
+        ? {
+            outcome: 'created' as const,
+            operation: row.operation as ErpWriteOperation,
+            recordId: row.resultId as ErpId,
+          }
+        : { outcome: 'not_created' as const };
+    });
   }
 
   // ── Reads ────────────────────────────────────────────────────────────────

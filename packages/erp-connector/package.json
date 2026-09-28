@@ -2,11 +2,12 @@
   "name": "@veyra/erp-connector",
   "version": "0.0.0",
   "private": true,
-  "description": "ErpConnector port (interface) and its reusable contract test suite.",
+  "description": "ErpConnector port (interface), its capability and error model, the reusable contract test suite, and a test-only scripted connector.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./contract": "./src/contract/index.ts"
+    "./contract": "./src/contract/index.ts",
+    "./testing": "./src/testing/scripted.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

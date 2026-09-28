@@ -141,7 +141,7 @@ describe('demo scenario launcher', () => {
       'Veyra: Matched supplier',
       'Veyra: Matched purchase order',
       'Veyra: Validated invoice',
-      'Veyra: Writing to your ERP',
+      'Veyra: Validated ERP references',
       'Veyra: Recorded in your ERP',
       'Veyra: Recorded ERP transaction',
       'Veyra: Ready for payment',

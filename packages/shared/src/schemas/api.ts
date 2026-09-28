@@ -181,6 +181,11 @@ export const ApiInvoiceDetailSchema = ApiInvoiceSummarySchema.extend({
     poNumber: z.string().nullable(),
     purchaseInvoiceId: z.string().nullable(),
     records: z.array(z.string()),
+    /**
+     * Phase 4: a write reached (or may have reached) the ERP and Veyra is confirming its outcome.
+     * Never shown as recorded until confirmed.
+     */
+    reconciling: z.boolean(),
     /** Goods receipts on the order (Phase 3E evidence), with who recorded them. */
     receipts: z.array(z.object({ number: z.string(), date: z.string(), byYou: z.boolean() })),
     /** The purchase invoice Veyra recorded in the ERP, once committed. */
@@ -222,6 +227,31 @@ export const ApiAnswerBodySchema = z.object({
 });
 
 export const ApiErpSchema = {
+  /**
+   * The business system Veyra is connected to (Phase 4): identity, status and what it can do.
+   * Strict: it can never carry settings, credentials, hosts or raw errors.
+   */
+  connection: z
+    .object({
+      type: z.string(),
+      displayName: z.string(),
+      version: z.string().nullable(),
+      status: z.enum([
+        'CONNECTED',
+        'AUTHENTICATION_FAILED',
+        'UNAVAILABLE',
+        'CONFIGURATION_ERROR',
+        'UNKNOWN',
+      ]),
+      company: z
+        .object({ name: z.string(), identifier: z.string().nullable() })
+        .strict()
+        .nullable(),
+      capabilities: z.array(
+        z.object({ key: z.string(), label: z.string(), supported: z.boolean() }).strict(),
+      ),
+    })
+    .strict(),
   vendors: z.array(
     z.object({
       code: z.string(),

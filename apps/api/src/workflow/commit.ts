@@ -8,7 +8,15 @@ import {
   type IsoDate,
 } from '@veyra/shared';
 import { financialYearOf } from '@veyra/india-tax';
-import { ErpConflictError } from '@veyra/erp-connector';
+import {
+  ErpConflictError,
+  ErpUnavailableError,
+  isErpConnectorError,
+  type ErpWriteOperation,
+  type ErpWriteReconciliation,
+  type CreateGrnInput,
+  type RecordPurchaseInvoiceInput,
+} from '@veyra/erp-connector';
 import * as t from '../db/schema';
 import type { JsonValue } from '../engine/fields';
 import type { CommitPlan, PoLineRef, Ref } from '../engine/types';
@@ -44,6 +52,127 @@ function canonical(value: unknown): string {
 }
 
 class PlanChanged extends Error {}
+
+// ── The ERP write ledger (Phase 4) ─────────────────────────────────────────
+
+type LedgerStatus = (typeof t.erpWrites.$inferSelect)['status'];
+
+function ledgerRow(v: Veyra, key: IdempotencyKey) {
+  return v.db.select().from(t.erpWrites).where(eq(t.erpWrites.idempotencyKey, key)).get();
+}
+
+function mark(
+  v: Veyra,
+  invoiceId: string,
+  operation: ErpWriteOperation,
+  key: IdempotencyKey,
+  status: LedgerStatus,
+  more: { erpId?: string; externalRef?: string | null; errorCode?: string } = {},
+): void {
+  const now = v.now();
+  v.db
+    .insert(t.erpWrites)
+    .values({
+      idempotencyKey: key,
+      invoiceId,
+      operation,
+      status,
+      erpId: more.erpId ?? null,
+      externalRef: more.externalRef ?? null,
+      errorCode: more.errorCode ?? null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: t.erpWrites.idempotencyKey,
+      set: {
+        status,
+        ...(more.erpId !== undefined ? { erpId: more.erpId } : {}),
+        ...(more.externalRef !== undefined ? { externalRef: more.externalRef } : {}),
+        errorCode: more.errorCode ?? null,
+        updatedAt: now,
+      },
+    })
+    .run();
+}
+
+async function reconcile(v: Veyra, key: IdempotencyKey): Promise<ErpWriteReconciliation> {
+  if (!v.erp.capabilities().includes('write.reconcile')) return { outcome: 'unknown' };
+  return v.erp.reconcileWrite(key).catch((): ErpWriteReconciliation => ({ outcome: 'unknown' }));
+}
+
+/**
+ * Sends one ERP write through the ledger. The write is recorded as `pending` before the call; its
+ * outcome after. When the response is lost (UNAVAILABLE with an unknown outcome) Veyra asks the
+ * ERP what the key did: created → the record is fetched by re-sending with the SAME key (the
+ * idempotency contract returns the stored record, never a second one); not created → retry later;
+ * cannot tell → `unknown`, audited, and the invoice stays in COMMITTING (never shown as ready).
+ */
+async function ledgerWrite<T>(
+  v: Veyra,
+  invoiceId: string,
+  operation: ErpWriteOperation,
+  key: IdempotencyKey,
+  send: () => Promise<T>,
+  identify: (r: T) => { erpId: string; externalRef: string | null },
+): Promise<T> {
+  const before = ledgerRow(v, key)?.status;
+  if (before !== 'confirmed') mark(v, invoiceId, operation, key, 'pending');
+  const confirmed = (r: T, reconciled: boolean) => {
+    mark(v, invoiceId, operation, key, 'confirmed', identify(r));
+    if (reconciled || before === 'unknown')
+      v.db.transaction((tx) =>
+        v.audit(tx, invoiceId, { type: 'system' }, 'erp.reconciled', {
+          operation,
+          erpId: identify(r).erpId,
+        }),
+      );
+    return r;
+  };
+  try {
+    return confirmed(await send(), false);
+  } catch (error) {
+    if (error instanceof ErpUnavailableError) {
+      if (error.writeOutcome === 'unknown') {
+        const r = await reconcile(v, key);
+        if (r.outcome === 'created') {
+          mark(v, invoiceId, operation, key, 'confirmed', { erpId: r.recordId });
+          return confirmed(await send(), true);
+        }
+        if (r.outcome === 'unknown') {
+          mark(v, invoiceId, operation, key, 'unknown', { errorCode: error.code });
+          if (before !== 'unknown')
+            v.db.transaction((tx) =>
+              v.audit(tx, invoiceId, { type: 'system' }, 'erp.reconciliation_required', {
+                operation,
+              }),
+            );
+          throw error;
+        }
+      }
+      mark(v, invoiceId, operation, key, 'not_created', { errorCode: error.code });
+      // Once per outage, not once per retry.
+      if (before !== 'not_created')
+        v.db.transaction((tx) =>
+          v.audit(tx, invoiceId, { type: 'system' }, 'erp.unavailable', { operation }),
+        );
+      throw error;
+    }
+    if (isErpConnectorError(error))
+      mark(v, invoiceId, operation, key, 'failed', { errorCode: error.code });
+    throw error;
+  }
+}
+
+/** Whether an ERP write for this invoice may already have been sent (so no fresh re-check). */
+function writeMayHaveBeenSent(v: Veyra, invoiceId: string): boolean {
+  return v.db
+    .select({ status: t.erpWrites.status })
+    .from(t.erpWrites)
+    .where(eq(t.erpWrites.invoiceId, invoiceId))
+    .all()
+    .some((r) => r.status === 'pending' || r.status === 'confirmed' || r.status === 'unknown');
+}
 
 /**
  * The payload shapes the engine stages (engine/run.ts). Only the fields of the action's entity are
@@ -93,9 +222,12 @@ export async function executeCommit(
   const inv = v.invoiceRow(v.db, invoiceId);
   const rows = () =>
     v.db.select().from(t.creationActions).where(eq(t.creationActions.invoiceId, invoiceId)).all();
+  // Once a write may have reached the ERP, the frozen plan is resumed with the same keys: a fresh
+  // re-check would see Veyra's own records and mistake them for changes (ARCHITECTURE §17).
   const started =
     rows().some((r) => plan.actionIds.includes(r.id) && r.status === 'committed') ||
-    inv.erpPurchaseInvoiceId !== null;
+    inv.erpPurchaseInvoiceId !== null ||
+    writeMayHaveBeenSent(v, invoiceId);
 
   const backToMatching = (reason: string, detail: Record<string, JsonValue> = {}) => {
     v.db.transaction((tx) => {
@@ -161,49 +293,81 @@ export async function executeCommit(
       let label: string;
       switch (a.entity) {
         case 'vendor_reactivation': {
-          const r = await erp.reactivateVendor(
-            {
-              vendorId: p.vendorId,
-              sourceInvoiceId: source,
-              approvedByUserId: a.approvedByUserId as never,
-            },
+          const r = await ledgerWrite(
+            v,
+            invoiceId,
+            'reactivateVendor',
             key,
+            () =>
+              erp.reactivateVendor(
+                {
+                  vendorId: p.vendorId,
+                  sourceInvoiceId: source,
+                  approvedByUserId: a.approvedByUserId as never,
+                },
+                key,
+              ),
+            (x) => ({ erpId: x.id, externalRef: x.code }),
           );
           [erpId, label] = [r.id, `${r.name} (${r.code}) reactivated`];
           break;
         }
         case 'vendor': {
-          const r = await erp.createVendor(
-            { name: p.name, gstin: p.gstin, address: p.address, sourceInvoiceId: source },
+          const r = await ledgerWrite(
+            v,
+            invoiceId,
+            'createVendor',
             key,
+            () =>
+              erp.createVendor(
+                { name: p.name, gstin: p.gstin, address: p.address, sourceInvoiceId: source },
+                key,
+              ),
+            (x) => ({ erpId: x.id, externalRef: x.code }),
           );
           [erpId, label] = [r.id, `Supplier ${r.name} added as ${r.code}`];
           break;
         }
         case 'item': {
-          const r = await erp.createItem(
-            {
-              name: p.name,
-              hsnSac: p.hsnSac,
-              uom: p.uom,
-              gstRateBp: p.gstRateBp,
-              sourceInvoiceId: source,
-              approvedByUserId: a.approvedByUserId as never,
-            },
+          const r = await ledgerWrite(
+            v,
+            invoiceId,
+            'createItem',
             key,
+            () =>
+              erp.createItem(
+                {
+                  name: p.name,
+                  hsnSac: p.hsnSac,
+                  uom: p.uom,
+                  gstRateBp: p.gstRateBp,
+                  sourceInvoiceId: source,
+                  approvedByUserId: a.approvedByUserId as never,
+                },
+                key,
+              ),
+            (x) => ({ erpId: x.id, externalRef: x.code }),
           );
           [erpId, label] = [r.id, `Item ${r.name} added as ${r.code}`];
           break;
         }
         case 'alias': {
-          const r = await erp.createVendorItemAlias(
-            {
-              vendorId: refId(p.vendor),
-              vendorItemCode: p.vendorItemCode,
-              itemId: refId(p.item),
-              sourceInvoiceId: source,
-            },
+          const r = await ledgerWrite(
+            v,
+            invoiceId,
+            'createVendorItemAlias',
             key,
+            () =>
+              erp.createVendorItemAlias(
+                {
+                  vendorId: refId(p.vendor),
+                  vendorItemCode: p.vendorItemCode,
+                  itemId: refId(p.item),
+                  sourceInvoiceId: source,
+                },
+                key,
+              ),
+            (x) => ({ erpId: x.id, externalRef: x.vendorItemCode }),
           );
           [erpId, label] = [r.id, `Supplier item code ${r.vendorItemCode} linked to the item`];
           break;
@@ -224,16 +388,24 @@ export async function executeCommit(
             unitPricePaise: l.unitPricePaise as never,
             gstRateBp: l.gstRateBp as never,
           }));
-          const r = await erp.createPurchaseOrder(
-            {
-              vendorId: refId(p.vendor),
-              poDate: p.poDate,
-              origin: p.origin,
-              sourceInvoiceId: source,
-              approvedByUserId: p.approvedByUserId,
-              lines,
-            },
+          const r = await ledgerWrite(
+            v,
+            invoiceId,
+            'createPurchaseOrder',
             key,
+            () =>
+              erp.createPurchaseOrder(
+                {
+                  vendorId: refId(p.vendor),
+                  poDate: p.poDate,
+                  origin: p.origin,
+                  sourceInvoiceId: source,
+                  approvedByUserId: p.approvedByUserId,
+                  lines,
+                },
+                key,
+              ),
+            (x) => ({ erpId: x.id, externalRef: x.poNumber }),
           );
           [erpId, label] = [
             r.id,
@@ -242,7 +414,7 @@ export async function executeCommit(
           break;
         }
         case 'grn': {
-          const lines = [];
+          const lines: CreateGrnInput['lines'] = [];
           for (const l of p.lines as unknown as {
             poLine: PoLineRef;
             receivedQtyMilli: number;
@@ -254,15 +426,23 @@ export async function executeCommit(
               acceptedQtyMilli: l.acceptedQtyMilli as never,
             });
           }
-          const r = await erp.createGrn(
-            {
-              poId: refId(p.po),
-              grnDate: p.grnDate,
-              confirmedByUserId: p.confirmedByUserId,
-              sourceInvoiceId: source,
-              lines,
-            },
+          const r = await ledgerWrite(
+            v,
+            invoiceId,
+            'createGrn',
             key,
+            () =>
+              erp.createGrn(
+                {
+                  poId: refId(p.po),
+                  grnDate: p.grnDate,
+                  confirmedByUserId: p.confirmedByUserId,
+                  sourceInvoiceId: source,
+                  lines,
+                },
+                key,
+              ),
+            (x) => ({ erpId: x.id, externalRef: x.grnNumber }),
           );
           [erpId, label] = [r.id, `Goods receipt ${r.grnNumber} recorded`];
           break;
@@ -303,7 +483,7 @@ export async function executeCommit(
       });
       return;
     }
-    const lines = [];
+    const lines: RecordPurchaseInvoiceInput['lines'] = [];
     for (const l of inv2.lines) {
       lines.push({
         lineNo: l.lineNo,
@@ -318,24 +498,48 @@ export async function executeCommit(
         igstPaise: l.igstPaise as never,
       });
     }
+    const invoiceKey = purchaseInvoiceIdempotencyKey(source);
+    if (existing) {
+      // Veyra's own record is already there (a lost response, found by its natural key).
+      const before = ledgerRow(v, invoiceKey)?.status;
+      mark(v, invoiceId, 'recordPurchaseInvoice', invoiceKey, 'confirmed', {
+        erpId: existing.id,
+        externalRef: existing.vendorInvoiceNo,
+      });
+      if (before !== 'confirmed')
+        v.db.transaction((tx) =>
+          v.audit(tx, invoiceId, sys, 'erp.reconciled', {
+            operation: 'recordPurchaseInvoice',
+            erpId: existing.id,
+          }),
+        );
+    }
     const recorded =
       existing ??
-      (await erp.recordPurchaseInvoice(
-        {
-          vendorId,
-          vendorInvoiceNo: inv2.vendorInvoiceNo,
-          invoiceDate: inv2.invoiceDate,
-          poId,
-          taxablePaise: inv2.taxablePaise as never,
-          cgstPaise: inv2.cgstPaise as never,
-          sgstPaise: inv2.sgstPaise as never,
-          igstPaise: inv2.igstPaise as never,
-          roundOffPaise: inv2.roundOffPaise as never,
-          totalPaise: inv2.totalPaise as never,
-          veyraInvoiceId: source,
-          lines,
-        },
-        purchaseInvoiceIdempotencyKey(source),
+      (await ledgerWrite(
+        v,
+        invoiceId,
+        'recordPurchaseInvoice',
+        invoiceKey,
+        () =>
+          erp.recordPurchaseInvoice(
+            {
+              vendorId,
+              vendorInvoiceNo: inv2.vendorInvoiceNo,
+              invoiceDate: inv2.invoiceDate,
+              poId,
+              taxablePaise: inv2.taxablePaise as never,
+              cgstPaise: inv2.cgstPaise as never,
+              sgstPaise: inv2.sgstPaise as never,
+              igstPaise: inv2.igstPaise as never,
+              roundOffPaise: inv2.roundOffPaise as never,
+              totalPaise: inv2.totalPaise as never,
+              veyraInvoiceId: source,
+              lines,
+            },
+            invoiceKey,
+          ),
+        (x) => ({ erpId: x.id, externalRef: x.vendorInvoiceNo }),
       ));
     v.commitHooks.afterErpWrite?.('purchase_invoice', recorded.id);
 

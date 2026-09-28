@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import type { ErpEntityType, ErpId, IdempotencyKey } from '@veyra/shared';
+import type { ErpCapability } from './capabilities';
 import type { ErpOperation, ErpWriteOperation } from './operations';
 
 export type ErpErrorCode =
@@ -8,21 +9,51 @@ export type ErpErrorCode =
   | 'VALIDATION'
   | 'IDEMPOTENCY_CONFLICT'
   | 'UNAVAILABLE'
-  | 'UNSUPPORTED_OPERATION';
+  | 'AUTHENTICATION_FAILED'
+  | 'UNSUPPORTED'
+  | 'CONFIGURATION_ERROR';
+
+/**
+ * Which errors may be retried (Phase 4). Only a transient failure is: the ERP was unavailable,
+ * the network failed, or the call timed out. Every retry of a write re-uses its idempotency key.
+ */
+export const RETRYABLE_ERP_ERRORS: readonly ErpErrorCode[] = ['UNAVAILABLE'];
+
+/** What a person may be told about an ERP error. Stable, and free of any secret or host detail. */
+export interface SafeErpError {
+  code: ErpErrorCode;
+  message: string;
+  retryable: boolean;
+  externalReference: string | null;
+}
 
 /**
  * Base class of every error an ErpConnector may throw. Anything else escaping a connector is a
- * connector bug. Only UNAVAILABLE is retryable; retrying any write uses the same idempotency key.
+ * connector bug. `userMessage` is safe to show and log; `message` is safe to log (it never contains
+ * credentials, tokens, hosts or raw infrastructure errors, which stay in `cause` at most).
  */
 export abstract class ErpConnectorError extends Error {
   abstract readonly code: ErpErrorCode;
   abstract readonly retryable: boolean;
+  abstract readonly userMessage: string;
+  /** An identifier the ERP gave for this request or record, when it gave one. */
+  externalReference: string | null = null;
+
+  toSafeJSON(): SafeErpError {
+    return {
+      code: this.code,
+      message: this.userMessage,
+      retryable: this.retryable,
+      externalReference: this.externalReference,
+    };
+  }
 }
 
 /** A referenced record does not exist (e.g. createGrn for an unknown PO). */
 export class ErpNotFoundError extends ErpConnectorError {
   readonly code = 'NOT_FOUND';
   readonly retryable = false;
+  readonly userMessage = 'A record Veyra needed is not in the business system. Nothing was posted.';
   constructor(
     readonly entity: ErpEntityType,
     readonly id: string,
@@ -40,6 +71,7 @@ export class ErpNotFoundError extends ErpConnectorError {
 export class ErpConflictError extends ErpConnectorError {
   readonly code = 'CONFLICT';
   readonly retryable = false;
+  readonly userMessage = 'The business system already has this record. Nothing was posted.';
   constructor(
     readonly entity: ErpEntityType,
     readonly naturalKey: Record<string, string>,
@@ -47,6 +79,7 @@ export class ErpConflictError extends ErpConnectorError {
   ) {
     super(`${entity} already exists for ${JSON.stringify(naturalKey)}`);
     this.name = 'ErpConflictError';
+    this.externalReference = existingId;
   }
 }
 
@@ -59,6 +92,7 @@ export interface ErpValidationIssue {
 export class ErpValidationError extends ErpConnectorError {
   readonly code = 'VALIDATION';
   readonly retryable = false;
+  readonly userMessage = 'The business system rejected the record as invalid. Nothing was posted.';
   constructor(
     readonly operation: ErpOperation,
     readonly issues: readonly ErpValidationIssue[],
@@ -79,6 +113,8 @@ export class ErpValidationError extends ErpConnectorError {
 export class ErpIdempotencyConflictError extends ErpConnectorError {
   readonly code = 'IDEMPOTENCY_CONFLICT';
   readonly retryable = false;
+  readonly userMessage =
+    'This request was already sent to the business system with different details. Nothing new was posted.';
   constructor(
     readonly key: IdempotencyKey,
     readonly reason: 'operation_mismatch' | 'payload_mismatch',
@@ -90,21 +126,79 @@ export class ErpIdempotencyConflictError extends ErpConnectorError {
   }
 }
 
-/** The ERP could not be reached or failed transiently. The outcome of a write is unknown: retry with the same key. */
+/**
+ * The ERP could not be reached, the network failed, or the call timed out. Retryable.
+ *
+ * `writeOutcome` matters for writes: `not_sent` means the request certainly did not reach the ERP
+ * (retrying is plainly safe); `unknown` means it may have been applied (the caller reconciles, then
+ * retries with the SAME key, never as a new transaction).
+ */
 export class ErpUnavailableError extends ErpConnectorError {
   readonly code = 'UNAVAILABLE';
   readonly retryable = true;
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options);
+  readonly reason: 'unavailable' | 'network' | 'timeout';
+  readonly writeOutcome: 'not_sent' | 'unknown';
+  readonly userMessage: string;
+  constructor(
+    options: {
+      reason?: 'unavailable' | 'network' | 'timeout';
+      writeOutcome?: 'not_sent' | 'unknown';
+      externalReference?: string;
+      /** The underlying failure. Kept for debugging only; never shown or copied into messages. */
+      cause?: unknown;
+    } = {},
+  ) {
+    const reason = options.reason ?? 'unavailable';
+    super(
+      reason === 'timeout'
+        ? 'The business system did not answer in time'
+        : "The business system couldn't be reached",
+      options.cause === undefined ? undefined : { cause: options.cause },
+    );
     this.name = 'ErpUnavailableError';
+    this.reason = reason;
+    this.writeOutcome = options.writeOutcome ?? 'not_sent';
+    this.externalReference = options.externalReference ?? null;
+    this.userMessage =
+      this.writeOutcome === 'unknown'
+        ? 'Veyra could not confirm whether the business system recorded this. Nothing is shown as recorded until it is confirmed.'
+        : "Veyra couldn't reach the business system. Nothing was posted.";
   }
 }
 
-/** This connector cannot perform the operation (e.g. an ERP without GRNs). */
-export class ErpUnsupportedOperationError extends ErpConnectorError {
-  readonly code = 'UNSUPPORTED_OPERATION';
+/** The ERP refused the connector's credentials. Not retryable: someone has to fix the connection. */
+export class ErpAuthenticationError extends ErpConnectorError {
+  readonly code = 'AUTHENTICATION_FAILED';
   readonly retryable = false;
-  constructor(readonly operation: ErpOperation) {
+  readonly userMessage =
+    'The business system refused Veyra’s connection. Nothing was posted. The connection needs attention.';
+  constructor(options: { cause?: unknown } = {}) {
+    super('The business system refused the connection', options);
+    this.name = 'ErpAuthenticationError';
+  }
+}
+
+/** The connector is set up wrongly (missing company, wrong database, bad settings). Not retryable. */
+export class ErpConfigurationError extends ErpConnectorError {
+  readonly code = 'CONFIGURATION_ERROR';
+  readonly retryable = false;
+  readonly userMessage =
+    'The connection to the business system is not set up correctly. Nothing was posted.';
+  constructor(options: { cause?: unknown } = {}) {
+    super('The connection to the business system is not configured correctly', options);
+    this.name = 'ErpConfigurationError';
+  }
+}
+
+/** This connector cannot perform the operation (e.g. an ERP without GRNs). Never a fallback. */
+export class ErpUnsupportedOperationError extends ErpConnectorError {
+  readonly code = 'UNSUPPORTED';
+  readonly retryable = false;
+  readonly userMessage = 'The business system does not support this. Nothing was posted.';
+  constructor(
+    readonly operation: ErpOperation,
+    readonly capability: ErpCapability | null = null,
+  ) {
     super(`operation ${operation} is not supported by this connector`);
     this.name = 'ErpUnsupportedOperationError';
   }
@@ -112,4 +206,9 @@ export class ErpUnsupportedOperationError extends ErpConnectorError {
 
 export function isErpConnectorError(error: unknown): error is ErpConnectorError {
   return error instanceof ErpConnectorError;
+}
+
+/** What may be shown about any error that came from, or through, the ERP boundary. */
+export function safeErpError(error: unknown): SafeErpError | null {
+  return isErpConnectorError(error) ? error.toSafeJSON() : null;
 }

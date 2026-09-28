@@ -97,3 +97,75 @@
 .action:hover {
   background: var(--color-surface);
 }
+
+.identity {
+  display: inline-block;
+  color: var(--color-ink-3);
+  font-weight: var(--weight-medium);
+}
+.identity:hover {
+  color: var(--color-ink);
+}
+.system {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 40rem;
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: 0 0 0 1px var(--color-line);
+}
+.eyebrow {
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-ink-4);
+}
+.systemHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.systemName {
+  font-size: var(--text-h3);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+.company {
+  font-size: var(--text-small);
+  color: var(--color-ink-3);
+}
+.capabilities {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: var(--space-2) var(--space-6);
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-small);
+  color: var(--color-ink-2);
+}
+.capabilities li {
+  display: flex;
+  gap: var(--space-2);
+}
+.capabilities li > span:first-child {
+  color: var(--color-accent);
+  font-weight: var(--weight-semibold);
+}
+.unsupported {
+  color: var(--color-ink-4);
+}
+.unsupported > span:first-child {
+  color: var(--color-ink-4) !important;
+}
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

@@ -380,6 +380,7 @@ export class Presenter {
         poNumber: await this.poNumberOf(inv),
         purchaseInvoiceId: inv.erpPurchaseInvoiceId,
         records,
+        reconciling: inv.state === 'COMMITTING' && this.v.hasUnresolvedErpWrite(inv.id),
         ...(await this.erpEvidence(inv)),
       },
     };
@@ -458,6 +459,17 @@ const ENTITY: Record<string, string> = {
   alias: "link for the supplier's item code",
   po: 'purchase order from the invoice',
   grn: 'goods receipt',
+};
+
+/** ERP writes, as a person would name them. */
+const OPERATION: Record<string, string> = {
+  reactivateVendor: 'supplier reactivation',
+  createVendor: 'new supplier',
+  createItem: 'new item',
+  createVendorItemAlias: "link for the supplier's item code",
+  createPurchaseOrder: 'purchase order',
+  createGrn: 'goods receipt',
+  recordPurchaseInvoice: 'purchase invoice',
 };
 
 /** One audit row in plain language. State changes and bookkeeping rows are not shown. */
@@ -556,9 +568,29 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
     case 'field.confirmed':
       return make('Confirmed a value', cap(fieldLabel(s('path'))));
     case 'commit.started':
-      return make('Writing to your ERP', 'Everything checked; recording the transaction');
+      return make(
+        'Validated ERP references',
+        'Checked again against your ERP just before recording; nothing changed',
+      );
     case 'creation.committed':
       return make('Recorded in your ERP', s('label'));
+    case 'erp.unavailable':
+      return make(
+        'ERP unavailable',
+        "Veyra couldn't reach your business system. Nothing was posted; it will try again.",
+        'attention',
+      );
+    case 'erp.reconciliation_required':
+      return make(
+        'ERP transaction outcome requires reconciliation',
+        `Veyra could not confirm whether your business system recorded the ${OPERATION[s('operation')] ?? 'transaction'}. Nothing is shown as recorded until it is confirmed.`,
+        'attention',
+      );
+    case 'erp.reconciled':
+      return make(
+        'Confirmed the ERP transaction',
+        `Your business system already had the ${OPERATION[s('operation')] ?? 'transaction'}; it was not recorded twice`,
+      );
     case 'commit.conflict':
       return make('Checking again', s('reason'), 'attention');
     case 'commit.completed':

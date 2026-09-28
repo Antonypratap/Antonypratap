@@ -17,7 +17,7 @@ import {
   type LineFieldKey,
   type QuestionCode,
 } from '@veyra/shared';
-import type { ErpConnector } from '@veyra/erp-connector';
+import { isErpConnectorError, type ErpConnector } from '@veyra/erp-connector';
 import { checkImageSize, imageSize, sniffDocument, type Extractor } from '@veyra/extractor';
 import type { VeyraDb, VeyraTx } from '../db/open';
 import * as t from '../db/schema';
@@ -356,6 +356,20 @@ export class Veyra {
     }
   }
 
+  /**
+   * Whether an ERP write for this invoice has an outcome Veyra does not know yet (Phase 4): sent
+   * (or possibly sent) and not confirmed. Such an invoice is never failed or shown as ready; the
+   * commit job keeps reconciling it.
+   */
+  hasUnresolvedErpWrite(invoiceId: string): boolean {
+    return this.db
+      .select({ status: t.erpWrites.status })
+      .from(t.erpWrites)
+      .where(eq(t.erpWrites.invoiceId, invoiceId))
+      .all()
+      .some((r) => r.status === 'unknown' || r.status === 'pending');
+  }
+
   /** Moves an invoice in a system state to FAILED, recording where and why (never silently). */
   fail(invoiceId: string, error: unknown): void {
     const inv = this.invoiceRow(this.db, invoiceId);
@@ -368,7 +382,12 @@ export class Veyra {
       'COMMITTING',
     ];
     if (!systemStates.includes(inv.state as InvoiceState)) throw error;
-    const reason = error instanceof Error ? error.message : String(error);
+    // ERP failures are described by their safe message only (no host, credential or raw error).
+    const reason = isErpConnectorError(error)
+      ? error.userMessage
+      : error instanceof Error
+        ? error.message
+        : String(error);
     this.db.transaction((tx) => {
       this.transition(
         tx,

@@ -3,11 +3,21 @@ import { CrashSignal } from './commit';
 import type { Veyra } from './veyra';
 
 const MAX_ATTEMPTS = 5;
+/** How often an unresolved ERP write is reconciled after the first attempts (not aggressive). */
+const RECONCILE_EVERY_MS = 60_000;
 
 /**
  * In-process job runner over the SQLite `jobs` table. One loop, one job at a time, so commits are
- * serialised (commit concurrency 1). Transient ERP unavailability is retried with a deterministic
- * backoff (1 s, 2 s, 3 s, …); any other error fails the invoice visibly. No Redis, no queue server.
+ * serialised (commit concurrency 1). No Redis, no queue server.
+ *
+ * Retry semantics (ARCHITECTURE §17): only retryable ERP errors (UNAVAILABLE: unreachable,
+ * network, timeout) are retried, with a deterministic backoff (1 s, 2 s, 3 s, 4 s), always with
+ * the same idempotency keys. After that:
+ * - an invoice with an ERP write of unknown outcome is NOT failed: it stays in COMMITTING (never
+ *   shown as ready) and is reconciled once a minute until the ERP answers;
+ * - anything else fails the invoice visibly, with a safe reason; it can be reprocessed.
+ * Non-retryable errors (validation, conflict, not found, authentication, unsupported,
+ * configuration) fail at once.
  */
 export class JobRunner {
   #timer: NodeJS.Timeout | null = null;
@@ -25,16 +35,30 @@ export class JobRunner {
       this.veyra.finishJob(job.id, { status: 'succeeded' });
     } catch (error) {
       if (error instanceof CrashSignal) throw error; // the "process" died: leave the job running
-      const message = error instanceof Error ? error.message : String(error);
-      if (isErpConnectorError(error) && error.retryable && job.attempts < MAX_ATTEMPTS) {
-        this.veyra.finishJob(job.id, {
-          status: 'retry',
-          error: message,
-          delayMs: job.attempts * 1000,
-        });
-        return true;
+      const safe = isErpConnectorError(error)
+        ? `${error.code}: ${error.userMessage}`
+        : error instanceof Error
+          ? error.message
+          : String(error);
+      if (isErpConnectorError(error) && error.retryable) {
+        if (job.attempts < MAX_ATTEMPTS) {
+          this.veyra.finishJob(job.id, {
+            status: 'retry',
+            error: safe,
+            delayMs: job.attempts * 1000,
+          });
+          return true;
+        }
+        if (this.veyra.hasUnresolvedErpWrite(job.invoiceId)) {
+          this.veyra.finishJob(job.id, {
+            status: 'retry',
+            error: safe,
+            delayMs: RECONCILE_EVERY_MS,
+          });
+          return true;
+        }
       }
-      this.veyra.finishJob(job.id, { status: 'failed', error: message });
+      this.veyra.finishJob(job.id, { status: 'failed', error: safe });
       this.veyra.fail(job.invoiceId, error);
     }
     return true;

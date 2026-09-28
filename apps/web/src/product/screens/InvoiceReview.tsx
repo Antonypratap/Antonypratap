@@ -67,7 +67,9 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
   const queue = attentionQueue(inbox);
   const position = queue.findIndex((i) => i.id === invoice.id);
   const next = nextInQueue(inbox, invoice.id);
-  const working = WORKING[invoice.state];
+  const working = invoice.erp.reconciling
+    ? 'Veyra is confirming the transaction with your business system. Nothing is shown as recorded until it is confirmed.'
+    : WORKING[invoice.state];
 
   // Show a new question as soon as it exists; otherwise the decision just made (or the last one).
   const question = open && open.id !== local?.question.id ? open : null;

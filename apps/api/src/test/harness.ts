@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
+import { guardCapabilities, type ErpConnector } from '@veyra/erp-connector';
 import { FakeErpConnector, type FakeErpTestHooks } from '@veyra/fake-erp';
 import { FixtureExtractor, renderScenario, scenarioById } from '@veyra/extractor';
 import { openVeyraDb } from '../db/open';
@@ -27,6 +28,7 @@ export interface Harness {
   restart: (opts?: {
     erpHooks?: FakeErpTestHooks;
     commitHooks?: VeyraOptions['commitHooks'];
+    wrapErp?: (erp: FakeErpConnector) => ErpConnector;
   }) => Harness;
   close: (remove?: boolean) => void;
 }
@@ -37,6 +39,8 @@ export function createHarness(
     seedErp?: boolean;
     erpHooks?: FakeErpTestHooks;
     commitHooks?: VeyraOptions['commitHooks'];
+    /** Wraps the fake ERP (e.g. with the scripted test connector). Always behind the guard. */
+    wrapErp?: (erp: FakeErpConnector) => ErpConnector;
   } = {},
 ): Harness {
   const dir = opts.dir ?? mkdtempSync(join(tmpdir(), 'veyra-'));
@@ -49,7 +53,7 @@ export function createHarness(
   const { sqlite, db } = openVeyraDb(join(dir, 'veyra.db'));
   const veyra = new Veyra({
     db,
-    erp,
+    erp: guardCapabilities(opts.wrapErp ? opts.wrapErp(erp) : erp),
     extractor: new FixtureExtractor({ allow: true, nodeEnv: 'test' }),
     storageDir: join(dir, 'uploads'),
     clock: () => DEMO_NOW,

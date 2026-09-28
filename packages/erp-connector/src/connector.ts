@@ -9,6 +9,9 @@ import type {
   Vendor,
   VendorItemAlias,
 } from './entities';
+import type { ErpCapability } from './capabilities';
+import type { ErpConnectionCheck } from './connection';
+import type { ErpWriteOperation } from './operations';
 import type {
   CreateGrnInput,
   CreateItemInput,
@@ -25,7 +28,21 @@ export interface ErpConnectorInfo {
   /** e.g. "fake-erp", "tally" */
   name: string;
   version: string;
+  /** Connector type (stable identifier), e.g. "fake-erp". */
+  type: string;
+  /** How the business system is named to a person, e.g. "Fake ERP". */
+  displayName: string;
 }
+
+/**
+ * The outcome of a write whose response was lost (Phase 4), looked up by its idempotency key:
+ * definitely created (with the record it created), definitely not created, or unknown (the ERP
+ * cannot say). A caller never treats `unknown` as either.
+ */
+export type ErpWriteReconciliation =
+  | { outcome: 'created'; operation: ErpWriteOperation; recordId: ErpId }
+  | { outcome: 'not_created' }
+  | { outcome: 'unknown' };
 
 /**
  * The only way Veyra reads or writes ERP data (ARCHITECTURE §3.2). The fake ERP is one
@@ -40,11 +57,27 @@ export interface ErpConnectorInfo {
  * - Writes validate their input (ErpValidationError), resolve references (ErpNotFoundError),
  *   enforce natural keys (ErpConflictError) and follow the idempotency contract in
  *   `idempotency.ts`. Writes are used only by the COMMITTING stage.
- * - Every error thrown is an ErpConnectorError; ErpUnavailableError is the only retryable one.
+ * - Every error thrown is an ErpConnectorError with a safe `userMessage`; ErpUnavailableError is
+ *   the only retryable one. No error carries a credential, token, host or raw infrastructure text.
+ * - An operation outside `capabilities()` throws ErpUnsupportedOperationError, never a fallback.
  * - There is deliberately no payment operation.
  */
 export interface ErpConnector {
   readonly info: ErpConnectorInfo;
+
+  // ── Boundary (Phase 4) ───────────────────────────────────────────────────
+  /**
+   * What this connector can do. An operation whose capability is missing throws
+   * ErpUnsupportedOperationError before doing anything (see `OPERATION_CAPABILITY`).
+   */
+  capabilities(): readonly ErpCapability[];
+  /** Whether the ERP can be reached and which business it holds. Never throws. */
+  checkConnection(): Promise<ErpConnectionCheck>;
+  /**
+   * Looks up what a write with this idempotency key did, for a write whose response was lost.
+   * Needs `write.reconcile`. Must never create anything.
+   */
+  reconcileWrite(key: IdempotencyKey): Promise<ErpWriteReconciliation>;
 
   // ── Company ──────────────────────────────────────────────────────────────
   getCompany(): Promise<Company>;

@@ -145,6 +145,10 @@ export const AUDIT_EVENTS = [
   'commit.started',
   'commit.conflict',
   'commit.completed',
+  // Phase 4: the ERP boundary (unreachable, uncertain write outcome, reconciled).
+  'erp.unavailable',
+  'erp.reconciliation_required',
+  'erp.reconciled',
   'settings.changed',
   'records.import_checked',
   'records.import_confirmed',

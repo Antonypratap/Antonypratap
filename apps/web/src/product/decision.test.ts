@@ -17,6 +17,7 @@ const invoice = (over: Partial<ApiInvoiceDetail> = {}): ApiInvoiceDetail =>
       poNumber: 'PO-2026-0110',
       purchaseInvoiceId: 'PINV/2026-27/1',
       records: [],
+      reconciling: false,
       receipts: [{ number: 'GRN-2026-0209', date: '2026-09-10', byYou: false }],
       purchaseInvoice: {
         id: 'PINV/2026-27/1',
@@ -56,6 +57,7 @@ describe('decision presentation', () => {
         poNumber: null,
         purchaseInvoiceId: null,
         records: [],
+        reconciling: false,
         receipts: [],
         purchaseInvoice: null,
       },
