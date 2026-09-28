@@ -13,7 +13,7 @@ Status: architecture approved (rev 3). Phases 0–2 complete (scaffold; shared c
 
 ## Development
 
-Requires Node 22 (see `.nvmrc`; Node ≥ 20.19 works).
+Requires Node 22.12 or newer (see `.nvmrc`). Check with `node -v`.
 
 ```sh
 npm install
