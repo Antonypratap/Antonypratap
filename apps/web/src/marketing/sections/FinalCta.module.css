@@ -1,0 +1,27 @@
+.section {
+  padding-block: var(--section-y);
+  border-top: 1px solid var(--color-line);
+  background:
+    radial-gradient(ellipse 60% 80% at 50% 100%, var(--color-accent-soft), transparent 70%),
+    var(--color-canvas);
+}
+
+.inner {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+}
+
+.title {
+  max-width: 16ch;
+  font-size: var(--text-h1);
+  line-height: 1.06;
+  letter-spacing: var(--tracking-display);
+}
+
+.copy {
+  margin: var(--space-6) 0 var(--space-10);
+  font-size: var(--text-lede);
+  line-height: 1.55;
+  color: var(--color-ink-2);
+}

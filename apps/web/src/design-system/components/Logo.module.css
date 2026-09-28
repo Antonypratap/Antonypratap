@@ -1,0 +1,43 @@
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5625rem;
+}
+
+.mark {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.stroke {
+  fill: none;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.word {
+  font-size: 1.0625rem;
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.03em;
+}
+
+.ink .tile {
+  fill: var(--color-ink);
+}
+.ink .stroke {
+  stroke: var(--color-canvas);
+}
+.ink .word {
+  color: var(--color-ink);
+}
+
+.inverse .tile {
+  fill: var(--color-inverse-ink);
+}
+.inverse .stroke {
+  stroke: var(--color-inverse);
+}
+.inverse .word {
+  color: var(--color-inverse-ink);
+}

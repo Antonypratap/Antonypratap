@@ -2,15 +2,28 @@
   "name": "@veyra/web",
   "version": "0.0.0",
   "private": true,
-  "description": "Veyra web UI (React + Vite).",
+  "description": "Veyra web: marketing site and (later) the application UI, sharing one design system.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@veyra/shared": "*"
+    "@fontsource-variable/inter": "^5.3.0",
+    "@veyra/shared": "*",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "vite": "^8.3.1"
   }
 }

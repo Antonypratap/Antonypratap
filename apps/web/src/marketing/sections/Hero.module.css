@@ -1,0 +1,144 @@
+.hero {
+  position: relative;
+  padding-top: clamp(3.5rem, 1.5rem + 6vw, 7rem);
+  padding-bottom: clamp(3.5rem, 2rem + 5vw, 7rem);
+  overflow: hidden;
+}
+
+/* A faint ledger grid: structure, not decoration. Fades out toward the edges. */
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(var(--color-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-line) 1px, transparent 1px);
+  background-size: 56px 56px;
+  background-position: center top;
+  opacity: 0.45;
+  mask-image: radial-gradient(ellipse 70% 60% at 70% 40%, #000 20%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 70% 40%, #000 20%, transparent 75%);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  align-items: center;
+  gap: clamp(2.5rem, 1rem + 5vw, 6rem);
+}
+
+.copy {
+  display: grid;
+  justify-items: start;
+}
+
+.kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+}
+.kicker::before {
+  content: '';
+  width: 1.25rem;
+  height: 1px;
+  background: var(--color-ink-4);
+}
+
+.title {
+  font-size: var(--text-display);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-display);
+  font-weight: 620;
+}
+
+.lede {
+  max-width: 30rem;
+  margin-top: var(--space-6);
+  font-size: var(--text-lede);
+  line-height: 1.45;
+  font-weight: var(--weight-medium);
+  letter-spacing: -0.015em;
+  color: var(--color-ink);
+}
+
+.body {
+  max-width: 30rem;
+  margin-top: var(--space-3);
+  font-size: var(--text-body);
+  line-height: 1.6;
+  color: var(--color-ink-2);
+}
+
+.ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-10);
+}
+
+.visual {
+  min-width: 0;
+}
+
+/* Entrance: copy first, then the product. */
+.copy > * {
+  animation: rise var(--duration-slow) var(--ease-out) both;
+}
+.copy > :nth-child(2) {
+  animation-delay: 60ms;
+}
+.copy > :nth-child(3) {
+  animation-delay: 140ms;
+}
+.copy > :nth-child(4) {
+  animation-delay: 200ms;
+}
+.copy > :nth-child(5) {
+  animation-delay: 260ms;
+}
+.visual {
+  animation: rise 900ms var(--ease-out) 240ms both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 960px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .copy {
+    max-width: 38rem;
+  }
+  .hero::before {
+    mask-image: radial-gradient(ellipse 90% 50% at 50% 70%, #000 20%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse 90% 50% at 50% 70%, #000 20%, transparent 75%);
+  }
+}
+
+@media (max-width: 560px) {
+  .kicker {
+    margin-bottom: var(--space-4);
+  }
+  .ctas {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+    margin-top: var(--space-8);
+  }
+}

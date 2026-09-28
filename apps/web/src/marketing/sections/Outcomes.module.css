@@ -1,0 +1,188 @@
+.section {
+  padding-block: var(--section-y);
+  background: var(--color-surface-sunken);
+  border-block: 1px solid var(--color-line);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-top: clamp(2.5rem, 1.5rem + 3vw, 4rem);
+}
+
+.card {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100%;
+  overflow: hidden;
+}
+
+.visual {
+  display: grid;
+  align-items: center;
+  height: 13.5rem;
+  padding: var(--space-6);
+  border-bottom: 1px solid var(--color-line);
+  background:
+    radial-gradient(circle at 1px 1px, var(--color-line) 1px, transparent 0) 0 0 / 14px 14px,
+    var(--color-canvas);
+}
+
+.text {
+  padding: var(--space-6);
+}
+
+.cardTitle {
+  font-size: var(--text-h3);
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+
+.cardBody {
+  margin-top: var(--space-2);
+  font-size: var(--text-small);
+  line-height: 1.6;
+  color: var(--color-ink-2);
+}
+
+/* Mini product components */
+.miniList {
+  display: grid;
+  gap: var(--space-2);
+}
+.miniRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 2.25rem;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: 0 0 0 1px var(--color-line);
+}
+.miniName {
+  font-size: var(--text-xsmall);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+  white-space: nowrap;
+}
+
+.focus {
+  display: grid;
+  gap: var(--space-2);
+}
+.dimRow {
+  height: 2.25rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: 0 0 0 1px var(--color-line);
+  opacity: 0.55;
+}
+.focusRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 2.75rem;
+  margin-inline: calc(-1 * var(--space-2));
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow:
+    var(--shadow-raised),
+    0 0 0 1px var(--color-attention-line);
+}
+.focusRow .miniName {
+  margin-right: auto;
+}
+.focusIcon {
+  display: grid;
+  place-items: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: var(--radius-xs);
+  background: var(--color-attention-soft);
+  color: var(--color-attention);
+}
+
+.control {
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-raised);
+}
+.controlLabel {
+  font-size: 0.6875rem;
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+}
+.controlQuestion {
+  margin-top: var(--space-2);
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+  letter-spacing: -0.01em;
+}
+.controlActions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+.approve,
+.hold {
+  display: inline-flex;
+  align-items: center;
+  height: 1.875rem;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+.approve {
+  background: var(--color-ink);
+  color: var(--color-canvas);
+}
+.hold {
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px var(--color-line-strong);
+  color: var(--color-ink);
+}
+
+/* Tablet: each outcome becomes a horizontal row, visual beside its words. */
+@media (max-width: 960px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .card {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    grid-template-rows: none;
+  }
+  .visual {
+    height: auto;
+    min-height: 13rem;
+    border-bottom: 0;
+    border-right: 1px solid var(--color-line);
+  }
+  .text {
+    align-self: center;
+    padding: var(--space-8);
+  }
+}
+
+/* Phone: stacked, full width. */
+@media (max-width: 640px) {
+  .card {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+  .visual {
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-line);
+  }
+  .text {
+    padding: var(--space-6);
+  }
+}

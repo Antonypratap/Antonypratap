@@ -29,6 +29,7 @@ npm run check        # format:check → lint → typecheck → test → db:verif
 | `npm test` / `test:watch` | Vitest across all workspaces |
 | `npm run health` | Toolchain and workspace wiring check |
 | `npm run db:verify` | Fails if the fake ERP schema and its migration drift apart |
+| `npm run dev -w @veyra/web` | Marketing homepage at http://localhost:5173 (`build` / `preview` also available) |
 | `npm run erp:reset [-- <path>]` | Recreate `data/fake_erp.db` with the DEMO.md seed (deterministic) |
 
 Workspaces: `packages/{shared,india-tax,erp-connector,fake-erp,extractor}`, `apps/{api,web}`.

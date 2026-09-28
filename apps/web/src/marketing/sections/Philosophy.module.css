@@ -1,0 +1,45 @@
+.section {
+  padding-block: clamp(7rem, 4rem + 11vw, 13rem);
+  background: var(--color-inverse);
+  color: var(--color-inverse-ink);
+}
+
+.inner {
+  display: grid;
+  justify-items: start;
+}
+
+.lead {
+  max-width: 30ch;
+  margin-top: var(--space-6);
+  font-size: var(--text-lede);
+  font-weight: var(--weight-medium);
+  line-height: 1.45;
+  letter-spacing: -0.012em;
+  color: var(--color-inverse-ink-2);
+}
+
+.statement {
+  display: grid;
+  margin-top: clamp(2.5rem, 1.5rem + 3vw, 4rem);
+  font-size: clamp(2.5rem, 1.2rem + 5.2vw, 6rem);
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+}
+
+.line {
+  display: block;
+}
+
+.accent {
+  color: var(--color-inverse-accent);
+}
+
+.support {
+  margin-top: clamp(2.5rem, 1.5rem + 3vw, 4rem);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--color-inverse-line);
+  font-size: var(--text-lede);
+  color: var(--color-inverse-ink-2);
+}

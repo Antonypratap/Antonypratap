@@ -1,0 +1,85 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  font-weight: var(--weight-medium);
+  letter-spacing: -0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.sm {
+  height: 2rem;
+  padding: 0 var(--space-3);
+  font-size: var(--text-xsmall);
+}
+.md {
+  height: 2.5rem;
+  padding: 0 var(--space-4);
+  font-size: var(--text-small);
+}
+.lg {
+  height: 3rem;
+  padding: 0 var(--space-5);
+  font-size: 0.9375rem;
+}
+
+.primary {
+  background: var(--color-ink);
+  color: var(--color-canvas);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    0 1px 2px rgb(13 15 18 / 0.2);
+}
+.primary:hover {
+  background: #22262c;
+}
+
+.secondary {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  box-shadow:
+    inset 0 0 0 1px var(--color-line-strong),
+    0 1px 1px rgb(13 15 18 / 0.03);
+}
+.secondary:hover {
+  background: var(--color-surface-sunken);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--color-ink-2);
+}
+.ghost:hover {
+  color: var(--color-ink);
+  background: var(--color-surface-sunken);
+}
+
+.inverse {
+  background: var(--color-inverse-ink);
+  color: var(--color-inverse);
+}
+.inverse:hover {
+  background: #ffffff;
+}
+
+.button:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.arrow {
+  width: 0.875rem;
+  height: 0.875rem;
+  transition: transform var(--duration-base) var(--ease-out);
+}
+.button:hover .arrow {
+  transform: translateX(2px);
+}

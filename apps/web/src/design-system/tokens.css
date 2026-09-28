@@ -1,0 +1,107 @@
+/*
+ * Veyra design tokens. One source of truth for the marketing site and the product UI.
+ * Neutral, warm-leaning greys; one restrained accent (settled green = handled);
+ * one attention colour (amber = needs a person). Precision over decoration.
+ */
+:root {
+  /* Typeface */
+  --font-sans:
+    'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Colour: surfaces */
+  --color-canvas: #fbfbf9;
+  --color-surface: #ffffff;
+  --color-surface-sunken: #f4f4f1;
+  --color-surface-raised: #ffffff;
+  --color-line: #e7e6e1;
+  --color-line-strong: #d7d6cf;
+
+  /* Colour: text */
+  --color-ink: #0d0f12;
+  --color-ink-2: #3b4048;
+  --color-ink-3: #686e77;
+  --color-ink-4: #9a9fa6;
+
+  /* Colour: accent (handled / primary action) */
+  --color-accent: #145c46;
+  --color-accent-hover: #0f4a38;
+  --color-accent-soft: #e9f2ee;
+  --color-accent-line: #c5ddd3;
+
+  /* Colour: attention (a decision is needed) */
+  --color-attention: #9a5a0b;
+  --color-attention-soft: #fbf2e4;
+  --color-attention-line: #efd8b4;
+
+  /* Colour: inverse (dark) surfaces */
+  --color-inverse: #0c0e11;
+  --color-inverse-2: #16191e;
+  --color-inverse-line: #262a31;
+  --color-inverse-ink: #f3f3f0;
+  --color-inverse-ink-2: #a3a8b0;
+  --color-inverse-ink-3: #6f757e;
+  --color-inverse-accent: #8fd4b6;
+
+  /* Type scale */
+  --text-display: clamp(2.875rem, 1.55rem + 4.6vw, 5.25rem);
+  --text-h1: clamp(2.25rem, 1.5rem + 2.8vw, 3.75rem);
+  --text-h2: clamp(1.875rem, 1.35rem + 1.9vw, 3rem);
+  --text-h3: 1.1875rem;
+  --text-lede: clamp(1.0625rem, 0.98rem + 0.36vw, 1.25rem);
+  --text-body: 1rem;
+  --text-small: 0.875rem;
+  --text-xsmall: 0.8125rem;
+  --text-label: 0.75rem;
+  --text-metric: clamp(1.75rem, 1.3rem + 1.4vw, 2.5rem);
+
+  --leading-tight: 1.04;
+  --leading-heading: 1.1;
+  --leading-body: 1.6;
+
+  --tracking-display: -0.038em;
+  --tracking-heading: -0.028em;
+  --tracking-body: -0.006em;
+  --tracking-label: 0.08em;
+
+  --weight-regular: 420;
+  --weight-medium: 520;
+  --weight-semibold: 600;
+
+  /* Spacing (4px base) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+  --space-24: 6rem;
+  --section-y: clamp(5.5rem, 3rem + 9vw, 10.5rem);
+  --gutter: clamp(1.25rem, 0.6rem + 2.6vw, 2.5rem);
+  --content-max: 76rem;
+
+  /* Shape and depth: subtle, never decorative */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+  --shadow-panel:
+    0 0 0 1px var(--color-line), 0 1px 2px rgb(13 15 18 / 0.04),
+    0 24px 48px -24px rgb(13 15 18 / 0.14);
+  --shadow-raised:
+    0 0 0 1px var(--color-line), 0 1px 2px rgb(13 15 18 / 0.05),
+    0 12px 28px -14px rgb(13 15 18 / 0.18);
+  --focus-ring: 0 0 0 2px var(--color-canvas), 0 0 0 4px var(--color-accent);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --duration-fast: 160ms;
+  --duration-base: 320ms;
+  --duration-slow: 720ms;
+}

@@ -3,6 +3,7 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import prettier from 'eslint-config-prettier';
 import globals from 'globals';
+import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
   { ignores: ['**/node_modules/**', '**/dist/**', '**/coverage/**'] },
@@ -55,6 +56,12 @@ export default tseslint.config(
         },
       ],
     },
+  },
+  {
+    // Web app: browser code with React hooks rules.
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    ...reactHooks.configs.flat['recommended-latest'],
+    languageOptions: { globals: { ...globals.browser } },
   },
   prettier,
 );

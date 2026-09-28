@@ -1,0 +1,16 @@
+.card {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 0 0 1px var(--color-line);
+}
+
+.interactive {
+  transition:
+    box-shadow var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
+}
+
+.interactive:hover {
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-2px);
+}
