@@ -1,6 +1,6 @@
 # Veyra — Business Rules (V1)
 
-Status: **Approved with changes (rev 2)**. This file is the specification for the deterministic core. Every rule here gets a unit test named after its code.
+Status: **Approved (rev 3)**. This file is the specification for the deterministic core. Every rule here gets a unit test named after its code.
 
 Scope: **India · GST · INR · one buyer company · one PO per invoice.**
 
@@ -29,7 +29,7 @@ Per line: `description`, `hsnSac`, `qtyMilli`, `uom`, `unitPricePaise`, `taxable
 
 ### 1.3 Confidence
 
-- A field is **usable** when `source ∈ {human_confirmed, human_corrected, derived_from_erp_choice}`, or when `source = extracted` and `confidence ≥ extraction_confidence_min_bp` (default 0.90) and the value passes its format parser.
+- A field is **usable** when `source ∈ {human_confirmed, human_corrected, derived_from_erp_choice, derived_from_document_evidence}`, or when `source = extracted` and `confidence ≥ extraction_confidence_min_bp` (default 0.90) and the value passes its format parser.
 - A required field that is not usable raises **`MD_FIELD`** (MISSING_DATA). The system does not fill it from elsewhere, including the ERP.
 - Exception: an unusable `header.vendorGstin` is handled by vendor matching V5/V6 (§2.1). If name candidates exist, the stage-1 question is `AM_VENDOR` instead of `MD_FIELD`.
 - Human-sourced values are never overwritten by re-extraction.
@@ -41,7 +41,7 @@ Per line: `description`, `hsnSac`, `qtyMilli`, `uom`, `unitPricePaise`, `taxable
 | Dates | Accept `DD/MM/YYYY`, `DD-MM-YYYY`, `DD.MM.YYYY`, `DD-Mon-YYYY`, `YYYY-MM-DD`. Day-first is the India locale rule, applied uniformly. **Two-digit years are unparseable.** |
 | GSTIN | 15 chars `^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$`, valid state code, valid mod-36 checksum. |
 | PAN | GSTIN characters 3–12. |
-| Place of supply | State name or 2-digit code, mapped through the GST state table. Unknown → unparseable. Not derived from the buyer GSTIN if missing. |
+| Place of supply | State name or 2-digit code, mapped through the GST state table. Unknown → unparseable. Resolved by the hierarchy in §1.6. |
 | HSN/SAC | 4, 6 or 8 digits. |
 | UOM | Mapped through a fixed synonym table (`KG,KGS,KILOGRAM→KGS`, `NOS,NO,NUMBERS→NOS`, `PCS,PIECES→PCS`, `REAM,REAMS→REAM`, `BOX,BOXES→BOX`, …). Unknown → unparseable. `NOS` and `PCS` are **distinct**. |
 | Invoice number | Normalised for comparison: Unicode NFKC, uppercase, remove all whitespace. Nothing else changes (leading zeros, `/`, `-` are kept). |
@@ -50,6 +50,18 @@ Per line: `description`, `hsnSac`, `qtyMilli`, `uom`, `unitPricePaise`, `taxable
 ### 1.5 Name normalisation
 
 Name normalisation is used **only to build candidate lists**, never to auto-link. Steps: NFKC, lowercase, `&` → space, strip `. , ( ) ' " - /`, collapse whitespace, drop the tokens `m s ms pvt private ltd limited llp co company and the`.
+
+
+### 1.6 Place of supply (decision D3)
+
+The steps are applied in order, and the first one that yields a result wins:
+
+1. **Printed.** The invoice has an explicit "Place of Supply" field that is usable → use it (`source = extracted`).
+2. **Established from GST evidence on the document.** This applies only when the invoice prints a **ship-to / consignee block** that carries a usable state (a state code, or a GSTIN whose checksum passes). The value is derived deterministically as `derived_from_document_evidence`, and the evidence is recorded.
+   - If several pieces of evidence disagree, or the evidence is unusable, go to step 3.
+3. **Ask.** Raise `MD_FIELD` for `header.placeOfSupply`.
+
+Never used as evidence: the **buyer (bill-to) GSTIN on its own**, the tax heads charged (that would be circular with R08), or any ERP default.
 
 ---
 
@@ -189,7 +201,7 @@ Safety net: if no question is open but some rule is `fail` / `not_evaluated`, th
 - Intra-state: `cgst = sgst = round_half_up(taxable × (rate_bp / 2) / 10000)`
 - Inter-state: `igst = round_half_up(taxable × rate_bp / 10000)`
 - **Tax method.** If *every* line shows its tax amounts, tax is checked **per line** and header tax heads must equal the line sums. If *no* line shows tax amounts, tax is checked **per rate group** (`round_half_up(Σ taxable in group × rate)`). A mix of both is unparseable and raises `MD_FIELD`.
-- **Round-off.** `pre = taxable + cgst + sgst + igst`. If a round-off line is printed, it must equal exactly `round_to_rupee_half_up(pre) − pre` (a value in −49…+50 paise), and `total = pre + round_off`. If none is printed, `total = pre` exactly.
+- **Round-off.** `pre = taxable + cgst + sgst + igst`. If a round-off line is printed, it must equal exactly `round_to_rupee_half_up(pre) − pre` (a value in −49…+50 paise), and `total = pre + round_off`. If none is printed, `total = pre` exactly. Any other difference fails R09/R10 and is **never silently absorbed**. The UI always displays *calculated total → round-off → invoice total* (decision D2).
 
 ### 4.2 Rule catalogue
 

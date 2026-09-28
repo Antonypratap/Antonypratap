@@ -1,0 +1,16 @@
+{
+  "name": "@veyra/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Veyra web UI (React + Vite).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@veyra/shared": "*"
+  }
+}

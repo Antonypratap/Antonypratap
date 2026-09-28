@@ -1,0 +1,17 @@
+{
+  "name": "@veyra/fake-erp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "SQLite-backed fake ERP implementing ErpConnector, plus demo seed data.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@veyra/shared": "*",
+    "@veyra/erp-connector": "*"
+  }
+}

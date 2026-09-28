@@ -1,6 +1,6 @@
 # Veyra — Architecture (V1)
 
-Status: **Approved with changes (rev 2)**. No application code has been written yet.
+Status: **Approved (rev 3: decisions D1–D4 recorded)**. Phase 0 (scaffold) complete; no business code yet.
 
 Veyra is an AI-assisted business transaction automation platform. The V1 use case:
 
@@ -268,7 +268,8 @@ invoices(id, document_id, state, state_version,            -- optimistic locking
 extractions(id, invoice_id, extractor_id, extractor_version, raw_json, created_at)
 
 fields(id, invoice_id, path, value_json, confidence_bp,
-       evidence_json, source CHECK IN ('extracted','human_confirmed','human_corrected','derived_from_erp_choice'),
+       evidence_json, source CHECK IN ('extracted','human_confirmed','human_corrected','derived_from_erp_choice',
+                     'derived_from_document_evidence'),
        extraction_id, updated_by_user_id NULL, updated_at,
        UNIQUE(invoice_id, path))
        -- path: 'header.vendorGstin', 'lines[2].unitPricePaise', ...
@@ -318,7 +319,8 @@ Nothing is written to the ERP until an invoice is fully valid. Creations (vendor
 - Each call carries `idempotencyKey = veyra:<invoiceId>:<actionId>`, so a crashed commit can resume safely.
 - Commit jobs run one at a time. Immediately before committing, the ERP-dependent rules (duplicate, remaining GRN qty, vendor/PO status) are re-evaluated against live ERP data.
 - A natural-key conflict at commit (another invoice created the same vendor GSTIN first) sends the invoice back to `MATCHING`, which now finds the existing record. It does not fail.
-- On `REJECTED`, staged actions become `discarded`. The ERP never receives orphan records from abandoned invoices. **Consequence:** a GRN confirmed on an invoice that is later rejected is not written to the ERP. The confirmation remains in the audit log.
+- On `REJECTED`, staged actions become `discarded`. The ERP never receives orphan records from abandoned invoices. **Consequence (decision D1):** a GRN confirmed on an invoice that is later rejected is never written to the ERP. The confirmation remains in Veyra's `creation_actions` (`discarded`) and in the audit trail.
+- **Restartability (decision D4):** `COMMITTING` is automatic. Each staged action records its `erp_id` as soon as the connector returns it. A restarted commit skips actions that already have an `erp_id` and re-sends the rest with the same idempotency key, and the connector returns the existing record for a key it has seen before. `recordPurchaseInvoice` is also protected by the ERP's `UNIQUE(vendor, invoice_no, FY)` constraint.
 
 ## 5. Workflow state machine
 
@@ -458,7 +460,7 @@ Errors use one shape: `{ "error": { "code": "INVALID_TRANSITION", "message": "..
    - **Fields**: value, confidence, source badge (extracted / confirmed / corrected), inline correct/confirm.
    - **Lines**: invoice ↔ PO line ↔ GRN accepted ↔ already invoiced ↔ remaining, with mismatches highlighted.
    - **Records**: FIND results and staged creations, each tagged `auto_created_from_invoice`, `user approval` or `existing`.
-   - **Checks**: every rule as pass / fail / N-A with expected vs actual. N-A shows its reason (e.g. "PO derived from this invoice").
+   - **Checks**: every rule as pass / fail / N-A with expected vs actual. N-A shows its reason (e.g. "PO derived from this invoice"). The totals block always shows **calculated total → round-off → invoice total** (D2).
    - **Questions**: open and answered.
    - **Timeline**: audit trail.
 5. **Questions Queue**: all open questions, grouped by invoice. Each card has kind, prompt, evidence snippet, options and required inputs (e.g. the GRN quantity form).
@@ -498,8 +500,11 @@ Each phase ends green on `npm run check` (typecheck + lint + tests) and is pushe
 
 Phases 1–10 are headless and API-first. The UI is built last on tested logic.
 
-## 12. Open items (not blocking Phase 0–2)
+## 12. Decision log
 
-1. **Staging vs immediate GRN commit.** Per §4.3, a user-confirmed GRN reaches the ERP only when its invoice verifies. The alternative is to commit user-confirmed GRNs immediately when the PO already exists in the ERP.
-2. **Round-off line.** RULES.md §4 accepts an explicit "Round off" line only when it equals exactly the amount needed to reach the nearest rupee. Otherwise it fails.
-3. **Place of supply.** If it is not printed on the invoice, it becomes a `MISSING_DATA` question (it is never derived from the buyer GSTIN). This is strict and may cause frequent questions on real invoices.
+| # | Decision | Where |
+|---|---|---|
+| D1 | New ERP records are staged and written only when the whole invoice transaction commits. User-confirmed GRN data stays in Veyra's `creation_actions` and audit trail if the invoice is rejected, but it is **never** written to the ERP unless the commit succeeds. | §4.3 |
+| D2 | Round-off is accepted only when printed on the invoice and exactly equal to the amount needed to reach the nearest rupee. The UI shows *calculated total → round-off → invoice total*. A difference is never silently absorbed. | RULES §4.1, R10 |
+| D3 | Place of supply follows a deterministic hierarchy: printed → established from valid GST evidence on the document → ask. It is never inferred from the buyer GSTIN alone. | RULES §1.6 |
+| D4 | `COMMITTING` is automatic, restartable and idempotent. A crash never creates duplicate ERP records. | §4.3 |

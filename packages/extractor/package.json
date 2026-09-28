@@ -1,0 +1,16 @@
+{
+  "name": "@veyra/extractor",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Extractor port with fixture, local OCR and optional Ollama implementations.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@veyra/shared": "*"
+  }
+}

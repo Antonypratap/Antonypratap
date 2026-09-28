@@ -1,6 +1,6 @@
 # Veyra — Demo Data & Scenarios (V1)
 
-Status: **Approved with changes (rev 2)**. The numbers in this file were verified with a script: integer paise, GST half-up to the paisa. They become the fixture `*.expected.json` files and the API integration tests (Phase 10).
+Status: **Approved (rev 3)**. The numbers in this file were verified with a script: integer paise, GST half-up to the paisa. They become the fixture `*.expected.json` files and the API integration tests (Phase 10).
 
 - Run everything with `npm run demo`, which resets both DBs, seeds them, generates fixtures and starts the API and web app.
 - Demo mode uses the **FixtureExtractor** (`VEYRA_ALLOW_FIXTURE_EXTRACTOR=true`) so results are reproducible.
