@@ -5,12 +5,12 @@ import { INVOICES, WEEK } from '../data/invoices';
 import { formatDate, inr } from '../format';
 import { INVOICE_FILTERS, hrefFor, type InvoiceFilter } from '../router';
 import { useDemoState } from '../state/DemoStore';
-import { STATUS_LABEL, statusOf } from '../state/demo';
+import { STATUS_LABEL, STATUS_TONE, statusOf } from '../state/demo';
 import styles from './Invoices.module.css';
 
 const FILTER_LABEL: Record<InvoiceFilter, string> = {
   all: 'All',
-  attention: 'Needs attention',
+  attention: 'Needs your attention',
   handled: 'Handled',
 };
 
@@ -24,7 +24,7 @@ export function Invoices({ filter }: { filter: InvoiceFilter }) {
         ? true
         : filter === 'attention'
           ? status === 'attention'
-          : status !== 'attention',
+          : status === 'handled',
     )
     .filter(
       ({ inv }) =>
@@ -91,19 +91,7 @@ export function Invoices({ filter }: { filter: InvoiceFilter }) {
               {inr(inv.totalPaise)}
             </span>
             <span role="cell">
-              <StatusPill
-                status={
-                  status === 'attention'
-                    ? 'attention'
-                    : status === 'rejected'
-                      ? 'neutral'
-                      : status === 'processing'
-                        ? 'received'
-                        : 'handled'
-                }
-              >
-                {STATUS_LABEL[status]}
-              </StatusPill>
+              <StatusPill status={STATUS_TONE[status]}>{STATUS_LABEL[status]}</StatusPill>
             </span>
           </a>
         ))}

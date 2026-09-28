@@ -5,22 +5,8 @@ import { invoiceById, type DemoInvoice, type DemoOption } from '../data/invoices
 import { formatDate, inr } from '../format';
 import { hrefFor, navigate } from '../router';
 import { useDemoDispatch, useDemoState } from '../state/DemoStore';
-import {
-  STATUS_LABEL,
-  nextQuestion,
-  openQuestions,
-  statusOf,
-  type InvoiceStatus,
-} from '../state/demo';
+import { STATUS_LABEL, nextQuestion, openQuestions, statusOf, STATUS_TONE } from '../state/demo';
 import styles from './InvoiceReview.module.css';
-
-const PILL: Record<InvoiceStatus, 'attention' | 'handled' | 'ready' | 'received' | 'neutral'> = {
-  attention: 'attention',
-  handled: 'handled',
-  ready: 'handled',
-  processing: 'received',
-  rejected: 'neutral',
-};
 
 export function InvoiceReview({ id }: { id: string }) {
   const invoice = invoiceById(id);
@@ -62,7 +48,7 @@ function Review({ invoice }: { invoice: DemoInvoice }) {
             <p className={styles.subtitle}>{invoice.supplier.name}</p>
           </div>
           <div className={styles.headMeta}>
-            <StatusPill status={PILL[status]}>{STATUS_LABEL[status]}</StatusPill>
+            <StatusPill status={STATUS_TONE[status]}>{STATUS_LABEL[status]}</StatusPill>
             {position >= 0 && (
               <span className={styles.position}>
                 Question {position + 1} of {open.length}

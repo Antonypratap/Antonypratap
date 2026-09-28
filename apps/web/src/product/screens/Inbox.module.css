@@ -60,7 +60,7 @@
   color: var(--color-accent);
   font-variant-numeric: tabular-nums;
 }
-.rejected,
+.decidedByYou,
 .of {
   color: var(--color-ink-4);
 }
@@ -74,7 +74,7 @@
 .barHandled {
   background: var(--color-accent-line);
 }
-.barRejected {
+.barDecided {
   background: var(--color-line-strong);
 }
 .barNeeds {
@@ -260,6 +260,10 @@
   min-width: 0;
   font-size: var(--text-xsmall);
   line-height: 1.45;
+}
+.quietMain > :first-child {
+  justify-self: start;
+  max-width: 100%;
 }
 .quietNumber {
   color: var(--color-ink-2);

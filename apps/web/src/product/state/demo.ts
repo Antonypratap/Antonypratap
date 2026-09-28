@@ -1,6 +1,7 @@
 /**
  * Local demo state for the product prototype: decisions made in this browser session.
- * Pure functions; the React store wraps them. Nothing is persisted or sent anywhere.
+ * Pure functions; the React store wraps them. It is the single source for every count,
+ * status and history in the product. Nothing is sent anywhere.
  */
 import { INVOICES, WEEK, type DemoInvoice, type Outcome } from '../data/invoices';
 
@@ -71,6 +72,16 @@ export const STATUS_LABEL: Record<InvoiceStatus, string> = {
   rejected: 'Rejected',
 };
 
+/** How each status is drawn, the same on every screen. */
+export const STATUS_TONE: Record<InvoiceStatus, 'attention' | 'handled' | 'received' | 'neutral'> =
+  {
+    attention: 'attention',
+    handled: 'handled',
+    ready: 'handled',
+    processing: 'received',
+    rejected: 'neutral',
+  };
+
 export function statusOf(invoice: DemoInvoice, state: DemoState): InvoiceStatus {
   if (invoice.initialStatus === 'handled') return 'handled';
   const decision = state.decisions[invoice.id];
@@ -90,21 +101,35 @@ export function answeredQuestions(
   }).sort((a, b) => b.decision.seq - a.decision.seq);
 }
 
-/** The week at a glance. received = needsYou + handled + rejected, always. */
-export function weekSummary(state: DemoState): {
+/**
+ * The week at a glance, derived from the same state as every other count.
+ * Invariant: received = handled + needsYou + ready + processing + rejected.
+ *  - handled: Veyra finished these on its own.
+ *  - needsYou: open questions (the attention queue).
+ *  - ready / processing / rejected: invoices you decided, by what happened next.
+ */
+export interface WeekSummary {
   received: number;
   handled: number;
   needsYou: number;
+  decidedByYou: number;
+  ready: number;
+  processing: number;
   rejected: number;
-} {
+}
+
+export function weekSummary(state: DemoState): WeekSummary {
   const decided = Object.values(state.decisions);
-  const rejected = decided.filter((d) => d.outcome === 'rejected').length;
-  const resolved = decided.length - rejected;
+  const count = (outcome: Outcome) => decided.filter((d) => d.outcome === outcome).length;
+  const needsYou = openQuestions(state).length;
   return {
     received: WEEK.received,
-    handled: WEEK.handled + resolved,
-    needsYou: WEEK.needsAttention - decided.length,
-    rejected,
+    handled: WEEK.handled,
+    needsYou,
+    decidedByYou: decided.length,
+    ready: count('ready'),
+    processing: count('processing'),
+    rejected: count('rejected'),
   };
 }
 
@@ -115,4 +140,22 @@ export function nextQuestion(state: DemoState, currentId: string): DemoInvoice |
   const order = INVOICES.map((i) => i.id);
   const at = order.indexOf(currentId);
   return open.find((i) => order.indexOf(i.id) > at) ?? open[0] ?? null;
+}
+
+/** Decisions in the order they were made, for keeping the demo across a page reload. */
+export function decisionLog(state: DemoState): { invoiceId: string; optionId: string }[] {
+  return answeredQuestions(state)
+    .reverse()
+    .map(({ invoice, decision }) => ({ invoiceId: invoice.id, optionId: decision.optionId }));
+}
+
+/** Rebuild state from a saved log. Anything that no longer matches the demo is ignored. */
+export function replayDecisions(log: unknown): DemoState {
+  if (!Array.isArray(log)) return INITIAL_STATE;
+  return log.reduce<DemoState>((state, entry: unknown) => {
+    if (typeof entry !== 'object' || entry === null) return state;
+    const { invoiceId, optionId } = entry as Record<string, unknown>;
+    if (typeof invoiceId !== 'string' || typeof optionId !== 'string') return state;
+    return demoReducer(state, { type: 'decide', invoiceId, optionId });
+  }, INITIAL_STATE);
 }

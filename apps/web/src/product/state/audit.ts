@@ -73,13 +73,48 @@ export function auditTrail(invoice: DemoInvoice, decision: Decision | undefined)
     tone: 'attention',
     by: 'Veyra',
   });
-  if (decision) {
+  if (!decision) {
     entries.push({
-      title: 'Decision recorded',
-      detail: `${decision.label}. ${decision.result}`,
-      tone: decision.outcome === 'rejected' ? 'neutral' : 'handled',
+      title: 'Waiting for your decision',
+      detail: 'Nothing moves until you decide.',
+      tone: 'attention',
       by: 'You',
     });
+    return entries;
   }
+  entries.push({
+    title: decision.outcome === 'rejected' ? 'You rejected the invoice' : 'You decided',
+    detail: decision.outcome === 'rejected' ? decision.label : `“${decision.label}”`,
+    tone: 'neutral',
+    by: 'You',
+  });
+  entries.push(afterDecision(decision));
   return entries;
+}
+
+/** What Veyra did with your decision. */
+function afterDecision(decision: Decision): AuditEntry {
+  switch (decision.outcome) {
+    case 'ready':
+      return {
+        title: 'Ready for payment',
+        detail: `${decision.result} Recorded in the ERP. Paying stays with your team.`,
+        tone: 'handled',
+        by: 'Veyra',
+      };
+    case 'processing':
+      return {
+        title: 'Following up',
+        detail: `${decision.result} Veyra will check the invoice again when the answer arrives.`,
+        tone: 'neutral',
+        by: 'Veyra',
+      };
+    case 'rejected':
+      return {
+        title: 'Closed',
+        detail: `${decision.result} Nothing was recorded in the ERP.`,
+        tone: 'neutral',
+        by: 'Veyra',
+      };
+  }
 }

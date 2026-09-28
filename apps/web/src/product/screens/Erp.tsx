@@ -148,8 +148,8 @@ export function Erp({ tab }: { tab: ErpTab }) {
     <div className={styles.page}>
       <PageHeader
         title="ERP"
-        sub="The demo company’s records that Veyra checks invoices against. Read-only."
-        aside={<span className={styles.badge}>Demo ERP</span>}
+        sub="Business records Veyra checks invoices against."
+        aside={<span className={styles.badge}>Read-only</span>}
       />
       <nav className={styles.tabs} aria-label="ERP records">
         {ERP_TABS.map((t) => (

@@ -16,7 +16,7 @@ export function Audit({ id }: { id: string | null }) {
     <div className={styles.page}>
       <PageHeader
         title="Audit"
-        sub="What happened to each invoice, and who decided. Illustrative history for the demo."
+        sub="What happened to each invoice, and who did it. Veyra does the checking; you make the decisions."
       />
       <div className={styles.grid}>
         <nav className={styles.list} aria-label="Invoices">
@@ -46,12 +46,17 @@ export function Audit({ id }: { id: string | null }) {
           </div>
           <ol className={styles.timeline}>
             {trail.map((e, i) => (
-              <li key={`${e.title}-${i}`} className={styles.entry} data-tone={e.tone}>
+              <li
+                key={`${e.title}-${i}`}
+                className={styles.entry}
+                data-tone={e.tone}
+                data-by={e.by === 'You' ? 'you' : 'veyra'}
+              >
                 <span className={styles.dot} aria-hidden="true" />
                 <div>
                   <p className={styles.entryTitle}>
-                    {e.title}
                     <span className={styles.by}>{e.by}</span>
+                    {e.title}
                   </p>
                   <p className={styles.entryDetail}>{e.detail}</p>
                 </div>

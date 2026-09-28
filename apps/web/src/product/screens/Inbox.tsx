@@ -38,15 +38,15 @@ export function Inbox() {
         <div className={styles.rest}>
           <p className={styles.restLine}>
             <span className={styles.handledNumber}>{week.handled}</span> handled by Veyra
-            {week.rejected > 0 && (
-              <span className={styles.rejected}> · {week.rejected} returned</span>
+            {week.decidedByYou > 0 && (
+              <span className={styles.decidedByYou}> · {week.decidedByYou} decided by you</span>
             )}
             <span className={styles.of}> · {week.received} invoices this week</span>
           </p>
           <div className={styles.bar} aria-hidden="true">
             <span className={styles.barHandled} style={{ flexGrow: week.handled }} />
-            {week.rejected > 0 && (
-              <span className={styles.barRejected} style={{ flexGrow: week.rejected }} />
+            {week.decidedByYou > 0 && (
+              <span className={styles.barDecided} style={{ flexGrow: week.decidedByYou }} />
             )}
             {week.needsYou > 0 && (
               <span className={styles.barNeeds} style={{ flexGrow: week.needsYou }} />
@@ -115,7 +115,7 @@ export function Inbox() {
                 <a href={hrefFor({ name: 'invoice', id: invoice.id })} className={styles.quietMain}>
                   <Struck struck>{invoice.question?.summary}</Struck>
                   <span className={styles.quietSupplier}>
-                    {invoice.supplier.name} · {decision.label}
+                    {invoice.supplier.name} · {decision.result}
                   </span>
                 </a>
                 <span className={styles.quietStatus} data-outcome={decision.outcome}>

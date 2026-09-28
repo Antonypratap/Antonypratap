@@ -1,6 +1,5 @@
 import { AppShell } from './shell/AppShell';
 import type { Route } from './router';
-import { DemoStoreProvider } from './state/DemoStore';
 import { Audit } from './screens/Audit';
 import { Erp } from './screens/Erp';
 import { Inbox } from './screens/Inbox';
@@ -28,10 +27,8 @@ function Screen({ route }: { route: Route }) {
 /** The Veyra product prototype: static demo data, local state only. */
 export function ProductApp({ route }: { route: Route }) {
   return (
-    <DemoStoreProvider>
-      <AppShell route={route}>
-        <Screen route={route} />
-      </AppShell>
-    </DemoStoreProvider>
+    <AppShell route={route}>
+      <Screen route={route} />
+    </AppShell>
   );
 }

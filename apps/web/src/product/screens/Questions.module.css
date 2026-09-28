@@ -3,84 +3,95 @@
   gap: var(--space-8);
   max-width: 60rem;
 }
-.waiting {
-  padding: 0.25rem 0.625rem;
-  border-radius: var(--radius-pill);
-  background: var(--color-attention-soft);
-  box-shadow: inset 0 0 0 1px var(--color-attention-line);
-  color: var(--color-attention);
-  font-size: var(--text-xsmall);
-  font-weight: var(--weight-semibold);
-}
 .list {
-  display: grid;
-  gap: var(--space-3);
-}
-.card {
-  display: grid;
-  grid-template-columns: 13rem minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: var(--space-6);
-  padding: var(--space-5) var(--space-6);
+  overflow: hidden;
   border-radius: var(--radius-lg);
   background: var(--color-surface);
   box-shadow: 0 0 0 1px var(--color-line);
-  transition: box-shadow var(--duration-base) var(--ease-out);
 }
-.card:hover {
-  box-shadow: var(--shadow-raised);
+.list li + li {
+  border-top: 1px solid var(--color-line);
+}
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr) 8.5rem auto;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-5) var(--space-6);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+.row:hover {
+  background: var(--color-canvas);
 }
 .who,
-.ask,
-.side {
+.what {
   display: grid;
   min-width: 0;
   line-height: 1.45;
 }
 .supplier {
+  overflow: hidden;
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .number {
   font-size: var(--text-xsmall);
   color: var(--color-ink-3);
 }
 .summary {
-  font-size: var(--text-xsmall);
-  font-weight: var(--weight-semibold);
-  color: var(--color-attention);
-}
-.headline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
   color: var(--color-ink);
 }
-.side {
-  justify-items: end;
+.summary::before {
+  content: '';
+  flex-shrink: 0;
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: 50%;
+  background: var(--color-attention);
+}
+.evidence {
+  padding-left: 0.9375rem;
+  font-size: var(--text-xsmall);
+  color: var(--color-attention);
 }
 .amount {
   font-size: var(--text-small);
   font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--color-ink);
 }
-.age {
+.review {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  font-size: var(--text-xsmall);
-  color: var(--color-ink-4);
-}
-.review {
   height: 2rem;
-  padding: 0 var(--space-3);
+  padding: 0 var(--space-2) 0 var(--space-3);
   border-radius: var(--radius-sm);
-  background: var(--color-ink);
-  color: var(--color-canvas);
+  box-shadow: inset 0 0 0 1px var(--color-line-strong);
   font-size: var(--text-xsmall);
   font-weight: var(--weight-medium);
-  line-height: 2rem;
+  color: var(--color-ink);
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 }
-.answered {
+.row:hover .review {
+  background: var(--color-ink);
+  box-shadow: none;
+  color: var(--color-canvas);
+}
+
+.history {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 .label {
   font-size: var(--text-label);
@@ -89,21 +100,50 @@
   text-transform: uppercase;
   color: var(--color-ink-3);
 }
-.answeredRow {
+.history li + li {
+  border-top: 1px solid var(--color-line);
+}
+.historyRow {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
   padding: var(--space-3) 0;
-  border-top: 1px solid var(--color-line);
-  font-size: var(--text-xsmall);
+}
+.historyMain {
+  display: grid;
+  min-width: 0;
+  font-size: var(--text-small);
+  line-height: 1.45;
   color: var(--color-ink-3);
 }
+.historyMain > :first-child {
+  justify-self: start;
+  max-width: 100%;
+}
+.historyWho {
+  overflow: hidden;
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-4);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status {
+  flex-shrink: 0;
+  font-size: var(--text-xsmall);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink-3);
+}
+.status[data-status='ready'] {
+  color: var(--color-accent);
+}
+
 @media (max-width: 900px) {
-  .card {
+  .row {
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--space-3) var(--space-4);
+    gap: var(--space-2) var(--space-4);
   }
-  .ask {
+  .what {
     grid-column: 1 / -1;
     grid-row: 2;
   }
@@ -112,11 +152,7 @@
   }
 }
 @media (max-width: 640px) {
-  .card {
+  .row {
     padding: var(--space-4);
-  }
-  .answeredRow {
-    flex-direction: column;
-    gap: var(--space-1);
   }
 }

@@ -153,10 +153,20 @@ const PLATE = { description: 'MS Steel Plate 6mm', hsn: '7208', uom: 'KGS', rate
 const BEARING = { description: 'Ball Bearing 6204 ZZ', hsn: '8482', uom: 'NOS', rateBp: 1800 };
 const TONER = { description: 'Printer Toner Cartridge 88A', hsn: '8443', uom: 'NOS', rateBp: 1800 };
 
+/** An explicit business rejection. The only way an invoice becomes Rejected. */
 const reject = (label: string, result: string): DemoOption => ({
   id: 'reject',
   label,
   outcome: 'rejected',
+  result,
+  emphasis: 'secondary',
+});
+
+/** Ask someone for something. The invoice stays open while Veyra waits for the answer. */
+const ask = (label: string, result: string): DemoOption => ({
+  id: 'ask',
+  label,
+  outcome: 'processing',
   result,
   emphasis: 'secondary',
 });
@@ -196,7 +206,7 @@ const ATTENTION: DemoInvoice[] = [
           result: 'Accepted for the 180 kg received.',
           emphasis: 'primary',
         },
-        reject('Ask the supplier', 'Returned to Shakti Steel Suppliers to correct the quantity.'),
+        ask('Ask the supplier', 'Asked Shakti Steel Suppliers to correct the quantity.'),
         {
           id: 'receipt',
           label: 'The other 20 kg arrived. Record it',
@@ -239,7 +249,7 @@ const ATTENTION: DemoInvoice[] = [
           result: 'Total confirmed as ₹16,048.00.',
           emphasis: 'primary',
         },
-        reject('Ask for a clearer copy', 'Asked Shakti Steel Suppliers for a clearer copy.'),
+        ask('Ask for a clearer copy', 'Asked Shakti Steel Suppliers for a clearer copy.'),
       ],
       waiting: '29 min',
     },
@@ -319,9 +329,9 @@ const ATTENTION: DemoInvoice[] = [
       ],
       options: [
         {
-          ...reject(
+          ...ask(
             'Ask for a corrected invoice',
-            'Returned to Shakti Steel Suppliers for a corrected invoice.',
+            'Asked Shakti Steel Suppliers for a corrected invoice.',
           ),
           emphasis: 'primary',
         },
@@ -368,7 +378,7 @@ const ATTENTION: DemoInvoice[] = [
           result: 'Receipt of 50 NOS recorded.',
           emphasis: 'primary',
         },
-        reject('Not yet', 'On hold until the goods arrive.'),
+        ask('Not yet', 'On hold until the goods arrive.'),
       ],
       waiting: '1 h',
     },
@@ -536,9 +546,9 @@ const ATTENTION: DemoInvoice[] = [
       ],
       options: [
         {
-          ...reject(
+          ...ask(
             'Ask for a corrected invoice',
-            'Returned to Shakti Steel Suppliers for a corrected invoice.',
+            'Asked Shakti Steel Suppliers for a corrected invoice.',
           ),
           emphasis: 'primary',
         },
@@ -587,7 +597,7 @@ const ATTENTION: DemoInvoice[] = [
       ],
       options: [
         {
-          ...reject('Ask the supplier', 'Asked Meridian Fasteners to confirm their GSTIN.'),
+          ...ask('Ask the supplier', 'Asked Meridian Fasteners to confirm their GSTIN.'),
           emphasis: 'primary',
         },
         reject('Reject this invoice', 'Invoice rejected.'),

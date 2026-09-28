@@ -3,11 +3,15 @@ import { INVOICES, WEEK, invoiceById } from './data/invoices';
 import { PURCHASE_ORDERS, VENDORS, ITEMS } from './data/erp';
 import {
   INITIAL_STATE,
+  answeredQuestions,
+  decisionLog,
   demoReducer,
   nextQuestion,
   openQuestions,
+  replayDecisions,
   statusOf,
   weekSummary,
+  type DemoState,
 } from './state/demo';
 import { formatDate, greetingFor } from './format';
 import { hrefFor, parseHash } from './router';
@@ -65,28 +69,97 @@ describe('demo fixtures match docs/DEMO.md', () => {
   });
 });
 
+const decide = (s: DemoState, invoiceId: string, optionId: string): DemoState =>
+  demoReducer(s, { type: 'decide', invoiceId, optionId });
+
+const status = (s: DemoState, id: string) => {
+  const inv = invoiceById(id);
+  if (!inv) throw new Error(`fixture ${id}`);
+  return statusOf(inv, s);
+};
+
+/** received = handled + needsYou + ready + processing + rejected, and every count agrees. */
+function expectConsistent(s: DemoState): void {
+  const w = weekSummary(s);
+  expect(w.handled + w.needsYou + w.ready + w.processing + w.rejected).toBe(w.received);
+  expect(w.ready + w.processing + w.rejected).toBe(w.decidedByYou);
+  expect(w.needsYou).toBe(openQuestions(s).length);
+  expect(w.needsYou).toBe(INVOICES.filter((i) => statusOf(i, s) === 'attention').length);
+  expect(w.decidedByYou).toBe(answeredQuestions(s).length);
+  expect(w.needsYou + w.decidedByYou).toBe(WEEK.needsAttention);
+}
+
 describe('demo decisions', () => {
   it('starts with the week as shipped: 142 = 131 + 11', () => {
     expect(weekSummary(INITIAL_STATE)).toEqual({
       received: 142,
       handled: 131,
       needsYou: 11,
+      decidedByYou: 0,
+      ready: 0,
+      processing: 0,
       rejected: 0,
     });
+    expect(WEEK.handled + WEEK.needsAttention).toBe(WEEK.received);
+    expectConsistent(INITIAL_STATE);
   });
 
-  it('accepting moves an invoice from needs-you to handled', () => {
-    const s = demoReducer(INITIAL_STATE, { type: 'decide', invoiceId: 's10', optionId: 'accept' });
-    const inv = invoiceById('s10');
-    if (!inv) throw new Error('fixture');
-    expect(statusOf(inv, s)).toBe('ready');
-    expect(weekSummary(s)).toEqual({ received: 142, handled: 132, needsYou: 10, rejected: 0 });
+  it('a decision leaves the queue, enters history and makes the invoice ready', () => {
+    const s = decide(INITIAL_STATE, 's10', 'accept');
+    expect(status(s, 's10')).toBe('ready');
+    expect(weekSummary(s)).toMatchObject({ handled: 131, needsYou: 10, decidedByYou: 1, ready: 1 });
     expect(openQuestions(s).map((i) => i.id)).not.toContain('s10');
+    expect(answeredQuestions(s).map((a) => a.invoice.id)).toEqual(['s10']);
+    expectConsistent(s);
   });
 
-  it('rejecting counts as rejected, not handled', () => {
-    const s = demoReducer(INITIAL_STATE, { type: 'decide', invoiceId: 's09', optionId: 'reject' });
-    expect(weekSummary(s)).toEqual({ received: 142, handled: 131, needsYou: 10, rejected: 1 });
+  it('asking someone for something keeps the invoice processing, never rejected', () => {
+    for (const [id, optionId] of [
+      ['s10', 'ask'],
+      ['s14', 'ask'],
+      ['s09', 'ask'],
+      ['s08', 'ask'],
+      ['s12', 'ask'],
+      ['s15', 'ask'],
+    ] as const) {
+      const s = decide(INITIAL_STATE, id, optionId);
+      expect(status(s, id)).toBe('processing');
+      expectConsistent(s);
+    }
+  });
+
+  it('only an explicit rejection makes an invoice rejected', () => {
+    for (const inv of INVOICES) {
+      for (const o of inv.question?.options ?? []) {
+        expect(o.outcome === 'rejected').toBe(/^Reject/.test(o.label));
+      }
+    }
+    const s = decide(INITIAL_STATE, 's16', 'reject');
+    expect(status(s, 's16')).toBe('rejected');
+    expect(weekSummary(s)).toMatchObject({ needsYou: 10, rejected: 1, ready: 0 });
+    expectConsistent(s);
+  });
+
+  it('keeps every count consistent through a whole run of decisions and undos', () => {
+    let s = INITIAL_STATE;
+    for (const inv of openQuestions(INITIAL_STATE)) {
+      const first = inv.question?.options[0];
+      if (first) s = decide(s, inv.id, first.id);
+      expectConsistent(s);
+    }
+    s = demoReducer(s, { type: 'undo', invoiceId: 's17' });
+    expectConsistent(s);
+    expect(openQuestions(s).map((i) => i.id)).toEqual(['s17']);
+  });
+
+  it('survives a reload: the decision log replays to the same state', () => {
+    const s = decide(decide(INITIAL_STATE, 's10', 'accept'), 's16', 'reject');
+    const replayed = replayDecisions(JSON.parse(JSON.stringify(decisionLog(s))));
+    expect(replayed).toEqual(s);
+    expect(replayDecisions('garbage')).toEqual(INITIAL_STATE);
+    expect(replayDecisions([{ invoiceId: 's01', optionId: 'accept' }, null])).toEqual(
+      INITIAL_STATE,
+    );
   });
 
   it('ignores unknown options, repeated decisions and handled invoices', () => {
@@ -197,10 +270,17 @@ describe('audit trail', () => {
       'Purchase information checked',
       'Issue found',
       'Question sent to you',
+      'Waiting for your decision',
     ]);
-    const s = demoReducer(INITIAL_STATE, { type: 'decide', invoiceId: 's10', optionId: 'accept' });
+    expect(before.at(-1)).toMatchObject({ title: 'Waiting for your decision', by: 'You' });
+    const s = decide(INITIAL_STATE, 's10', 'accept');
     const after = auditTrail(inv, s.decisions['s10']);
-    expect(after.at(-1)).toMatchObject({ title: 'Decision recorded', by: 'You', tone: 'handled' });
+    expect(after.slice(-2)).toMatchObject([
+      { title: 'You decided', by: 'You' },
+      { title: 'Ready for payment', by: 'Veyra', tone: 'handled' },
+    ]);
+    const asked = auditTrail(inv, decide(INITIAL_STATE, 's10', 'ask').decisions['s10']);
+    expect(asked.at(-1)).toMatchObject({ title: 'Following up', by: 'Veyra' });
   });
 
   it('a handled invoice ends ready for payment, never paid', async () => {

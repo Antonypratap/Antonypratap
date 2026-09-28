@@ -83,6 +83,11 @@
   color: var(--color-ink-4);
 }
 .siteLink {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
   font-size: 0.75rem;
   color: var(--color-ink-3);
   text-decoration: underline;

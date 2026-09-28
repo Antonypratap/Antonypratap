@@ -4,6 +4,7 @@ import './design-system/base.css';
 import { HomePage } from './marketing/HomePage';
 import { ProductApp } from './product/ProductApp';
 import { parseHash, useHash } from './product/router';
+import { DemoStoreProvider } from './product/state/DemoStore';
 
 function Root() {
   const route = parseHash(useHash());
@@ -21,6 +22,8 @@ if (!root) throw new Error('missing #root');
 
 createRoot(root).render(
   <StrictMode>
-    <Root />
+    <DemoStoreProvider>
+      <Root />
+    </DemoStoreProvider>
   </StrictMode>,
 );

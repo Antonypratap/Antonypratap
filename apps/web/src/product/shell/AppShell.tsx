@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Icon, Logo, type IconName } from '../../design-system';
 import { hrefFor, type Route } from '../router';
-import { useDemoState } from '../state/DemoStore';
+import { useDemoDispatch, useDemoState } from '../state/DemoStore';
 import { openQuestions } from '../state/demo';
 import styles from './AppShell.module.css';
 
@@ -38,6 +38,8 @@ export function sectionOf(route: Route): Section {
 
 export function AppShell({ route, children }: { route: Route; children: ReactNode }) {
   const state = useDemoState();
+  const dispatch = useDemoDispatch();
+  const decided = Object.keys(state.decisions).length;
   const waiting = openQuestions(state).length;
   const active = route.name === 'invoice' ? null : sectionOf(route);
 
@@ -70,6 +72,15 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
         </nav>
         <div className={styles.sidebarFoot}>
           <p className={styles.demoNote}>Demo workspace. Sample data, nothing is sent.</p>
+          {decided > 0 && (
+            <button
+              type="button"
+              className={styles.siteLink}
+              onClick={() => dispatch({ type: 'reset' })}
+            >
+              Reset demo
+            </button>
+          )}
           <a href="#top" className={styles.siteLink}>
             veyra.com
           </a>
