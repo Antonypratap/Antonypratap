@@ -1,6 +1,6 @@
 /**
  * Applies pending database migrations and exits (`npm run db:migrate -w @veyra/api`). The
- * deployment step before starting a new version in staging and production (docs/OPERATIONS.md).
+ * deployment step before starting a new version in staging and production (docs/DEPLOYMENT.md).
  * Safe to run again: applied migrations are recorded and skipped.
  */
 import { mkdirSync } from 'node:fs';

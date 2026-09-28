@@ -112,7 +112,10 @@ export class JobRunner {
       if (job.attempts < MAX_ATTEMPTS) {
         const delayMs = job.attempts * 1000;
         this.veyra.finishJob(job.id, { status: 'retry', error: safe, delayMs });
-        this.#log.warn({ ...context, errorCode: code, delayMs }, 'job will be retried');
+        this.#log.warn(
+          { ...context, errorCode: code, ...erpOperationOf(error), delayMs },
+          'job will be retried',
+        );
         return;
       }
       if (this.veyra.hasUnresolvedErpWrite(job.invoiceId)) {
@@ -121,14 +124,22 @@ export class JobRunner {
           error: safe,
           delayMs: RECONCILE_EVERY_MS,
         });
-        this.#log.warn({ ...context, errorCode: code }, 'ERP write unresolved; reconciling');
+        this.#log.warn(
+          { ...context, errorCode: code, ...erpOperationOf(error) },
+          'ERP write unresolved; reconciling',
+        );
         return;
       }
     }
     this.veyra.finishJob(job.id, { status: 'failed', error: safe });
     // Internal errors are logged in full here (server-side only); people see a generic reason.
     this.#log.error(
-      { ...context, errorCode: code, ...(isInternalError(error) ? { err: error } : {}) },
+      {
+        ...context,
+        errorCode: code,
+        ...erpOperationOf(error),
+        ...(isInternalError(error) ? { err: error } : {}),
+      },
       'job failed',
     );
     this.veyra.fail(job.invoiceId, error);
@@ -227,4 +238,10 @@ export class JobRunner {
       this.#log.warn({ jobId: current.jobId }, 'job released at shutdown');
     }
   }
+}
+
+/** The ERP operation an error came from, when it says (a safe identifier, never a payload). */
+function erpOperationOf(error: unknown): { erpOperation?: string } {
+  const op = (error as { operation?: unknown } | null)?.operation;
+  return isErpConnectorError(error) && typeof op === 'string' ? { erpOperation: op } : {};
 }

@@ -1,17 +1,18 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { renderScenario, scenarioById } from '@veyra/extractor';
+import { DemoRoutedExtractor, renderScenario, scenarioById } from '@veyra/extractor';
 import { createApp, type AppConfig } from './app';
 import { openVeyraDb, pendingMigrations, PendingMigrationsError } from './db/open';
 import * as t from './db/schema';
 import { createLogger } from './http/logging';
 import { LocalDocumentStorage, StorageUnavailableError, type DocumentStorage } from './storage';
 import { DEMO_NOW, createHarness, type Harness } from './test/harness';
+import { CrashSignal } from './workflow/commit';
 
 /**
  * Phase 6: the production foundation as a deployed instance sees it. Health, production lock-down,
@@ -187,6 +188,13 @@ describe('production lock-down', () => {
     expect(await app.veyra.erp.listVendors()).toEqual([]);
   });
 
+  it('production never reads documents with the fixture extractor, even if asked', async () => {
+    const prod = await open({ environment: 'production', allowFixtureExtractor: true });
+    expect(prod.veyra.extractor).not.toBeInstanceOf(DemoRoutedExtractor);
+    const staging = await open({ environment: 'staging', allowFixtureExtractor: true });
+    expect(staging.veyra.extractor).toBeInstanceOf(DemoRoutedExtractor);
+  });
+
   it('staging keeps the demo', async () => {
     const app = await open({ environment: 'staging' });
     const res = await app.server.inject({ method: 'GET', url: '/api/v1/dev/scenarios' });
@@ -213,23 +221,34 @@ describe('production lock-down', () => {
 });
 
 describe('errors and request ids', () => {
-  it('every response carries a request id; errors include it; a given safe id is kept', async () => {
+  it('every response carries a generated request id; errors include it', async () => {
     const app = await open();
     const ok = await app.server.inject({ method: 'GET', url: '/api/v1/health/live' });
     expect(ok.headers['x-request-id']).toMatch(/^[0-9A-Z]{26}$/);
     const nf = await app.server.inject({
       method: 'GET',
       url: '/api/v1/invoices/01K0000000000000000000ZZZZ',
+      // Not behind a trusted proxy: a client-supplied id is ignored.
       headers: { 'x-request-id': 'edge-req-12345678' },
     });
-    expect(nf.headers['x-request-id']).toBe('edge-req-12345678');
+    expect(nf.headers['x-request-id']).toMatch(/^[0-9A-Z]{26}$/);
     expect(nf.json()).toMatchObject({
-      error: { code: 'NOT_FOUND', requestId: 'edge-req-12345678' },
+      error: { code: 'NOT_FOUND', requestId: nf.headers['x-request-id'] },
     });
+  });
+
+  it('behind a trusted proxy its id is reused, but only when it looks like an id', async () => {
+    const app = await open({ trustProxy: 1 });
+    const kept = await app.server.inject({
+      method: 'GET',
+      url: '/api/v1/health/live',
+      headers: { 'x-request-id': 'edge-req-12345678' },
+    });
+    expect(kept.headers['x-request-id']).toBe('edge-req-12345678');
     const odd = await app.server.inject({
       method: 'GET',
       url: '/api/v1/health/live',
-      headers: { 'x-request-id': '<script>alert(1)</script>' },
+      headers: { 'x-request-id': '<script>alert(1)</script>\nlevel=error' },
     });
     expect(odd.headers['x-request-id']).toMatch(/^[0-9A-Z]{26}$/);
   });
@@ -351,6 +370,64 @@ describe('uploads and input safety', () => {
     expect(traversal.statusCode).toBe(422);
   });
 
+  it('unsafe filenames (null bytes, control characters, empty, paths) are neutralised', async () => {
+    const app = await open();
+    const { bytes } = S01();
+    for (const [i, name] of [
+      'in\u0000voice.pdf',
+      '',
+      'C:\\Windows\\evil.pdf',
+      '/etc/passwd',
+    ].entries()) {
+      const copy = new Uint8Array([...bytes, ...new TextEncoder().encode(`\n% ${i}\n`)]);
+      const { documentId } = await app.veyra.upload({ filename: name, bytes: copy });
+      const doc = app.veyra.db
+        .select()
+        .from(t.documents)
+        .where(eq(t.documents.id, documentId))
+        .get();
+      expect(doc?.storagePath).toBe(`${documentId}.pdf`);
+      expect(doc?.filename).toMatch(/^[\w.\- ()]+$/);
+      expect(doc?.filename).not.toMatch(/\.\.|\/|\\/);
+    }
+  });
+
+  it('the same file twice (same checksum) is refused and stored once', async () => {
+    const app = await open();
+    const { file, bytes } = S01();
+    const first = await app.server.inject({
+      method: 'POST',
+      url: '/api/v1/documents',
+      ...multipart(file, bytes),
+    });
+    expect(first.statusCode).toBe(201);
+    const again = await app.server.inject({
+      method: 'POST',
+      url: '/api/v1/documents',
+      ...multipart('renamed.pdf', bytes),
+    });
+    expect(again.statusCode).toBe(409);
+    expect(again.json()).toMatchObject({ error: { code: 'DUPLICATE_UPLOAD' } });
+    expect(app.veyra.db.select().from(t.documents).all()).toHaveLength(1);
+    expect(readdirSync((app.storage as LocalDocumentStorage).root)).toHaveLength(1);
+  });
+
+  it('a stored file that went missing answers 404 with no path', async () => {
+    const app = await open();
+    const { file, bytes } = S01();
+    const { documentId } = await app.veyra.upload({ filename: file, bytes });
+    await app.storage.delete(`${documentId}.pdf`);
+    const res = await app.server.inject({
+      method: 'GET',
+      url: `/api/v1/documents/${documentId}/file`,
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toMatchObject({
+      error: { code: 'NOT_FOUND', requestId: expect.any(String) },
+    });
+    expect(res.body).not.toMatch(/\/tmp|uploads|ENOENT|\.pdf/);
+  });
+
   it('a stored document that no longer matches its checksum is never served', async () => {
     const app = await open();
     const { file, bytes } = S01();
@@ -410,7 +487,7 @@ describe('structured logs', () => {
     const { lines, log } = logCapture();
     const app = await open({ log });
     const { file, bytes } = S01();
-    await app.server.inject({
+    const res = await app.server.inject({
       method: 'POST',
       url: '/api/v1/documents',
       headers: {
@@ -420,6 +497,14 @@ describe('structured logs', () => {
       },
       payload: multipart(file, bytes).payload,
     });
+    const reqId = res.headers['x-request-id'];
+    const { documentId, invoiceId } = res.json<{ documentId: string; invoiceId: string }>();
+    // Every line of the request carries its id, including the domain line with the document.
+    expect(lines.find((l) => l.msg === 'document stored')).toMatchObject({
+      reqId,
+      documentId,
+      invoiceId,
+    });
     const line = lines.find((l) => l.msg === 'request' && l.route === '/api/v1/documents');
     expect(line).toMatchObject({
       level: 'info',
@@ -427,7 +512,7 @@ describe('structured logs', () => {
       env: 'staging',
       method: 'POST',
       status: 201,
-      reqId: expect.any(String),
+      reqId,
       durationMs: expect.any(Number),
     });
     const all = JSON.stringify(lines);
@@ -439,12 +524,14 @@ describe('structured logs', () => {
     log.info(
       {
         req: { headers: { authorization: 'Bearer x', cookie: 'c=1' } },
-        s3: { secretAccessKey: 'k' },
+        erp: { apiKey: 'k1', password: 'p1', token: 't1' },
       },
       'oops',
     );
-    expect(JSON.stringify(lines)).not.toMatch(/Bearer x|c=1|"k"/);
-    expect(lines[0]).toMatchObject({ s3: { secretAccessKey: '[redacted]' } });
+    expect(JSON.stringify(lines)).not.toMatch(/Bearer x|c=1|"k1"|"p1"|"t1"/);
+    expect(lines[0]).toMatchObject({
+      erp: { apiKey: '[redacted]', password: '[redacted]', token: '[redacted]' },
+    });
   });
 });
 
@@ -523,6 +610,49 @@ describe('jobs: retries, leases and shutdown', () => {
       state: 'FAILED',
       failureReason: 'Processing stopped repeatedly before it could finish.',
     });
+  });
+
+  it('a commit job whose worker died right after the ERP write is recovered without a second write', async () => {
+    let crash = true;
+    h = createHarness({
+      commitHooks: {
+        afterErpWrite: (entity) => {
+          if (entity === 'purchase_invoice' && crash) throw new CrashSignal('after the ERP write');
+        },
+      },
+    });
+    const { file, bytes } = S01();
+    const { invoiceId } = await h.veyra.upload({ filename: file, bytes });
+    await expect(h.runner.drain()).rejects.toThrow(CrashSignal); // the worker dies mid-commit
+    const commit = () => h?.veyra.latestJobs(invoiceId).find((j) => j.type === 'commit');
+    expect(commit()).toMatchObject({ status: 'running' });
+    expect(await h.erp.listPurchaseInvoices()).toHaveLength(1); // the ERP has the invoice
+    expect(h.state(invoiceId)).toBe('COMMITTING'); // Veyra has not recorded it yet
+    crash = false;
+    h.veyra.db.update(t.jobs).set({ lockedAt: '2026-09-28T05:00:00.000Z' }).run(); // lease expires
+    expect(h.runner.recoverExpired()).toBe(1);
+    expect(commit()).toMatchObject({ status: 'queued' });
+    await h.runner.drain(); // claimed again
+    expect(commit()).toMatchObject({ status: 'succeeded', attempts: 2 });
+    expect(h.state(invoiceId)).toBe('VERIFIED_PENDING_PAYMENT');
+    expect(await h.erp.listPurchaseInvoices()).toHaveLength(1); // no duplicate ERP write
+    expect(
+      h.veyra.db.select().from(t.erpWrites).where(eq(t.erpWrites.invoiceId, invoiceId)).all(),
+    ).toMatchObject([{ operation: 'recordPurchaseInvoice', status: 'confirmed' }]);
+  });
+
+  it('shutdown: the server stops, the worker claims nothing more, queued work stays queued', async () => {
+    const app = await open();
+    const { file, bytes } = S01();
+    const { invoiceId } = await app.veyra.upload({ filename: file, bytes });
+    app.runner.start(60_000);
+    await app.runner.shutdown(1000);
+    expect(await app.runner.step()).toBe(false); // no new claims after shutdown
+    expect(app.runner.health()).toMatchObject({ running: false });
+    await app.server.close();
+    expect(app.server.server.listening).toBe(false);
+    const job = app.veyra.latestJobs(invoiceId)[0];
+    expect(['queued', 'succeeded']).toContain(job?.status); // never left running
   });
 
   it('graceful shutdown lets a running job finish, or puts it back in the queue — never stranded', async () => {

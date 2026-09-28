@@ -1,16 +1,16 @@
 import { createHash } from 'node:crypto';
 
 /**
- * Where uploaded documents live (Phase 6). The workflow sees only this port; the deployment picks
- * the implementation: the local filesystem in development (or a persistent volume), an
- * S3-compatible bucket (AWS S3, DigitalOcean Spaces, MinIO, …) when hosted.
+ * Where uploaded documents live (Phase 6B). The workflow sees only this port, never a filesystem
+ * path. Today there is one implementation, LocalDocumentStorage (a folder; a persistent disk when
+ * deployed). Object storage can be added later as another implementation of this interface.
  *
  * Keys are opaque, validated relative names (`<documentId>.pdf`, `imports/<id>/1-file.xlsx`).
  * They never come from a user: filenames are metadata only, so no upload can choose where it is
  * written.
  */
 export interface DocumentStorage {
-  readonly kind: 'local' | 's3';
+  readonly kind: 'local';
   /** Stores bytes under `key` (replacing nothing: keys are unique per upload). */
   put(key: string, bytes: Uint8Array, meta: { mime: string; sha256: string }): Promise<void>;
   /** The bytes under `key`. With `sha256`, they are verified before they are returned. */
@@ -22,7 +22,8 @@ export interface DocumentStorage {
   delete(key: string): Promise<void>;
   /**
    * Runs `fn` with a local file holding the object (the document readers need a path). For local
-   * storage that is the stored file itself; otherwise a private temporary copy, removed afterwards.
+   * storage that is the stored file itself; a remote store would provide a private temporary
+   * copy, removed afterwards.
    */
   withLocalFile<T>(
     key: string,
@@ -40,16 +41,6 @@ export class StorageUnavailableError extends Error {
   constructor(options?: { cause?: unknown }) {
     super('Document storage is not available right now.', options);
     this.name = 'StorageUnavailableError';
-  }
-}
-
-/** Storage refused the credentials or the bucket does not exist. Not retryable. */
-export class StorageConfigurationError extends Error {
-  readonly code = 'STORAGE_CONFIGURATION_ERROR';
-  readonly retryable = false;
-  constructor(options?: { cause?: unknown }) {
-    super('Document storage is not configured correctly.', options);
-    this.name = 'StorageConfigurationError';
   }
 }
 
@@ -82,16 +73,11 @@ export class InvalidStorageKeyError extends Error {
 }
 
 export type StorageError =
-  | StorageUnavailableError
-  | StorageConfigurationError
-  | StorageNotFoundError
-  | StorageIntegrityError
-  | InvalidStorageKeyError;
+  StorageUnavailableError | StorageNotFoundError | StorageIntegrityError | InvalidStorageKeyError;
 
 export function isStorageError(error: unknown): error is StorageError {
   return (
     error instanceof StorageUnavailableError ||
-    error instanceof StorageConfigurationError ||
     error instanceof StorageNotFoundError ||
     error instanceof StorageIntegrityError ||
     error instanceof InvalidStorageKeyError

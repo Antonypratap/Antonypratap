@@ -794,40 +794,45 @@ Strengthens the ERP integration boundary only. No change to the state machine, q
   - Its fault causes contain fake secrets; tests assert they never appear in errors, API responses, audit, failure reasons or job errors.
   - The contract suite gained boundary tests (identity, connection, capabilities, typed errors, reconciliation, idempotency) and runs against the fake ERP both directly and through the scripted wrapper.
 
-## 18. Phase 6: production foundation (without PostgreSQL)
+## 18. Phase 6B: production runtime hardening (SQLite kept)
 
-Infrastructure and operational hardening only. No change to business rules, question codes, the state machine, extraction logic, the ERP contract or payment behaviour. PostgreSQL was split out as Phase 6A: the persistence layer is synchronous better-sqlite3 throughout, so moving it is a rewrite of every data access, not configuration. Operating procedures are in [OPERATIONS.md](OPERATIONS.md). Labels as in §13.
+Infrastructure and operational hardening only. SQLite stays the application database; PostgreSQL is a separate future phase, because the persistence layer is synchronous better-sqlite3 in every data access, and moving it is a rewrite. No change to business rules, question codes, the state machine, extraction logic, the ERP contract or payment behaviour. Operating procedures: [DEPLOYMENT.md](DEPLOYMENT.md). Limits: [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md). Labels as in §13.
 
-**Configuration and environments**
-- **IMPLEMENTATION DECISION** Environments are `development`, `staging` and `production` (`VEYRA_ENV`; `NODE_ENV=production` alone means production). `apps/api/src/config.ts` validates every variable once at startup and fails naming variables, never values. Production refuses the demo and the fixture extractor, requires explicit storage, ERP and data directory, and requires https for object storage.
-- **CLIENT REQUIREMENT** Production safety is enforced by the server:
-  - `/dev/reset` and the demo-scenario endpoints are not registered in production.
-  - Production never seeds demo data.
-  - The web app asks for demo scenarios only when `/health` says the demo is on.
+**Configuration and production lock-down**
+- **IMPLEMENTATION DECISION** Configuration:
+  - One typed configuration layer (`apps/api/src/config.ts`). Only the entry points (`main.ts`, the migrate CLI) read `process.env`.
+  - Environments are `development`, `staging` and `production`. Production is also implied by `NODE_ENV=production`.
+  - Startup fails naming variables, never values.
+  - Production refuses the demo and the fixture extractor, and requires an absolute data directory and an explicit ERP.
+  - Veyra needs no secrets today.
+- **CLIENT REQUIREMENT** Production lock-down is enforced server-side:
+  - `/dev/reset` and the demo-scenario endpoints are not registered.
+  - No demo seed, and no fixture extractor.
+  - The web app asks for demo scenarios only when `/health` says the demo is on. The demo PIN stays a demo mechanism, not authentication.
 
 **Storage, migrations and jobs**
-- **IMPLEMENTATION DECISION** `DocumentStorage` port (`apps/api/src/storage`) with two implementations:
-  - A local filesystem implementation, with atomic writes and keys confined to the root.
-  - An S3-compatible implementation (AWS S3, DigitalOcean Spaces, MinIO, R2) over HTTPS with SigV4, with no SDK. The signer is tested against the AWS reference vector.
-  - Keys are made from ids only; a filename is metadata.
-  - Every read is verified against the SHA-256 recorded at upload.
-  - OCR gets a private temporary copy, deleted afterwards.
-  - `documents.storage_path` now holds the key; rows written before Phase 6 hold an absolute path whose file name is the key. There is no schema change.
-- **IMPLEMENTATION DECISION** Migrations stay Drizzle's versioned files. Production does not migrate at startup: `npm run db:migrate -w @veyra/api` is a deployment step, and a database with pending migrations is refused with their names.
-- **IMPLEMENTATION DECISION** Jobs (still the `jobs` table, no Redis):
-  - Leases: `locked_at` is renewed while a job runs. A job whose lease expired (worker gone) is re-queued, or failed once it has used its 5 attempts, so nothing stays `running`.
-  - Retries: 5 bounded attempts for ERP unavailable, storage unavailable and database busy. These now also apply during reading and matching; before, only commits were retried.
-  - Graceful shutdown: finish the current job or put it back in the queue.
-  - Retry keeps every idempotency guarantee: same keys, and pipeline steps that no-op when done.
+- **IMPLEMENTATION DECISION** `DocumentStorage` port (`put`, `get`, `exists`, `metadata`, `delete`, `withLocalFile`, `check`) with one implementation, `LocalDocumentStorage`:
+  - Atomic writes; validated keys confined to the root.
+  - Keys come from ids only; the user's filename is metadata.
+  - SHA-256 is verified on write and before every read.
+  - The workflow and imports use the port, never paths; the document reader gets a verified local file through `withLocalFile`.
+  - Filename, MIME type, size and checksum stay in `documents`. `storage_path` now holds the key; older rows hold an absolute path whose file name is the key, so there is no schema change.
+  - Object storage is a future adapter; none is built.
+- **IMPLEMENTATION DECISION** Migrations stay Drizzle's versioned files. Production does not migrate at startup: `npm run db:migrate -w @veyra/api` is a deployment step, and pending migrations are refused by name.
+- **IMPLEMENTATION DECISION** Jobs (the existing `jobs` table, no Redis):
+  - Leases: a running job's `locked_at` is renewed. An expired job (worker gone) is re-queued, or failed after 5 attempts.
+  - Retries: bounded, for ERP unavailable, storage unavailable and database busy. They now also apply during reading and matching; before, only commits were retried.
+  - Graceful shutdown finishes the current job or puts it back in the queue.
+  - Idempotency is unchanged and authoritative: a recovered commit re-sends with the same keys, and the ledger reconciles.
 
 **HTTP: health, errors, logs, limits**
-- **IMPLEMENTATION DECISION** Health: `/health/live` (process only) and `/health/ready` (database, storage and worker; ERP status and job counts reported, not required). `/health` is kept.
-- **IMPLEMENTATION DECISION** Errors: every response has `x-request-id`, and every error body has a stable `code`, a safe `message` and `requestId`. Fastify's own errors (malformed JSON, too large, content type) map to fixed messages. Internal errors answer `INTERNAL` and are logged in full server-side. An invoice failed by an internal error shows a generic reason, never SQL or paths.
-- **IMPLEMENTATION DECISION** Logs: pino JSON with one line per request and per job outcome, safe error codes, and redaction of credentials. Logs never replace the audit trail.
-- **IMPLEMENTATION DECISION** Limits and rate limits:
-  - All configurable downward: upload size ≤ 20 MB, JSON body, PDF pages, image side and pixels. Document limits can only be lowered (`configureDocumentLimits`).
-  - Per-client, per-minute rate limits on uploads, processing actions and demo endpoints, returning 429 with `Retry-After`.
+- **IMPLEMENTATION DECISION** Health: `/health/live` (process only), `/health/ready` (database, storage and worker; ERP status and job counts reported, not required), and `/health` kept.
+- **IMPLEMENTATION DECISION** Request ids and errors:
+  - Every response carries `x-request-id`. A proxy's id is reused only behind `VEYRA_TRUST_PROXY` and only when it looks like an id.
+  - Errors carry a stable `code`, a safe `message` and `requestId`. Fastify's own client errors map to fixed messages.
+  - Internal errors answer `INTERNAL` and are logged in full server-side. An invoice failed by an internal error shows a generic reason.
+- **IMPLEMENTATION DECISION** Logs: pino JSON with environment, request id, route, method, status and duration; document, invoice and job ids and ERP operation where relevant; safe error codes; redaction. Logs never replace the audit trail.
+- **IMPLEMENTATION DECISION** Limits: configurable downward only (upload size, JSON body, PDF pages, image size). Rate limits are per client address and per process, in memory, on uploads, processing actions and demo endpoints (429 with `Retry-After`). Not a distributed limiter.
 
 **Constraints**
-- **TECHNICAL CONSTRAINT** With SQLite, one API+worker process per data directory, on a persistent volume. Horizontal scaling waits for Phase 6A.
-- **TECHNICAL CONSTRAINT** There is no authentication: the demo PIN is not security. Deploy only behind network-level access control until authentication is built (OPERATIONS.md).
+- **TECHNICAL CONSTRAINT** SQLite and local documents: one process per data directory, on a persistent disk; no horizontal scaling until PostgreSQL. No authentication yet: deploy behind network access control only.

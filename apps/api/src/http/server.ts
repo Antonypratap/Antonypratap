@@ -72,7 +72,10 @@ export interface ServerOptions {
   readiness?: () => Promise<ReadinessReport>;
 }
 
-/** Incoming request ids are kept only when they look like ids (never arbitrary text in logs). */
+/**
+ * An incoming `x-request-id` is reused only from a trusted reverse proxy (VEYRA_TRUST_PROXY > 0)
+ * and only when it looks like an id; otherwise Veyra generates one. Never arbitrary text in logs.
+ */
 const REQUEST_ID = /^[A-Za-z0-9._-]{8,64}$/;
 
 const Id = z.object({ id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/) });
@@ -109,7 +112,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     logController: new LogController({ disableRequestLogging: true }),
     requestIdHeader: false,
     genReqId: (req) => {
-      const given = req.headers['x-request-id'];
+      const given = hops > 0 ? req.headers['x-request-id'] : undefined;
       return typeof given === 'string' && REQUEST_ID.test(given) ? given : ulid();
     },
   });
@@ -246,6 +249,10 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     if (!file) throw new VeyraError('INVALID_INPUT', 'Attach the invoice file.');
     const bytes = await file.toBuffer();
     const created = await veyra.upload({ filename: file.filename, bytes });
+    req.log.info(
+      { documentId: created.documentId, invoiceId: created.invoiceId },
+      'document stored',
+    );
     return reply.status(201).send(created);
   });
 

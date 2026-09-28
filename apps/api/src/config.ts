@@ -14,20 +14,13 @@ import { DOCUMENT_LIMITS } from '@veyra/extractor';
 export const ENVIRONMENTS = ['development', 'staging', 'production'] as const;
 export type Environment = (typeof ENVIRONMENTS)[number];
 
+/**
+ * Where uploaded documents are kept. Only local storage exists today (a folder, which must be a
+ * persistent disk when deployed); object storage is a future adapter behind DocumentStorage.
+ */
 export interface StorageConfig {
-  kind: 'local' | 's3';
-  /** local: the folder for stored documents. */
+  kind: 'local';
   dir: string;
-  /** s3: an S3-compatible bucket (AWS S3, DigitalOcean Spaces, MinIO, …). */
-  s3: {
-    endpoint: string;
-    region: string;
-    bucket: string;
-    accessKeyId: string;
-    secretAccessKey: string;
-    forcePathStyle: boolean;
-    prefix: string;
-  } | null;
 }
 
 export interface VeyraConfig {
@@ -69,15 +62,7 @@ const VARS = {
   VEYRA_API_PORT: int(1, 65_535),
   VEYRA_DATA_DIR: z.string().min(1),
   VEYRA_MIGRATE_ON_START: bool,
-  VEYRA_STORAGE: z.enum(['local', 's3']),
   VEYRA_STORAGE_DIR: z.string().min(1),
-  VEYRA_S3_ENDPOINT: z.url({ protocol: /^https?$/ }),
-  VEYRA_S3_REGION: z.string().regex(/^[a-z0-9-]{2,32}$/),
-  VEYRA_S3_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/),
-  VEYRA_S3_ACCESS_KEY_ID: z.string().min(1).max(256),
-  VEYRA_S3_SECRET_ACCESS_KEY: z.string().min(1).max(256),
-  VEYRA_S3_FORCE_PATH_STYLE: bool,
-  VEYRA_S3_PREFIX: z.string().regex(/^([a-z0-9][a-z0-9._-]*\/)*$/),
   VEYRA_ERP: z.enum(['fake']),
   VEYRA_DEMO: bool,
   VEYRA_ALLOW_FIXTURE_EXTRACTOR: bool,
@@ -143,30 +128,9 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
     problems.push('VEYRA_DATA_DIR must be an absolute path outside development');
   const dataDir = resolve(dataDirRaw ?? defaults.dataDir);
 
-  const storageKind = deployed
-    ? require('VEYRA_STORAGE', `in ${environment} (local or s3)`)
-    : (read('VEYRA_STORAGE') ?? 'local');
-  let s3: StorageConfig['s3'] = null;
-  if (storageKind === 's3') {
-    const endpoint = require('VEYRA_S3_ENDPOINT', 'when VEYRA_STORAGE=s3');
-    const region = require('VEYRA_S3_REGION', 'when VEYRA_STORAGE=s3');
-    const bucket = require('VEYRA_S3_BUCKET', 'when VEYRA_STORAGE=s3');
-    const accessKeyId = require('VEYRA_S3_ACCESS_KEY_ID', 'when VEYRA_STORAGE=s3');
-    const secretAccessKey = require('VEYRA_S3_SECRET_ACCESS_KEY', 'when VEYRA_STORAGE=s3');
-    if (endpoint && region && bucket && accessKeyId && secretAccessKey) {
-      if (environment === 'production' && !endpoint.startsWith('https://'))
-        problems.push('VEYRA_S3_ENDPOINT must use https in production');
-      s3 = {
-        endpoint: endpoint.replace(/\/+$/, ''),
-        region,
-        bucket,
-        accessKeyId,
-        secretAccessKey,
-        forcePathStyle: read('VEYRA_S3_FORCE_PATH_STYLE') ?? false,
-        prefix: read('VEYRA_S3_PREFIX') ?? '',
-      };
-    }
-  }
+  const storageDirRaw = read('VEYRA_STORAGE_DIR');
+  if (storageDirRaw !== undefined && deployed && !isAbsolute(storageDirRaw))
+    problems.push('VEYRA_STORAGE_DIR must be an absolute path outside development');
 
   const erp = deployed ? require('VEYRA_ERP', `in ${environment}`) : (read('VEYRA_ERP') ?? 'fake');
   const demo = read('VEYRA_DEMO') ?? !deployed;
@@ -186,11 +150,7 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
     port: read('VEYRA_API_PORT') ?? 8787,
     dataDir,
     migrateOnStart,
-    storage: {
-      kind: storageKind ?? 'local',
-      dir: resolve(read('VEYRA_STORAGE_DIR') ?? resolve(dataDir, 'uploads')),
-      s3,
-    },
+    storage: { kind: 'local', dir: resolve(storageDirRaw ?? resolve(dataDir, 'uploads')) },
     erp: erp ?? 'fake',
     demo,
     allowFixtureExtractor,
@@ -224,14 +184,13 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
 function describe(name: VarName): string {
   const schema = VARS[name] as z.ZodType;
   if (schema instanceof z.ZodEnum) return `one of ${schema.options.join(', ')}`;
-  if (name.endsWith('_ENDPOINT') || name.endsWith('_URL')) return 'an http(s) URL';
+  if (name.endsWith('_URL')) return 'an http(s) URL';
   if (/_(PORT|BYTES|PAGES|SIDE|PIXELS|MINUTE|MS|PROXY)$/.test(name))
     return 'a whole number in range';
-  if (name === 'VEYRA_S3_PREFIX') return 'lowercase path segments ending in /';
   return 'see .env.example';
 }
 
-/** A summary safe to log and show in diagnostics: no secrets, no paths, no endpoints. */
+/** A summary safe to log and show in diagnostics: no secrets, no paths, no URLs. */
 export function describeConfig(c: VeyraConfig) {
   return {
     environment: c.environment,
