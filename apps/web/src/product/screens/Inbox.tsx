@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Icon, Struck } from '../../design-system';
 import { UploadButton } from '../components/UploadButton';
+import { useDemo } from '../shell/DemoPanel';
 import { greetingFor, inr } from '../format';
 import { hrefFor } from '../router';
 import { attentionQueue, useProductData } from '../state/data';
@@ -11,6 +12,7 @@ const INITIAL_VISIBLE = 5;
 
 export function Inbox() {
   const { inbox, error } = useProductData();
+  const demo = useDemo();
   const [showAll, setShowAll] = useState(false);
   const open = attentionQueue(inbox);
   const invoices = inbox?.invoices ?? [];
@@ -79,13 +81,30 @@ export function Inbox() {
 
         {open.length === 0 ? (
           <div className={styles.empty}>
-            <span className={styles.emptyIcon}>
-              <Icon name="check" size={18} />
+            <span className={styles.emptyIcon} data-empty={invoices.length === 0}>
+              <Icon name={invoices.length === 0 ? 'inbox' : 'check'} size={18} />
             </span>
-            <div>
-              <p className={styles.emptyTitle}>You&rsquo;re all caught up.</p>
-              <p className={styles.emptyText}>Veyra is handling everything else.</p>
-            </div>
+            {invoices.length === 0 ? (
+              <div>
+                <p className={styles.emptyTitle}>No invoices yet.</p>
+                <p className={styles.emptyText}>
+                  Upload an invoice and Veyra takes it from there.
+                  {demo.available && (
+                    <>
+                      {' '}
+                      <button type="button" className={styles.demoLink} onClick={demo.open}>
+                        Start a demo scenario
+                      </button>
+                    </>
+                  )}
+                </p>
+              </div>
+            ) : (
+              <div>
+                <p className={styles.emptyTitle}>You&rsquo;re all caught up.</p>
+                <p className={styles.emptyText}>Veyra is handling everything else.</p>
+              </div>
+            )}
           </div>
         ) : (
           <ul className={styles.items}>

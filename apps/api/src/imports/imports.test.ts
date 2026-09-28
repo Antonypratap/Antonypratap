@@ -481,7 +481,7 @@ describe('exports', () => {
       '2026-09-21',
       '8555.00',
       'Ready',
-      'Record the receipt',
+      'Yes, record the receipt',
       '2026-09-28 12:00',
       'Yes',
     ]);
@@ -495,8 +495,8 @@ describe('exports', () => {
       'APX-7790',
       'Apex Components Pvt Ltd',
       'Receipt not recorded',
-      'No goods receipt for PO-2026-0104 yet',
-      'Record the receipt',
+      'Found the supplier and PO-2026-0104, but no goods receipt yet',
+      'Yes, record the receipt',
       'Receipt recorded. It is written to your ERP with the invoice.',
       'You',
     ]);
@@ -509,7 +509,7 @@ describe('exports', () => {
     expect(audit.slice(1).map((r) => `${r[1]} · ${r[3]} · ${r[2]}`)).toEqual(
       expect.arrayContaining([
         'Business records · You · Business records imported',
-        'APX-7790 · You · Decision recorded',
+        'APX-7790 · You · Confirmed goods receipt',
         'APX-7790 · Veyra · Ready for payment',
       ]),
     );

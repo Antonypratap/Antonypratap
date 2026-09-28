@@ -208,3 +208,30 @@ With an empty business (`npm run demo -- --empty`), import the Excel files from 
 
 The same runs are automated: `packages/extractor/src/local/local.test.ts` (what is read) and `apps/api/src/workflow/real-documents.test.ts` (what the workflow does).
 
+## 8. Demo scenarios and the 3-minute demo (Phase 3E)
+
+In the product, **Demo scenarios** (top bar) starts a representative situation with one click, and **Reset demo** (in the same panel) restores the known state: no invoices, questions, decisions or audit entries, and the sample ERP of §1. After a reset the Inbox also offers *Start a demo scenario*.
+
+A scenario only uploads one synthetic invoice from `fixtures/documents/` through the normal upload path. Everything after that (reading, matching, questions, re-checking, the ERP write) is the real workflow; the screen shows the invoice's real state.
+
+| Scenario | Document | What the prospect sees |
+|---|---|---|
+| Clean invoice | `D01-clean-text.pdf` | **Invoice ready**: supplier, PO, goods receipt, 3-way match, ERP record; verified, pending payment |
+| Missing goods receipt | `D12-missing-receipt.pdf` | *Your approval is needed*: **Did the goods arrive?** → record the receipt → re-check → ready |
+| Ambiguous supplier | `D09-ambiguous-vendor.pdf` | *Your decision is needed*: **Which supplier sent this invoice?** with both GSTINs → choose → ready |
+| Quantity mismatch | `D07-quantity-mismatch.pdf` | *Check needed*: invoiced 120 vs ordered 100; no override |
+| Rate mismatch | `D08-rate-mismatch.pdf` | *Check needed*: invoice ₹150.00, PO ₹145.00, difference ₹5.00; no override |
+| Photo needs confirmation | `D04-photo.png` (OCR) | *Veyra needs you to confirm*: **Veyra read** 29AAACS1111A176, not a valid GSTIN; **Why Veyra needs you** → enter / confirm → ready |
+| Two invoices in one file | `D11-two-invoices.pdf` | Stopped: "Upload each invoice as its own file." |
+
+Starting a scenario again opens the same invoice (uploads are unique by file).
+
+**The 3-minute demo**
+
+1. Homepage: "142 invoices received, 131 handled, 11 need you" (an illustrative week). *Your team doesn't work through 142 invoices; they deal with the 11 that need them.*
+2. **See Veyra in action** → demo PIN → Inbox.
+3. **Demo scenarios → Clean invoice**: the invoice is read, matched and recorded. **Invoice ready**, no action required. **Open the ERP record** (the purchase invoice against its PO), then **See what happened** (the audit: VEYRA read, matched supplier and order, validated, recorded the ERP transaction). Back to the Inbox.
+4. **Demo scenarios → Reset demo**, then **Photo needs confirmation**: Veyra shows what it read and why it needs you. Answer (enter the GSTIN, confirm the order number, pick the supplier); after each answer *You decided*, Veyra re-checks, and the invoice ends **Invoice ready**.
+
+The product's own counts are always the workspace's real counts; the 142/131/11 figures appear only on the homepage, labelled as illustrative.
+

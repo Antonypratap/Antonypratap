@@ -178,14 +178,27 @@ export function mdField(
   options.push(setFieldOption(path, `Enter ${theLabel(label)}`, 'primary'), rejectOption());
   return draft('MD_FIELD', path, {
     summary,
-    evidence: shown ? `Read as ${shown}, not clearly` : 'Not found on the invoice',
+    evidence: !shown
+      ? 'Not found on the invoice'
+      : read.state === 'unparseable'
+        ? `Veyra read ${shown}, but that is not a valid ${label.replace(/^your /, '')}`
+        : confirmable
+          ? `Veyra read ${shown}, but not clearly enough to use it`
+          : `Veyra read ${shown}, but not clearly, and that is not a valid ${label.replace(/^your /, '')}`,
     headline: `What is ${theLabel(label)}?`,
     facts: [
-      ...(shown ? [{ label: 'Read as', value: shown, tone: 'attention' as const }] : []),
+      ...(shown ? [{ label: 'Veyra read', value: shown, tone: 'attention' as const }] : []),
       ...(extra.facts ?? []),
     ],
     why: [
       ...(extra.why ?? []),
+      read.state === 'absent'
+        ? 'Veyra could not find this on the invoice.'
+        : read.state === 'unparseable'
+          ? 'What Veyra read does not have the right format, so it cannot be used.'
+          : confirmable
+            ? 'The document is not clear enough here for Veyra to be certain.'
+            : 'The document is not clear here, and what Veyra read is not in a valid format.',
       'Veyra uses a value only when it has been read with certainty.',
       'It never fills in a value from anywhere else.',
     ],
@@ -538,7 +551,7 @@ export function caGrn(
     summary: additional ? 'Additional receipt' : 'Receipt not recorded',
     evidence: additional
       ? `Record more goods received for ${po.label}`
-      : `No goods receipt for ${po.label} yet`,
+      : `Found the supplier and ${po.label}, but no goods receipt yet`,
     headline: 'Did the goods arrive?',
     facts: lines.map((l) => ({
       label: l.label,
@@ -552,7 +565,7 @@ export function caGrn(
     options: [
       {
         id: 'confirm',
-        label: 'Record the receipt',
+        label: 'Yes, record the receipt',
         effect: { type: 'APPROVE_CREATION', entity: 'grn' },
         emphasis: 'primary',
         result: 'Receipt recorded. It is written to your ERP with the invoice.',
@@ -569,7 +582,7 @@ export function caGrn(
           })),
         },
       },
-      rejectOption('Goods not received. Reject the invoice'),
+      rejectOption('No, reject this invoice'),
     ],
   });
 }

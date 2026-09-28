@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import {
   ApiAuditEntrySchema,
+  ApiDemoScenarioSchema,
+  type ApiDemoScenario,
   ApiErpSchema,
   ApiImportSchema,
   type ApiImport,
@@ -103,6 +105,17 @@ export const api = {
   reprocess: (invoiceId: string) =>
     request(Moved, `/invoices/${encodeURIComponent(invoiceId)}/reprocess`, { method: 'POST' }),
   resetDemo: () => request(z.object({ ok: z.boolean() }).loose(), '/dev/reset', { method: 'POST' }),
+  demo: {
+    /** Demo scenarios (demo builds only; the list is empty elsewhere). */
+    scenarios: (): Promise<ApiDemoScenario[]> =>
+      request(z.array(ApiDemoScenarioSchema), '/dev/scenarios').catch(() => []),
+    start: (key: string) =>
+      request(
+        z.object({ invoiceId: z.string(), existing: z.boolean() }),
+        `/dev/scenarios/${encodeURIComponent(key)}`,
+        { method: 'POST' },
+      ),
+  },
   recordsAudit: (): Promise<ApiAuditEntry[]> =>
     request(z.array(ApiAuditEntrySchema), '/audit?scope=records'),
   imports: {

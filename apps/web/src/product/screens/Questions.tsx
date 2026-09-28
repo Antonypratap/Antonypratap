@@ -3,6 +3,7 @@ import { PageHeader } from '../components/PageHeader';
 import { inr } from '../format';
 import { hrefFor } from '../router';
 import { attentionQueue, useProductData } from '../state/data';
+import { ASK_LABEL } from '../state/decision';
 import { STATUS_LABEL } from '../state/status';
 import styles from './Questions.module.css';
 
@@ -35,8 +36,11 @@ export function Questions() {
                   </span>
                 </span>
                 <span className={styles.what}>
+                  <span className={styles.kind}>
+                    {inv.question ? ASK_LABEL[inv.question.kind] : 'Veyra couldn’t finish'}
+                  </span>
                   <span className={styles.summary}>
-                    {inv.question?.summary ?? 'Couldn’t finish'}
+                    {inv.question?.headline ?? 'Check the file and try again, or reject it.'}
                   </span>
                   <span className={styles.evidence}>
                     {inv.question?.evidence ?? inv.failure?.reason}

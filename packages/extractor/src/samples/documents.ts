@@ -298,6 +298,25 @@ export const DOCUMENT_SAMPLES: readonly DocumentSample[] = [
     expect: { state: 'VERIFIED_PENDING_PAYMENT', questions: 'none' },
   },
   {
+    file: 'D12-missing-receipt.pdf',
+    kind: 'text-pdf',
+    title: 'No goods receipt recorded for the order: Veyra asks whether the goods arrived',
+    invoices: [
+      {
+        vendor: APEX,
+        number: 'APX-7812',
+        date: '27/09/2026',
+        po: 'PO-2026-0104',
+        placeOfSupply: KA,
+        lines: [{ ...BEARING, qty: '50', rate: '145.00', taxable: '7,250.00' }],
+        taxable: '7,250.00',
+        igst: '1,305.00',
+        total: '8,555.00',
+      },
+    ],
+    expect: { state: 'NEEDS_INPUT', firstQuestion: 'CA_GRN' },
+  },
+  {
     file: 'D11-two-invoices.pdf',
     kind: 'text-pdf',
     title: 'Two invoices in one file: never merged; fails visibly and asks for separate files',

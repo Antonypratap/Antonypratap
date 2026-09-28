@@ -32,7 +32,13 @@ const summary = (
   updatedAt: receivedAt,
   question:
     status === 'attention'
-      ? { id: `q-${id}`, summary: 'Price differs', evidence: '₹68.01 · ₹68.00' }
+      ? {
+          id: `q-${id}`,
+          kind: 'VALIDATION_FAILURE',
+          summary: 'Price differs',
+          evidence: '₹68.01 · ₹68.00',
+          headline: 'The price on line 1 is different from PO-2026-0109.',
+        }
       : null,
   decision: null,
   note: null,

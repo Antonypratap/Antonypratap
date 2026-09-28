@@ -7,6 +7,7 @@ import { formatDate, inr } from '../format';
 import { ERP_TABS, hrefFor, type ErpTab } from '../router';
 import { useResource } from '../state/data';
 import { ErpData } from './ErpData';
+import { erpStatusText } from '../state/decision';
 import styles from './Erp.module.css';
 
 const TAB_LABEL: Record<ErpTab, string> = {
@@ -111,9 +112,11 @@ function useTab(tab: ErpTab) {
           i.id,
           i.vendorInvoiceNo,
           i.vendor,
+          i.poNumber ?? '—',
           formatDate(i.invoiceDate),
+          i.lines,
           inr(i.totalPaise),
-          'Verified, pending payment',
+          erpStatusText(i.status),
         ]);
     }
   }, `erp:${tab}`);
@@ -124,7 +127,10 @@ const HEAD: Record<ErpTab, { head: string[]; numeric?: number[] }> = {
   items: { head: ['Code', 'Item', 'HSN', 'Unit', 'GST', 'Source'], numeric: [4] },
   orders: { head: ['Order', 'Vendor', 'Date', 'Lines', 'Status', 'Source'] },
   receipts: { head: ['Receipt', 'Order', 'Date', 'Accepted', 'Source'] },
-  invoices: { head: ['Record', 'Invoice', 'Vendor', 'Date', 'Total', 'Status'], numeric: [4] },
+  invoices: {
+    head: ['Record', 'Invoice', 'Vendor', 'Order', 'Date', 'Lines', 'Total', 'Status'],
+    numeric: [5, 6],
+  },
   data: { head: [] },
 };
 

@@ -125,24 +125,25 @@ describe('the vertical slice over HTTP', () => {
     expect(await get<{ id: string }[]>('/api/v1/erp/purchase-invoices')).toHaveLength(1);
     expect((await get<ApiQuestion[]>('/api/v1/questions')).length).toBe(0);
     expect((await get<ApiQuestion[]>('/api/v1/questions?status=answered'))[0]?.answer?.label).toBe(
-      'Record the receipt',
+      'Yes, record the receipt',
     );
 
     // 11. Audit shows everything, Veyra vs You
     const trail = await get<ApiAuditEntry[]>(`/api/v1/audit?invoiceId=${invoiceId}`);
     expect(trail.map((e) => `${e.by}: ${e.title}`)).toEqual([
-      'You: Invoice uploaded',
-      'Veyra: Invoice understood',
-      'Veyra: Records checked',
-      'Veyra: Checks found an issue',
-      'Veyra: Question sent to you',
-      'You: Decision recorded',
-      'Veyra: Records checked',
-      'You: You approved',
-      'Veyra: Checks passed',
+      'You: Uploaded invoice',
+      'Veyra: Read invoice',
+      'Veyra: Matched supplier',
+      'Veyra: Matched purchase order',
+      'Veyra: Found something to check',
+      'Veyra: Asked you',
+      'You: Confirmed goods receipt',
+      'Veyra: Matched supplier',
+      'Veyra: Matched purchase order',
+      'Veyra: Validated invoice',
       'Veyra: Writing to your ERP',
       'Veyra: Recorded in your ERP',
-      'Veyra: Transaction committed',
+      'Veyra: Recorded ERP transaction',
       'Veyra: Ready for payment',
     ]);
   });

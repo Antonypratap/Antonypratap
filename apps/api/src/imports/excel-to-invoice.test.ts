@@ -108,7 +108,7 @@ describe('Excel → invoice → question → decision → ERP → VERIFIED_PENDI
     const [question] = await get<ApiQuestion[]>('/api/v1/questions');
     expect(question).toMatchObject({
       code: 'CA_GRN',
-      evidence: 'No goods receipt for PO-2026-0104 yet',
+      evidence: 'Found the supplier and PO-2026-0104, but no goods receipt yet',
     });
 
     await app.server.inject({

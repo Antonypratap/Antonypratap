@@ -6,6 +6,7 @@ import { z } from 'zod';
 import {
   ApiAnswerBodySchema,
   ApiAuditEntrySchema,
+  ApiDemoScenarioSchema,
   ApiErpSchema,
   ApiImportSchema,
   ApiInboxSchema,
@@ -22,6 +23,7 @@ import { isErpConnectorError } from '@veyra/erp-connector';
 import * as t from '../db/schema';
 import { InvalidTransitionError } from '../workflow/state-machine';
 import { VeyraError, type Veyra } from '../workflow/veyra';
+import { DEMO_SCENARIOS, startScenario } from '../demo/scenarios';
 import { Presenter } from './present';
 import { BusinessImports } from '../imports/service';
 import { templateFiles, templateWorkbook } from '../imports/templates';
@@ -329,6 +331,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   });
   app.get('/api/v1/erp/purchase-invoices', async () => {
     const vendors = new Map((await erp.listVendors()).map((v) => [v.id, v.name]));
+    const orders = new Map((await erp.listPurchaseOrders()).map((o) => [o.id, o.poNumber]));
     return send(
       ApiErpSchema.purchaseInvoices,
       (await erp.listPurchaseInvoices()).map((p) => ({
@@ -338,6 +341,8 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
         invoiceDate: p.invoiceDate,
         totalPaise: p.totalPaise,
         status: p.status,
+        poNumber: orders.get(p.poId) ?? null,
+        lines: p.lines.length,
       })),
     );
   });
@@ -412,6 +417,19 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
         .parse(req.body ?? {});
       await reset(mode);
       return { ok: true, erp: mode };
+    });
+    // Demo scenarios (Phase 3E): each uploads one synthetic invoice through the normal path.
+    app.get('/api/v1/dev/scenarios', async () =>
+      send(
+        z.array(ApiDemoScenarioSchema),
+        DEMO_SCENARIOS.map(({ key, title, story, expect }) => ({ key, title, story, expect })),
+      ),
+    );
+    app.post('/api/v1/dev/scenarios/:key', async (req, reply) => {
+      const { key } = z.object({ key: z.string() }).parse(req.params);
+      const started = startScenario(veyra, key);
+      if (!started) throw new VeyraError('NOT_FOUND', 'There is no such demo scenario.');
+      return reply.status(started.existing ? 200 : 201).send(started);
     });
   }
 

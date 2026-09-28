@@ -4,6 +4,7 @@ import { hrefFor, type Route } from '../router';
 import { api } from '../api/client';
 import { useProductData } from '../state/data';
 import styles from './AppShell.module.css';
+import { DemoProvider, DemoTrigger } from './DemoPanel';
 
 type Section = 'inbox' | 'questions' | 'invoices' | 'erp' | 'audit';
 
@@ -43,104 +44,106 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
   const active = route.name === 'invoice' ? null : sectionOf(route);
 
   return (
-    <div className={styles.shell}>
-      <aside className={styles.sidebar}>
-        <a href={hrefFor({ name: 'inbox' })} className={styles.brand} aria-label="Veyra inbox">
-          <Logo />
-        </a>
-        <nav aria-label="Product">
-          <ul className={styles.nav}>
-            {NAV.map((item) => (
-              <li key={item.key}>
-                <a
-                  href={hrefFor(item.route)}
-                  className={styles.navItem}
-                  aria-current={(active ?? sectionOf(route)) === item.key ? 'page' : undefined}
-                >
-                  <Icon name={item.icon} size={18} />
-                  <span className={styles.navLabel}>{item.label}</span>
-                  {(item.key === 'inbox' || item.key === 'questions') && waiting > 0 && (
-                    <span className={styles.count} aria-label={`${waiting} waiting`}>
-                      {waiting}
-                    </span>
-                  )}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
-        <div className={styles.sidebarFoot}>
-          <p className={styles.demoNote}>Demo workspace. Sample ERP; no payments are made.</p>
-          {hasData && (
-            <button
-              type="button"
-              className={styles.siteLink}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    'Reset the demo? This clears every invoice and restores the sample ERP.',
-                  )
-                )
-                  void api.resetDemo().then(refresh);
-              }}
-            >
-              Reset demo
-            </button>
-          )}
-          <a href="#top" className={styles.siteLink}>
-            veyra.com
-          </a>
-        </div>
-      </aside>
-
-      <div className={styles.main}>
-        <header className={styles.topbar}>
-          <a
-            href={hrefFor({ name: 'inbox' })}
-            className={styles.mobileBrand}
-            aria-label="Veyra inbox"
-          >
+    <DemoProvider>
+      <div className={styles.shell}>
+        <aside className={styles.sidebar}>
+          <a href={hrefFor({ name: 'inbox' })} className={styles.brand} aria-label="Veyra inbox">
             <Logo />
           </a>
-          <label className={styles.search}>
-            <Icon name="search" size={16} />
-            <span className="visually-hidden">Search</span>
-            <input
-              type="search"
-              placeholder="Search invoices and suppliers"
-              disabled
-              title="Search arrives in a later version"
-            />
-          </label>
-          <span className={styles.demoChip}>Demo data</span>
-          <span className={styles.user} title="Demo approver">
-            DA
-          </span>
-        </header>
-        <main
-          className={styles.content}
-          key={route.name === 'invoice' ? `invoice-${route.id}` : route.name}
-        >
-          {children}
-        </main>
-      </div>
+          <nav aria-label="Product">
+            <ul className={styles.nav}>
+              {NAV.map((item) => (
+                <li key={item.key}>
+                  <a
+                    href={hrefFor(item.route)}
+                    className={styles.navItem}
+                    aria-current={(active ?? sectionOf(route)) === item.key ? 'page' : undefined}
+                  >
+                    <Icon name={item.icon} size={18} />
+                    <span className={styles.navLabel}>{item.label}</span>
+                    {(item.key === 'inbox' || item.key === 'questions') && waiting > 0 && (
+                      <span className={styles.count} aria-label={`${waiting} waiting`}>
+                        {waiting}
+                      </span>
+                    )}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          <div className={styles.sidebarFoot}>
+            <p className={styles.demoNote}>Demo workspace. Sample ERP; no payments are made.</p>
+            {hasData && (
+              <button
+                type="button"
+                className={styles.siteLink}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      'Reset the demo? This clears every invoice and restores the sample ERP.',
+                    )
+                  )
+                    void api.resetDemo().then(refresh);
+                }}
+              >
+                Reset demo
+              </button>
+            )}
+            <a href="#top" className={styles.siteLink}>
+              veyra.com
+            </a>
+          </div>
+        </aside>
 
-      <nav className={styles.tabbar} aria-label="Product (mobile)">
-        {NAV.map((item) => (
-          <a
-            key={item.key}
-            href={hrefFor(item.route)}
-            className={styles.tab}
-            aria-current={sectionOf(route) === item.key ? 'page' : undefined}
-          >
-            <span className={styles.tabIcon}>
-              <Icon name={item.icon} size={20} />
-              {item.key === 'inbox' && waiting > 0 && <span className={styles.tabDot} />}
+        <div className={styles.main}>
+          <header className={styles.topbar}>
+            <a
+              href={hrefFor({ name: 'inbox' })}
+              className={styles.mobileBrand}
+              aria-label="Veyra inbox"
+            >
+              <Logo />
+            </a>
+            <label className={styles.search}>
+              <Icon name="search" size={16} />
+              <span className="visually-hidden">Search</span>
+              <input
+                type="search"
+                placeholder="Search invoices and suppliers"
+                disabled
+                title="Search arrives in a later version"
+              />
+            </label>
+            <DemoTrigger className={styles.demoButton} />
+            <span className={styles.user} title="Demo approver">
+              DA
             </span>
-            {item.label}
-          </a>
-        ))}
-      </nav>
-    </div>
+          </header>
+          <main
+            className={styles.content}
+            key={route.name === 'invoice' ? `invoice-${route.id}` : route.name}
+          >
+            {children}
+          </main>
+        </div>
+
+        <nav className={styles.tabbar} aria-label="Product (mobile)">
+          {NAV.map((item) => (
+            <a
+              key={item.key}
+              href={hrefFor(item.route)}
+              className={styles.tab}
+              aria-current={sectionOf(route) === item.key ? 'page' : undefined}
+            >
+              <span className={styles.tabIcon}>
+                <Icon name={item.icon} size={20} />
+                {item.key === 'inbox' && waiting > 0 && <span className={styles.tabDot} />}
+              </span>
+              {item.label}
+            </a>
+          ))}
+        </nav>
+      </div>
+    </DemoProvider>
   );
 }

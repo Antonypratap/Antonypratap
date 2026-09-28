@@ -107,7 +107,15 @@ export const ApiInvoiceSummarySchema = z.object({
   receivedAt: z.string(),
   updatedAt: z.string(),
   /** The open question, if any, in queue form. */
-  question: z.object({ id: z.string(), summary: z.string(), evidence: z.string() }).nullable(),
+  question: z
+    .object({
+      id: z.string(),
+      kind: z.enum(QUESTION_KINDS),
+      summary: z.string(),
+      evidence: z.string(),
+      headline: z.string(),
+    })
+    .nullable(),
   /** The last decision the user made on this invoice, if any. */
   decision: z
     .object({ summary: z.string(), label: z.string(), result: z.string(), at: z.string() })
@@ -173,6 +181,12 @@ export const ApiInvoiceDetailSchema = ApiInvoiceSummarySchema.extend({
     poNumber: z.string().nullable(),
     purchaseInvoiceId: z.string().nullable(),
     records: z.array(z.string()),
+    /** Goods receipts on the order (Phase 3E evidence), with who recorded them. */
+    receipts: z.array(z.object({ number: z.string(), date: z.string(), byYou: z.boolean() })),
+    /** The purchase invoice Veyra recorded in the ERP, once committed. */
+    purchaseInvoice: z
+      .object({ id: z.string(), status: z.string(), totalPaise: int, lines: int })
+      .nullable(),
   }),
 });
 export type ApiInvoiceDetail = z.infer<typeof ApiInvoiceDetailSchema>;
@@ -255,9 +269,21 @@ export const ApiErpSchema = {
       invoiceDate: z.string(),
       totalPaise: int,
       status: z.string(),
+      poNumber: z.string().nullable(),
+      lines: int,
     }),
   ),
 };
+
+/** A demo scenario (Phase 3E): one synthetic invoice that tells one story. Demo only. */
+export const ApiDemoScenarioSchema = z.object({
+  key: z.string(),
+  title: z.string(),
+  story: z.string(),
+  /** What the prospect should expect: handled by Veyra, a decision for you, or stopped. */
+  expect: z.enum(['handled', 'decision', 'stopped']),
+});
+export type ApiDemoScenario = z.infer<typeof ApiDemoScenarioSchema>;
 
 // ── Business record import (Phase 3C) ──────────────────────────────────────
 

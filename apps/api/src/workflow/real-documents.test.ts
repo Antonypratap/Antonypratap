@@ -185,7 +185,7 @@ describe('real documents through the real pipeline', () => {
     const audit = await get<{ title: string; detail: string; by: string }[]>(
       `/api/v1/audit?invoiceId=${invoiceId}`,
     );
-    expect(audit.find((a) => a.title === 'Invoice understood')?.detail).toMatch(
+    expect(audit.find((a) => a.title === 'Read invoice')?.detail).toMatch(
       /^Read from the PDF's text\./,
     );
   });

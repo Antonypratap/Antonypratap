@@ -118,6 +118,31 @@ export class Presenter {
       .all();
   }
 
+  /** What the ERP holds for this invoice: the order's goods receipts and the recorded invoice. */
+  async erpEvidence(
+    inv: InvoiceRow,
+  ): Promise<Pick<ApiInvoiceDetail['erp'], 'receipts' | 'purchaseInvoice'>> {
+    const grns = inv.poErpId ? await this.v.erp.listGrnsForPo(inv.poErpId as never) : [];
+    const recorded = inv.erpPurchaseInvoiceId
+      ? (await this.v.erp.listPurchaseInvoices()).find((p) => p.id === inv.erpPurchaseInvoiceId)
+      : undefined;
+    return {
+      receipts: grns.map((g) => ({
+        number: g.grnNumber,
+        date: g.grnDate,
+        byYou: g.origin === 'user_confirmed_via_veyra',
+      })),
+      purchaseInvoice: recorded
+        ? {
+            id: recorded.id,
+            status: recorded.status,
+            totalPaise: recorded.totalPaise,
+            lines: recorded.lines.length,
+          }
+        : null,
+    };
+  }
+
   async poNumberOf(inv: InvoiceRow): Promise<string | null> {
     if (!inv.poErpId) return null;
     return (await this.v.erp.getPurchaseOrder(inv.poErpId as never))?.poNumber ?? null;
@@ -164,7 +189,13 @@ export class Presenter {
       updatedAt: inv.updatedAt,
       question:
         open && openCtx
-          ? { id: open.id, summary: openCtx.summary, evidence: openCtx.evidence }
+          ? {
+              id: open.id,
+              kind: open.kind as ApiQuestion['kind'],
+              summary: openCtx.summary,
+              evidence: openCtx.evidence,
+              headline: open.prompt,
+            }
           : null,
       decision,
       note: await this.note(inv),
@@ -349,6 +380,7 @@ export class Presenter {
         poNumber: await this.poNumberOf(inv),
         purchaseInvoiceId: inv.erpPurchaseInvoiceId,
         records,
+        ...(await this.erpEvidence(inv)),
       },
     };
   }
@@ -403,6 +435,22 @@ export class Presenter {
   }
 }
 
+/** What the designated user did, by question code (codes stay machine-readable, never shown). */
+const DECIDED: Record<string, string> = {
+  CA_GRN: 'Confirmed goods receipt',
+  CA_VENDOR: 'Approved the new supplier',
+  CA_ITEM: 'Approved the new item',
+  CA_PO: 'Approved the purchase order',
+  AM_VENDOR: 'Chose the supplier',
+  AM_VENDOR_PAN: 'Chose the supplier',
+  AM_OPEN_PO: 'Chose the purchase order',
+  AM_PO_LINE: 'Chose the order line',
+  AM_ITEM: 'Chose the item',
+  BD_VENDOR_INACTIVE: 'Decided on the inactive supplier',
+  BD_PO_CLOSED: 'Decided on the closed order',
+};
+const cap = (x: string) => (x ? x[0]?.toUpperCase() + x.slice(1) : x);
+
 const ENTITY: Record<string, string> = {
   vendor: 'new supplier',
   vendor_reactivation: 'supplier reactivation',
@@ -427,14 +475,14 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
   switch (e.event) {
     case 'invoice.uploaded':
       return make(
-        'Invoice uploaded',
+        'Uploaded invoice',
         `${s('filename')} (${s('mime') === 'application/pdf' ? 'PDF' : 'photo'})`,
       );
     case 'extraction.completed': {
       const unclear = (d.lowConfidence as string[] | undefined) ?? [];
       const how = readMethods((d.methods as string[] | undefined) ?? []);
       return make(
-        'Invoice understood',
+        'Read invoice',
         `${how}${String(d.lines)} line${d.lines === 1 ? '' : 's'}, totals and tax${unclear.length ? `. Not clear: ${unclear.map(fieldLabel).join(', ')}` : ''}`,
       );
     }
@@ -448,16 +496,25 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
           : s('value'),
       );
     case 'match.recorded': {
-      const parts = [
-        d.vendor
-          ? `Supplier ${String(d.vendor).replace(/^new \(.*\)$/, 'is new')}`
-          : 'Supplier and order not settled yet',
+      // One matching pass, shown as what a person would say: supplier, then order.
+      const vendor = d.vendor ? String(d.vendor) : null;
+      const po = d.po ? String(d.po) : null;
+      const isNew = (ref: string) => /^new \(.*\)$/.test(ref);
+      if (!vendor && !po) return make('Checked your records', 'Supplier and order not settled yet');
+      return [
+        ...(vendor
+          ? make(
+              isNew(vendor) ? 'Prepared a new supplier' : 'Matched supplier',
+              isNew(vendor) ? 'Not in your records yet' : `Supplier ${vendor} in your records`,
+            )
+          : []),
+        ...(po
+          ? make(
+              isNew(po) ? 'Prepared a purchase order' : 'Matched purchase order',
+              isNew(po) ? 'To be created from the invoice' : `Order ${po} in your records`,
+            ).map((x) => ({ ...x, id: `${e.id}-po` }))
+          : []),
       ];
-      if (d.po)
-        parts.push(
-          `order ${String(d.po).replace(/^new \(.*\)$/, 'to be created from the invoice')}`,
-        );
-      return make('Records checked', parts.join(' · '));
     }
     case 'creation.staged':
       return make(
@@ -465,32 +522,39 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
         `A ${ENTITY[s('entity')] ?? s('entity')}, to be written with the invoice`,
       );
     case 'creation.approved':
-      return make('You approved', `A ${ENTITY[s('entity')] ?? s('entity')}`);
+      // Shown once, as the decision itself (question.answered below).
+      return [];
     case 'validation.completed': {
       const failed = (d.failed as string[] | undefined) ?? [];
       const na = (d.notApplicable as string[] | undefined) ?? [];
       return failed.length
         ? make(
-            'Checks found an issue',
+            'Found something to check',
             `${failed.length} check${failed.length === 1 ? '' : 's'} did not pass`,
             'attention',
           )
         : make(
-            'Checks passed',
+            'Validated invoice',
             `${String(d.passed)} checks passed${na.some((x) => x.includes('PO_DERIVED_FROM_INVOICE')) ? '; order comparisons not applicable (order created from this invoice)' : ''}`,
           );
     }
     case 'question.raised':
-      return make('Question sent to you', `${s('summary')}: ${s('evidence')}`, 'attention');
-    case 'question.answered':
-      return make('Decision recorded', `${s('summary')}: ${s('option')}`);
+      return make('Asked you', `${s('summary')}: ${s('evidence')}`, 'attention');
+    case 'question.answered': {
+      // A typed or confirmed value is shown by its own entry; a rejection by the rejection.
+      if (['SET_FIELD', 'CONFIRM_FIELD', 'REJECT_INVOICE'].includes(s('effect'))) return [];
+      return make(
+        DECIDED[s('code')] ?? (s('code').startsWith('VF_') ? 'Resolved a check' : 'Decided'),
+        `${s('summary')}: ${s('option')}`,
+      );
+    }
     case 'field.corrected':
       return make(
-        'Value corrected',
+        'Corrected a value',
         `${fieldLabel(s('path'))}: ${displayValue(kindOf(s('path')), d.to as never)}`,
       );
     case 'field.confirmed':
-      return make('Value confirmed', fieldLabel(s('path')));
+      return make('Confirmed a value', cap(fieldLabel(s('path'))));
     case 'commit.started':
       return make('Writing to your ERP', 'Everything checked; recording the transaction');
     case 'creation.committed':
@@ -500,7 +564,7 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
     case 'commit.completed':
       return [
         ...make(
-          'Transaction committed',
+          'Recorded ERP transaction',
           `Purchase invoice ${s('purchaseInvoiceId')} recorded in your ERP`,
           'handled',
         ),

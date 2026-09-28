@@ -180,7 +180,11 @@ const browser = await chromium.launch(
   process.env.VEYRA_CHROMIUM ? { executablePath: process.env.VEYRA_CHROMIUM } : {},
 );
 try {
-  for (const sample of DOCUMENT_SAMPLES) {
+  // `npm run fixtures:documents -- D12` renders only the files starting with D12.
+  const only = process.argv.slice(2);
+  for (const sample of DOCUMENT_SAMPLES.filter(
+    (x) => only.length === 0 || only.some((o) => x.file.startsWith(o)),
+  )) {
     const page = await browser.newPage({
       viewport: { width: 800, height: 1100 },
       deviceScaleFactor: 2,
