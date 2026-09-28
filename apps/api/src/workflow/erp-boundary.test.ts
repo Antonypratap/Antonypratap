@@ -37,7 +37,7 @@ function scripted(options: Parameters<typeof scriptedConnector>[1] = {}) {
 async function validated(scenario: string): Promise<string> {
   const s = scenarioById(scenario);
   if (!s) throw new Error(scenario);
-  const { invoiceId } = h.veyra.upload({ filename: s.file, bytes: renderScenario(s) });
+  const { invoiceId } = await h.veyra.upload({ filename: s.file, bytes: renderScenario(s) });
   await h.runner.step();
   expect(h.state(invoiceId)).toBe('COMMITTING');
   return invoiceId;

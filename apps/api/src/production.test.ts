@@ -1,0 +1,557 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Writable } from 'node:stream';
+import Database from 'better-sqlite3';
+import { afterEach, describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
+import { renderScenario, scenarioById } from '@veyra/extractor';
+import { createApp, type AppConfig } from './app';
+import { openVeyraDb, pendingMigrations, PendingMigrationsError } from './db/open';
+import * as t from './db/schema';
+import { createLogger } from './http/logging';
+import { LocalDocumentStorage, StorageUnavailableError, type DocumentStorage } from './storage';
+import { DEMO_NOW, createHarness, type Harness } from './test/harness';
+
+/**
+ * Phase 6: the production foundation as a deployed instance sees it. Health, production lock-down,
+ * safe errors with request ids, structured logs without secrets, rate limits, upload limits,
+ * storage failures, job leases and graceful shutdown.
+ */
+type App = Awaited<ReturnType<typeof createApp>>;
+const opened: { app: App; dir: string }[] = [];
+let h: Harness | undefined;
+afterEach(async () => {
+  for (const { app, dir } of opened.splice(0)) {
+    await app.close(0);
+    rmSync(dir, { recursive: true, force: true });
+  }
+  h?.close();
+  h = undefined;
+});
+
+async function open(extra: Partial<AppConfig> = {}): Promise<App> {
+  const dir = mkdtempSync(join(tmpdir(), 'veyra-prod-'));
+  const app = await createApp({
+    dataDir: dir,
+    demo: true,
+    allowFixtureExtractor: true,
+    nodeEnv: 'test',
+    clock: () => DEMO_NOW,
+    ...extra,
+  });
+  opened.push({ app, dir });
+  return app;
+}
+
+function logCapture() {
+  const lines: Record<string, unknown>[] = [];
+  const stream = new Writable({
+    write(chunk: Buffer, _enc, done) {
+      for (const l of chunk.toString().split('\n').filter(Boolean))
+        lines.push(JSON.parse(l) as Record<string, unknown>);
+      done();
+    },
+  });
+  return { lines, log: createLogger({ level: 'debug', environment: 'staging' }, stream) };
+}
+
+function multipart(filename: string, bytes: Uint8Array, mime = 'application/pdf') {
+  const boundary = '----veyra-prod-boundary';
+  return {
+    payload: Buffer.concat([
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: ${mime}\r\n\r\n`,
+      ),
+      Buffer.from(bytes),
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]),
+    headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+  };
+}
+const S01 = () => {
+  const s = scenarioById('S01');
+  if (!s) throw new Error('S01');
+  return { file: s.file, bytes: renderScenario(s) };
+};
+
+/** A storage that is down until `up()` is called. */
+class FlakyStorage implements DocumentStorage {
+  readonly kind = 'local' as const;
+  down = true;
+  constructor(readonly inner: LocalDocumentStorage) {}
+  #gate() {
+    if (this.down) throw new StorageUnavailableError({ cause: new Error('EIO /secret/path') });
+  }
+  async put(...a: Parameters<DocumentStorage['put']>) {
+    return this.inner.put(...a);
+  }
+  async get(...a: Parameters<DocumentStorage['get']>) {
+    this.#gate();
+    return this.inner.get(...a);
+  }
+  async exists(k: string) {
+    return this.inner.exists(k);
+  }
+  async metadata(k: string) {
+    return this.inner.metadata(k);
+  }
+  async delete(k: string) {
+    return this.inner.delete(k);
+  }
+  async withLocalFile<T>(k: string, fn: (p: string) => Promise<T>, v?: { sha256: string }) {
+    this.#gate();
+    return this.inner.withLocalFile(k, fn, v);
+  }
+  async check() {
+    this.#gate();
+  }
+}
+
+describe('health', () => {
+  it('liveness answers without checking anything', async () => {
+    const app = await open();
+    const res = await app.server.inject({ method: 'GET', url: '/api/v1/health/live' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ status: 'ok' });
+  });
+
+  it('readiness checks database, storage and the worker; reports ERP and jobs; no secrets', async () => {
+    const app = await open({ environment: 'staging' });
+    const notYet = await app.server.inject({ method: 'GET', url: '/api/v1/health/ready' });
+    expect(notYet.statusCode).toBe(503); // the worker has not started
+    expect(notYet.json()).toMatchObject({ checks: { worker: { status: 'fail' } } });
+    app.runner.start(60_000);
+    const res = await app.server.inject({ method: 'GET', url: '/api/v1/health/ready' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      status: 'ready',
+      environment: 'staging',
+      checks: {
+        database: { status: 'ok' },
+        storage: { status: 'ok' },
+        worker: { status: 'ok' },
+        erp: { status: 'CONNECTED' },
+      },
+      jobs: { queued: 0, running: 0, expired: 0, failedLast24h: 0 },
+    });
+    expect(res.body).not.toMatch(/veyra-prod-|\.db|uploads|\/tmp/);
+  });
+
+  it('readiness fails (503) when storage is unavailable, with a code and nothing else', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'veyra-prod-'));
+    const storage = new FlakyStorage(new LocalDocumentStorage(join(dir, 'u')));
+    const app = await open({ storage });
+    app.runner.start(60_000);
+    const res = await app.server.inject({ method: 'GET', url: '/api/v1/health/ready' });
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toMatchObject({
+      status: 'not_ready',
+      checks: { storage: { status: 'fail', code: 'STORAGE_UNAVAILABLE' } },
+    });
+    expect(res.body).not.toMatch(/secret|EIO/);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('readiness fails when the database is gone', async () => {
+    const app = await open();
+    app.runner.start(60_000);
+    (app.veyra.db as unknown as { $client: Database.Database }).$client.close();
+    const res = await app.server.inject({ method: 'GET', url: '/api/v1/health/ready' });
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toMatchObject({
+      checks: { database: { status: 'fail', code: 'DATABASE_UNAVAILABLE' } },
+      jobs: null,
+    });
+    app.runner.stop();
+    opened.pop(); // closed by hand below
+    await app.server.close();
+  });
+});
+
+describe('production lock-down', () => {
+  it('production has no dev, reset or demo-scenario endpoints, whatever the caller asks for', async () => {
+    const app = await open({ environment: 'production', demo: true, allowFixtureExtractor: true });
+    for (const [method, url] of [
+      ['POST', '/api/v1/dev/reset'],
+      ['GET', '/api/v1/dev/scenarios'],
+      ['POST', '/api/v1/dev/scenarios/clean'],
+    ] as const) {
+      const res = await app.server.inject({ method, url });
+      expect(res.statusCode, url).toBe(404);
+      expect(res.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+    }
+    const health = (await app.server.inject({ method: 'GET', url: '/api/v1/health' })).json();
+    expect(health).toMatchObject({ environment: 'production', demo: false });
+    // No demo seed either: production starts with an empty business.
+    expect(await app.veyra.erp.listVendors()).toEqual([]);
+  });
+
+  it('staging keeps the demo', async () => {
+    const app = await open({ environment: 'staging' });
+    const res = await app.server.inject({ method: 'GET', url: '/api/v1/dev/scenarios' });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('refuses to start on a database with pending migrations when auto-migration is off', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'veyra-mig-'));
+    const file = join(dir, 'veyra.db');
+    const raw = new Database(file);
+    expect(pendingMigrations(raw)).toHaveLength(4);
+    raw.close();
+    expect(() => openVeyraDb(file, { migrate: false })).toThrow(PendingMigrationsError);
+    openVeyraDb(file, { migrate: true }).sqlite.close();
+    // Applied once; applying again is a no-op; now it opens without migrating.
+    openVeyraDb(file, { migrate: true }).sqlite.close();
+    const again = new Database(file);
+    expect(pendingMigrations(again)).toEqual([]);
+    expect(again.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 4 });
+    again.close();
+    openVeyraDb(file, { migrate: false }).sqlite.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('errors and request ids', () => {
+  it('every response carries a request id; errors include it; a given safe id is kept', async () => {
+    const app = await open();
+    const ok = await app.server.inject({ method: 'GET', url: '/api/v1/health/live' });
+    expect(ok.headers['x-request-id']).toMatch(/^[0-9A-Z]{26}$/);
+    const nf = await app.server.inject({
+      method: 'GET',
+      url: '/api/v1/invoices/01K0000000000000000000ZZZZ',
+      headers: { 'x-request-id': 'edge-req-12345678' },
+    });
+    expect(nf.headers['x-request-id']).toBe('edge-req-12345678');
+    expect(nf.json()).toMatchObject({
+      error: { code: 'NOT_FOUND', requestId: 'edge-req-12345678' },
+    });
+    const odd = await app.server.inject({
+      method: 'GET',
+      url: '/api/v1/health/live',
+      headers: { 'x-request-id': '<script>alert(1)</script>' },
+    });
+    expect(odd.headers['x-request-id']).toMatch(/^[0-9A-Z]{26}$/);
+  });
+
+  it('malformed JSON, unknown routes and oversized bodies get safe, stable errors', async () => {
+    const app = await open({
+      limits: {
+        maxUploadBytes: 20 * 1024 * 1024,
+        maxJsonBodyBytes: 2048,
+        maxPdfPages: 20,
+        maxImageSide: 12_000,
+        maxImagePixels: 40_000_000,
+      },
+    });
+    const bad = await app.server.inject({
+      method: 'POST',
+      url: '/api/v1/invoices/01K0000000000000000000ZZZZ/reject',
+      headers: { 'content-type': 'application/json' },
+      payload: '{"reason": ',
+    });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json()).toMatchObject({
+      error: { code: 'BAD_REQUEST', message: 'The request could not be read.' },
+    });
+    expect(bad.body).not.toMatch(/Unexpected|JSON\.parse|at |\.ts/);
+    const big = await app.server.inject({
+      method: 'POST',
+      url: '/api/v1/invoices/01K0000000000000000000ZZZZ/reject',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ reason: 'x'.repeat(5000) }),
+    });
+    expect(big.statusCode).toBe(413);
+    expect(big.json()).toMatchObject({ error: { code: 'TOO_LARGE' } });
+    const none = await app.server.inject({ method: 'GET', url: '/api/v1/../../etc/passwd' });
+    expect(none.statusCode).toBe(404);
+    expect(none.body).not.toMatch(/root:/);
+  });
+
+  it('an internal failure answers 500 INTERNAL with a request id: no stack, SQL or path', async () => {
+    const { lines, log } = logCapture();
+    const app = await open({ log });
+    (app.veyra.db as unknown as { $client: Database.Database }).$client.exec(
+      'DROP TABLE questions',
+    );
+    const res = await app.server.inject({ method: 'GET', url: '/api/v1/questions' });
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual({
+      error: {
+        code: 'INTERNAL',
+        message: 'Something went wrong.',
+        details: {},
+        requestId: res.headers['x-request-id'],
+      },
+    });
+    expect(res.body).not.toMatch(/SQLITE|no such table|questions|at |\/tmp|\.ts/);
+    // The detail is in the server log, correlated by request id.
+    expect(lines.find((l) => l.msg === 'unhandled error')).toMatchObject({
+      reqId: res.headers['x-request-id'],
+    });
+  });
+});
+
+describe('uploads and input safety', () => {
+  it('oversized uploads are refused at the configured limit', async () => {
+    const app = await open({
+      limits: {
+        maxUploadBytes: 64 * 1024,
+        maxJsonBodyBytes: 1024 * 1024,
+        maxPdfPages: 20,
+        maxImageSide: 12_000,
+        maxImagePixels: 40_000_000,
+      },
+    });
+    const bytes = new Uint8Array(100 * 1024).fill(0x41);
+    bytes.set(new TextEncoder().encode('%PDF-1.4'));
+    const res = await app.server.inject({
+      method: 'POST',
+      url: '/api/v1/documents',
+      ...multipart('big.pdf', bytes),
+    });
+    expect(res.statusCode).toBe(413);
+    expect(res.json()).toMatchObject({
+      error: { code: 'TOO_LARGE', message: 'Files up to 64 KB are accepted.' },
+    });
+  });
+
+  it('the file type is decided by its bytes; names cannot choose where a file is stored', async () => {
+    const app = await open();
+    const fake = await app.server.inject({
+      method: 'POST',
+      url: '/api/v1/documents',
+      ...multipart(
+        'invoice.pdf',
+        new TextEncoder().encode('MZ\u0090 not a pdf'),
+        'application/pdf',
+      ),
+    });
+    expect(fake.statusCode).toBe(415);
+    const { file, bytes } = S01();
+    const res = await app.server.inject({
+      method: 'POST',
+      url: '/api/v1/documents',
+      ...multipart(`../../../../etc/${file}`, bytes),
+    });
+    expect(res.statusCode).toBe(201);
+    const { documentId } = res.json<{ documentId: string }>();
+    const doc = app.veyra.db.select().from(t.documents).where(eq(t.documents.id, documentId)).get();
+    expect(doc?.storagePath).toBe(`${documentId}.pdf`);
+    expect(doc?.filename).not.toMatch(/\.\.|\//);
+    const back = await app.server.inject({
+      method: 'GET',
+      url: `/api/v1/documents/${documentId}/file`,
+    });
+    expect(Buffer.from(back.rawPayload)).toEqual(Buffer.from(bytes));
+    const traversal = await app.server.inject({
+      method: 'GET',
+      url: '/api/v1/documents/..%2F..%2Fetc%2Fpasswd/file',
+    });
+    expect(traversal.statusCode).toBe(422);
+  });
+
+  it('a stored document that no longer matches its checksum is never served', async () => {
+    const app = await open();
+    const { file, bytes } = S01();
+    const { documentId } = await app.veyra.upload({ filename: file, bytes });
+    // Someone swaps the file on disk behind Veyra's back.
+    writeFileSync(
+      (app.storage as LocalDocumentStorage).pathOf(`${documentId}.pdf`),
+      '%PDF-1.4 swapped %%EOF',
+    );
+    const res = await app.server.inject({
+      method: 'GET',
+      url: `/api/v1/documents/${documentId}/file`,
+    });
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toMatchObject({ error: { code: 'STORAGE_INTEGRITY' } });
+  });
+});
+
+describe('rate limits', () => {
+  it('uploads over the limit get 429 with Retry-After and a safe body', async () => {
+    const app = await open({ rateLimits: { upload: 2, processing: 100, dev: 100 } });
+    const codes: number[] = [];
+    for (let i = 0; i < 3; i++)
+      codes.push(
+        (
+          await app.server.inject({
+            method: 'POST',
+            url: '/api/v1/documents',
+            ...multipart('x.pdf', new TextEncoder().encode('nope')),
+          })
+        ).statusCode,
+      );
+    expect(codes).toEqual([415, 415, 429]);
+    const res = await app.server.inject({
+      method: 'POST',
+      url: '/api/v1/documents',
+      ...multipart('x.pdf', new TextEncoder().encode('nope')),
+    });
+    expect(res.headers['retry-after']).toMatch(/^\d+$/);
+    expect(res.json()).toMatchObject({ error: { code: 'RATE_LIMITED' } });
+    // Reads are not limited.
+    expect((await app.server.inject({ method: 'GET', url: '/api/v1/invoices' })).statusCode).toBe(
+      200,
+    );
+  });
+
+  it('demo endpoints are limited too', async () => {
+    const app = await open({ rateLimits: { upload: 100, processing: 100, dev: 1 } });
+    await app.server.inject({ method: 'GET', url: '/api/v1/dev/scenarios' });
+    const res = await app.server.inject({ method: 'GET', url: '/api/v1/dev/scenarios' });
+    expect(res.statusCode).toBe(429);
+  });
+});
+
+describe('structured logs', () => {
+  it('one line per request with id, route, status and duration; no secrets or bodies', async () => {
+    const { lines, log } = logCapture();
+    const app = await open({ log });
+    const { file, bytes } = S01();
+    await app.server.inject({
+      method: 'POST',
+      url: '/api/v1/documents',
+      headers: {
+        ...multipart(file, bytes).headers,
+        authorization: 'Bearer sk_live_secret_token',
+        cookie: 'session=abc123secret',
+      },
+      payload: multipart(file, bytes).payload,
+    });
+    const line = lines.find((l) => l.msg === 'request' && l.route === '/api/v1/documents');
+    expect(line).toMatchObject({
+      level: 'info',
+      service: 'veyra-api',
+      env: 'staging',
+      method: 'POST',
+      status: 201,
+      reqId: expect.any(String),
+      durationMs: expect.any(Number),
+    });
+    const all = JSON.stringify(lines);
+    expect(all).not.toMatch(/sk_live|abc123secret|Bearer|SSS\/26-27|%PDF/);
+  });
+
+  it('the logger redacts credentials even if something tries to log them', () => {
+    const { lines, log } = logCapture();
+    log.info(
+      {
+        req: { headers: { authorization: 'Bearer x', cookie: 'c=1' } },
+        s3: { secretAccessKey: 'k' },
+      },
+      'oops',
+    );
+    expect(JSON.stringify(lines)).not.toMatch(/Bearer x|c=1|"k"/);
+    expect(lines[0]).toMatchObject({ s3: { secretAccessKey: '[redacted]' } });
+  });
+});
+
+describe('jobs: retries, leases and shutdown', () => {
+  it('storage unavailable while reading is retried, then processing continues; nothing duplicated', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'veyra-prod-'));
+    const storage = new FlakyStorage(new LocalDocumentStorage(join(dir, 'u')));
+    const app = await open({ storage });
+    const { file, bytes } = S01();
+    const { invoiceId } = await app.veyra.upload({ filename: file, bytes });
+    await app.runner.drain();
+    const job = app.veyra.latestJobs(invoiceId)[0];
+    expect(job).toMatchObject({
+      status: 'queued',
+      attempts: 1,
+      lastError: 'Document storage is not available right now.',
+    });
+    expect(app.veyra.invoiceRow(app.veyra.db, invoiceId).state).toBe('EXTRACTING');
+    storage.down = false;
+    app.veyra.db.update(t.jobs).set({ runAfter: '2000-01-01T00:00:00.000Z' }).run();
+    await app.runner.drain();
+    expect(app.veyra.invoiceRow(app.veyra.db, invoiceId).state).toBe('VERIFIED_PENDING_PAYMENT');
+    expect(app.veyra.db.select().from(t.invoices).all()).toHaveLength(1);
+    expect(app.veyra.db.select().from(t.extractions).all()).toHaveLength(1);
+    expect(await app.veyra.erp.listPurchaseInvoices()).toHaveLength(1);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('retries are bounded: after 5 attempts the invoice fails visibly with the reason recorded', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'veyra-prod-'));
+    const storage = new FlakyStorage(new LocalDocumentStorage(join(dir, 'u')));
+    const app = await open({ storage });
+    const { file, bytes } = S01();
+    const { invoiceId } = await app.veyra.upload({ filename: file, bytes });
+    for (let i = 0; i < 6; i++) {
+      app.veyra.db.update(t.jobs).set({ runAfter: '2000-01-01T00:00:00.000Z' }).run();
+      await app.runner.drain();
+    }
+    expect(app.veyra.latestJobs(invoiceId)[0]).toMatchObject({ status: 'failed', attempts: 5 });
+    expect(app.veyra.invoiceRow(app.veyra.db, invoiceId)).toMatchObject({
+      state: 'FAILED',
+      failureReason: 'Document storage is not available right now.',
+    });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('a job whose worker disappeared is re-queued after its lease, then completes once', async () => {
+    h = createHarness();
+    const { file, bytes } = S01();
+    const { invoiceId } = await h.veyra.upload({ filename: file, bytes });
+    const claimed = h.veyra.claimJob(); // a worker takes it… and dies
+    expect(claimed).toMatchObject({ invoiceId, attempts: 1 });
+    expect(h.runner.recoverExpired()).toBe(0); // lease still valid
+    h.veyra.db.update(t.jobs).set({ lockedAt: '2026-09-28T05:00:00.000Z' }).run();
+    expect(h.veyra.jobStats(h.runner.leaseMs)).toMatchObject({ running: 1, expired: 1 });
+    expect(h.runner.recoverExpired()).toBe(1);
+    expect(h.veyra.latestJobs(invoiceId)[0]).toMatchObject({ status: 'queued', attempts: 1 });
+    await h.runner.drain();
+    expect(h.state(invoiceId)).toBe('VERIFIED_PENDING_PAYMENT');
+    expect(await h.erp.listPurchaseInvoices()).toHaveLength(1);
+    expect(h.openQuestions(invoiceId)).toEqual([]);
+  });
+
+  it('an abandoned job that has used its attempts fails the invoice instead of looping', async () => {
+    h = createHarness();
+    const { file, bytes } = S01();
+    const { invoiceId } = await h.veyra.upload({ filename: file, bytes });
+    h.veyra.claimJob();
+    h.veyra.db.update(t.jobs).set({ attempts: 5, lockedAt: '2026-09-28T05:00:00.000Z' }).run();
+    h.runner.recoverExpired();
+    expect(h.veyra.latestJobs(invoiceId)[0]).toMatchObject({
+      status: 'failed',
+      lastError: 'WORKER_LOST',
+    });
+    expect(h.veyra.invoiceRow(h.veyra.db, invoiceId)).toMatchObject({
+      state: 'FAILED',
+      failureReason: 'Processing stopped repeatedly before it could finish.',
+    });
+  });
+
+  it('graceful shutdown lets a running job finish, or puts it back in the queue — never stranded', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'veyra-prod-'));
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const inner = new LocalDocumentStorage(join(dir, 'u'));
+    const slow: DocumentStorage = Object.assign(Object.create(inner) as LocalDocumentStorage, {
+      withLocalFile: async <T>(
+        k: string,
+        fn: (p: string) => Promise<T>,
+        v?: { sha256: string },
+      ) => {
+        await gate;
+        return inner.withLocalFile(k, fn, v);
+      },
+    });
+    const app = await open({ storage: slow });
+    const { file, bytes } = S01();
+    const { invoiceId } = await app.veyra.upload({ filename: file, bytes });
+    const running = app.runner.step();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(app.veyra.latestJobs(invoiceId)[0]).toMatchObject({ status: 'running' });
+    await app.runner.shutdown(50); // the job does not finish in time
+    expect(app.veyra.latestJobs(invoiceId)[0]).toMatchObject({ status: 'queued', lockedAt: null });
+    release();
+    await running;
+    rmSync(dir, { recursive: true, force: true });
+  });
+});

@@ -66,16 +66,16 @@ const DOCS = new URL('../../../../fixtures/documents/', import.meta.url);
  * Starts a scenario: uploads its document exactly as a person would. If that exact file is
  * already in the workspace, the existing invoice is returned instead (uploads are unique by hash).
  */
-export function startScenario(
+export async function startScenario(
   veyra: Veyra,
   key: string,
-): { invoiceId: string; existing: boolean } | null {
+): Promise<{ invoiceId: string; existing: boolean } | null> {
   const scenario = DEMO_SCENARIOS.find((s) => s.key === key);
   if (!scenario) return null;
   const bytes = new Uint8Array(readFileSync(new URL(scenario.file, DOCS)));
   try {
     return {
-      invoiceId: veyra.upload({ filename: scenario.file, bytes }).invoiceId,
+      invoiceId: (await veyra.upload({ filename: scenario.file, bytes })).invoiceId,
       existing: false,
     };
   } catch (error) {

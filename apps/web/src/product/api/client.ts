@@ -107,8 +107,15 @@ export const api = {
   resetDemo: () => request(z.object({ ok: z.boolean() }).loose(), '/dev/reset', { method: 'POST' }),
   demo: {
     /** Demo scenarios (demo builds only; the list is empty elsewhere). */
-    scenarios: (): Promise<ApiDemoScenario[]> =>
-      request(z.array(ApiDemoScenarioSchema), '/dev/scenarios').catch(() => []),
+    scenarios: async (): Promise<ApiDemoScenario[]> => {
+      // Production has no demo endpoints at all; ask only when the server says the demo is on.
+      const health = await request(z.object({ demo: z.boolean().optional() }).loose(), '/health')
+        .then((h) => h.demo === true)
+        .catch(() => false);
+      return health
+        ? request(z.array(ApiDemoScenarioSchema), '/dev/scenarios').catch(() => [])
+        : [];
+    },
     start: (key: string) =>
       request(
         z.object({ invoiceId: z.string(), existing: z.boolean() }),

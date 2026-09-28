@@ -1,6 +1,7 @@
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
+import type { Logger } from 'pino';
 import { guardCapabilities, type ErpConnector } from '@veyra/erp-connector';
 import { FakeErpConnector } from '@veyra/fake-erp';
 import {
@@ -10,8 +11,14 @@ import {
   OllamaAssist,
   type Extractor,
 } from '@veyra/extractor';
+import { configureDocumentLimits, type ConfigurableDocumentLimits } from '@veyra/extractor';
+import type { Environment } from './config';
 import { openVeyraDb } from './db/open';
+import * as t from './db/schema';
+import { readinessCheck } from './http/health';
+import type { RateBucket } from './http/rate-limit';
 import { buildServer } from './http/server';
+import { LocalDocumentStorage, type DocumentStorage } from './storage';
 import { JobRunner } from './workflow/runner';
 import { DEFAULT_SETTINGS, DEMO_SETTINGS, Veyra } from './workflow/veyra';
 
@@ -28,7 +35,18 @@ export interface AppConfig {
   /** Tests only: replaces the real document extractor. */
   documentExtractor?: Extractor & { close?: () => Promise<void> };
   clock?: () => Date;
-  logger?: boolean;
+  /** Phase 6: the deployment. Defaults to production when NODE_ENV is, else development. */
+  environment?: Environment;
+  /** Document storage. Defaults to `<dataDir>/uploads` on the local filesystem. */
+  storage?: DocumentStorage;
+  /** Apply pending migrations on open (default true; production runs `db:migrate` instead). */
+  migrate?: boolean;
+  /** Structured logger; absent: silent. */
+  log?: Logger;
+  limits?: { maxUploadBytes: number; maxJsonBodyBytes: number } & ConfigurableDocumentLimits;
+  rateLimits?: Record<RateBucket, number>;
+  trustProxy?: number;
+  jobs?: { leaseMs: number; shutdownGraceMs: number };
 }
 
 /**
@@ -44,11 +62,12 @@ function makeExtractor(
     new LocalDocumentExtractor({
       ollama: config.ollama ? new OllamaAssist(config.ollama) : null,
     });
-  const demo = (mode === 'demo' || mode === 'fixture') && config.nodeEnv !== 'production';
+  const environment = environmentOf(config);
+  const demo = (mode === 'demo' || mode === 'fixture') && environment !== 'production';
   if (!demo || !config.allowFixtureExtractor) return real;
   const fixture = new FixtureExtractor({
     allow: config.allowFixtureExtractor,
-    nodeEnv: config.nodeEnv,
+    nodeEnv: environment,
   });
   return Object.assign(new DemoRoutedExtractor(fixture, real), {
     close: () => real.close?.() ?? Promise.resolve(),
@@ -59,15 +78,25 @@ function makeExtractor(
  * Composition root: the only place that knows the ERP is the fake ERP and which extractor reads
  * documents. Everything else sees the ErpConnector and Extractor ports.
  */
+function environmentOf(config: AppConfig): Environment {
+  return config.environment ?? (config.nodeEnv === 'production' ? 'production' : 'development');
+}
+
 export async function createApp(config: AppConfig) {
+  const environment = environmentOf(config);
+  // Production never runs the demo, whatever the caller says (config validation refuses it too).
+  const demoMode = config.demo && environment !== 'production';
+  if (config.limits) configureDocumentLimits(config.limits);
   mkdirSync(config.dataDir, { recursive: true });
-  const { sqlite, db } = openVeyraDb(join(config.dataDir, 'veyra.db'));
+  const { sqlite, db } = openVeyraDb(join(config.dataDir, 'veyra.db'), {
+    migrate: config.migrate ?? true,
+  });
   const erp = FakeErpConnector.open({
     filename: join(config.dataDir, 'fake_erp.db'),
     ...(config.clock ? { clock: config.clock } : {}),
   });
-  const initialSettings = config.demo ? DEMO_SETTINGS : DEFAULT_SETTINGS;
-  const storageDir = join(config.dataDir, 'uploads');
+  const initialSettings = demoMode ? DEMO_SETTINGS : DEFAULT_SETTINGS;
+  const storage = config.storage ?? new LocalDocumentStorage(join(config.dataDir, 'uploads'));
   const extractor = makeExtractor(initialSettings.extractorMode, config);
   // The workflow sees only the ErpConnector port, behind the capability guard: an operation the
   // connector does not declare is UNSUPPORTED, never a silent fallback (ARCHITECTURE §17).
@@ -76,17 +105,44 @@ export async function createApp(config: AppConfig) {
     db,
     erp: connector,
     extractor,
-    storageDir,
+    storage,
+    ...(config.limits ? { maxUploadBytes: config.limits.maxUploadBytes } : {}),
     initialSettings,
     ...(config.clock ? { clock: config.clock } : {}),
   });
   // A fresh ERP file gets the DEMO.md seed.
-  if ((await erp.listVendors()).length === 0 && config.demo) erp.reset('demo');
-  const runner = new JobRunner(veyra);
+  if ((await erp.listVendors()).length === 0 && demoMode) erp.reset('demo');
+  const runner = new JobRunner(veyra, {
+    ...(config.log ? { logger: config.log.child({ component: 'jobs' }) } : {}),
+    ...(config.jobs ? { leaseMs: config.jobs.leaseMs } : {}),
+  });
+  if (config.log) {
+    const log = config.log;
+    veyra.onInternalError = (err, context) =>
+      log.error({ ...context, err }, 'invoice failed on an internal error');
+  }
 
+  // Demo only (never registered in production): wipe Veyra's data and its stored documents.
   const resetDemo = async (mode: 'demo' | 'empty' = 'demo') => {
     runner.stop();
     erp.reset(mode === 'empty' ? 'company-only' : 'demo');
+    const keys = [
+      ...db
+        .select()
+        .from(t.documents)
+        .all()
+        .map((d) => veyra.documentKey(d)),
+      ...db
+        .select({ filesJson: t.imports.filesJson, id: t.imports.id })
+        .from(t.imports)
+        .all()
+        .flatMap((i) =>
+          (JSON.parse(i.filesJson) as { key?: string; path?: string }[]).map(
+            (f) => f.key ?? `imports/${i.id}/${(f.path ?? '').split(/[\\/]/).pop() ?? ''}`,
+          ),
+        ),
+    ];
+    for (const key of keys) await storage.delete(key).catch(() => undefined);
     db.transaction((tx) => {
       for (const table of [
         'imports',
@@ -106,26 +162,37 @@ export async function createApp(config: AppConfig) {
         tx.run(sql.raw(`DELETE FROM ${table}`));
       }
     });
-    rmSync(storageDir, { recursive: true, force: true });
-    mkdirSync(storageDir, { recursive: true });
     runner.start();
   };
 
   const server = await buildServer({
     veyra,
-    ...(config.demo ? { resetDemo } : {}),
-    logger: config.logger ?? false,
+    environment,
+    ...(demoMode ? { resetDemo } : {}),
+    ...(config.log ? { log: config.log } : {}),
+    ...(config.limits ? { limits: config.limits } : {}),
+    ...(config.rateLimits ? { rateLimits: config.rateLimits } : {}),
+    ...(config.trustProxy !== undefined ? { trustProxy: config.trustProxy } : {}),
+    readiness: readinessCheck({ veyra, storage, runner, environment, expectWorker: true }),
   });
+  let closed: Promise<void> | null = null;
   return {
     veyra,
     runner,
     server,
-    close: async () => {
-      runner.stop();
-      await server.close();
-      sqlite.close();
-      erp.close();
-      await extractor.close?.();
-    },
+    storage,
+    environment,
+    /**
+     * Graceful shutdown: stop taking requests (in-flight ones finish), let the current job finish
+     * or put it back in the queue, then close the database, the ERP and the document readers.
+     */
+    close: (graceMs = config.jobs?.shutdownGraceMs ?? 25_000) =>
+      (closed ??= (async () => {
+        await server.close();
+        await runner.shutdown(graceMs);
+        sqlite.close();
+        erp.close();
+        await extractor.close?.();
+      })()),
   };
 }

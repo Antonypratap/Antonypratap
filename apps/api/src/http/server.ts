@@ -1,5 +1,10 @@
-import { readFileSync } from 'node:fs';
-import Fastify, { type FastifyError, type FastifyInstance, type FastifyReply } from 'fastify';
+import Fastify, {
+  LogController,
+  type FastifyBaseLogger,
+  type FastifyError,
+  type FastifyInstance,
+  type FastifyReply,
+} from 'fastify';
 import multipart from '@fastify/multipart';
 import { desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -27,12 +32,18 @@ import {
 } from '@veyra/erp-connector';
 import * as t from '../db/schema';
 import { InvalidTransitionError } from '../workflow/state-machine';
-import { VeyraError, type Veyra } from '../workflow/veyra';
+import { VeyraError, uploadLimitText, type Veyra } from '../workflow/veyra';
 import { DEMO_SCENARIOS, startScenario } from '../demo/scenarios';
 import { Presenter } from './present';
+import { isStorageError } from '../storage';
 import { BusinessImports } from '../imports/service';
 import { templateFiles, templateWorkbook } from '../imports/templates';
 import { MAX_IMPORT_FILES } from '../imports/validate';
+import type { Environment } from '../config';
+import { ulid } from '../ids';
+import { pino, type Logger } from 'pino';
+import { RateLimiter, bucketOf, type RateBucket } from './rate-limit';
+import type { ReadinessReport } from './health';
 import {
   auditTable,
   businessRecordsXlsx,
@@ -49,8 +60,20 @@ export interface ServerOptions {
    * (company only) to try importing business records. Never registered in production.
    */
   resetDemo?: (erp: 'demo' | 'empty') => Promise<void>;
-  logger?: boolean;
+  /** Phase 6: which deployment this is. Dev and demo routes never exist in production. */
+  environment?: Environment;
+  /** Structured logger (one line per request). Absent: no request logs. */
+  log?: Logger;
+  limits?: { maxUploadBytes: number; maxJsonBodyBytes: number };
+  rateLimits?: Record<RateBucket, number>;
+  /** Proxy hops trusted for the client address. */
+  trustProxy?: number;
+  /** Readiness of the instance's dependencies (GET /api/v1/health/ready). */
+  readiness?: () => Promise<ReadinessReport>;
 }
+
+/** Incoming request ids are kept only when they look like ids (never arbitrary text in logs). */
+const REQUEST_ID = /^[A-Za-z0-9._-]{8,64}$/;
 
 const Id = z.object({ id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/) });
 
@@ -70,55 +93,159 @@ const STATUS: Record<VeyraError['code'], number> = {
  */
 export async function buildServer(options: ServerOptions): Promise<FastifyInstance> {
   const { veyra } = options;
+  const environment = options.environment ?? 'development';
   const present = new Presenter(veyra);
-  const app = Fastify({ logger: options.logger ?? false, bodyLimit: 1024 * 1024 });
-  // Invoice uploads take one file (≤ 20 MB); business-record imports up to 8 (each ≤ 5 MB, checked).
+  const maxUploadBytes = Math.min(
+    options.limits?.maxUploadBytes ?? MAX_UPLOAD_BYTES,
+    MAX_UPLOAD_BYTES,
+  );
+  const hops = options.trustProxy ?? 0;
+  const app = Fastify({
+    loggerInstance: (options.log ?? pino({ level: 'silent' })) as FastifyBaseLogger,
+    bodyLimit: options.limits?.maxJsonBodyBytes ?? 1024 * 1024,
+    // Trust exactly the configured number of proxy hops for the client address (rate limits).
+    trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false,
+    // Our own per-request line (below) replaces Fastify's two.
+    logController: new LogController({ disableRequestLogging: true }),
+    requestIdHeader: false,
+    genReqId: (req) => {
+      const given = req.headers['x-request-id'];
+      return typeof given === 'string' && REQUEST_ID.test(given) ? given : ulid();
+    },
+  });
+  // Invoice uploads take one file; business-record imports up to 8 (each ≤ 5 MB, checked).
   await app.register(multipart, {
-    limits: { fileSize: MAX_UPLOAD_BYTES, files: MAX_IMPORT_FILES, fields: 0 },
+    limits: {
+      fileSize: maxUploadBytes,
+      files: MAX_IMPORT_FILES,
+      fields: 0,
+      parts: MAX_IMPORT_FILES,
+    },
   });
   const imports = new BusinessImports(veyra);
+  const limiter = new RateLimiter(options.rateLimits ?? { upload: 60, processing: 120, dev: 60 });
 
   const send = <S extends z.ZodType>(schema: S, value: unknown): z.output<S> => schema.parse(value);
-  const error = (code: string, message: string, details: Record<string, unknown> = {}) => ({
-    error: { code, message, details },
+  const error = (
+    code: string,
+    message: string,
+    details: Record<string, unknown> = {},
+    requestId?: string,
+  ) => ({
+    error: { code, message, details, ...(requestId ? { requestId } : {}) },
   });
 
-  app.setErrorHandler((err: FastifyError | Error, _req, reply) => {
+  // Every response carries its request id, for support and log correlation.
+  app.addHook('onRequest', async (req, reply) => {
+    reply.header('x-request-id', req.id);
+    const bucket = bucketOf(req.method, req.routeOptions.url);
+    if (!bucket) return;
+    const retryAfter = limiter.hit(bucket, req.ip);
+    if (retryAfter !== null) {
+      reply.header('retry-after', String(retryAfter));
+      return reply
+        .status(429)
+        .send(
+          error(
+            'RATE_LIMITED',
+            'Too many requests. Wait a moment and try again.',
+            { retryAfterSeconds: retryAfter },
+            req.id,
+          ),
+        );
+    }
+  });
+  app.addHook('onResponse', async (req, reply) => {
+    const route = req.routeOptions.url ?? null;
+    const line = {
+      method: req.method,
+      route,
+      status: reply.statusCode,
+      durationMs: Math.round(reply.elapsedTime),
+    };
+    // Health checks are polled constantly: debug only.
+    if (route?.startsWith('/api/v1/health')) req.log.debug(line, 'request');
+    else if (reply.statusCode >= 500) req.log.error(line, 'request');
+    else req.log.info(line, 'request');
+  });
+
+  app.setNotFoundHandler((req, reply) =>
+    reply.status(404).send(error('NOT_FOUND', 'There is no such endpoint.', {}, req.id)),
+  );
+
+  app.setErrorHandler((err: FastifyError | Error, req, reply) => {
+    const e = (code: string, message: string, details: Record<string, unknown> = {}) =>
+      error(code, message, details, req.id);
     if (err instanceof VeyraError)
-      return reply.status(STATUS[err.code]).send(error(err.code, err.message, err.details));
+      return reply.status(STATUS[err.code]).send(e(err.code, err.message, err.details));
     if (err instanceof InvalidTransitionError)
-      return reply.status(409).send(error(err.code, err.message));
+      return reply.status(409).send(e(err.code, err.message));
     if (err instanceof z.ZodError)
       return reply.status(422).send(
-        error('VALIDATION', 'The request is not valid.', {
+        e('VALIDATION', 'The request is not valid.', {
           issues: err.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
         }),
       );
     if ('code' in err && err.code === 'FST_REQ_FILE_TOO_LARGE')
-      return reply.status(413).send(error('TOO_LARGE', 'Files up to 20 MB are accepted.'));
+      return reply
+        .status(413)
+        .send(e('TOO_LARGE', `Files up to ${uploadLimitText(maxUploadBytes)} are accepted.`));
     // ERP failures carry only a stable code and a safe message: never the underlying error.
     if (isErpConnectorError(err))
       return err.retryable
-        ? reply.status(503).send(error('ERP_UNAVAILABLE', 'Your ERP could not be reached.'))
-        : reply.status(502).send(error(`ERP_${err.code}`, err.userMessage));
-    app.log.error(err);
-    return reply.status(500).send(error('INTERNAL', 'Something went wrong.'));
+        ? reply.status(503).send(e('ERP_UNAVAILABLE', 'Your ERP could not be reached.'))
+        : reply.status(502).send(e(`ERP_${err.code}`, err.userMessage));
+    if (isStorageError(err)) {
+      req.log.error({ errorCode: err.code }, 'document storage error');
+      return err.code === 'STORAGE_NOT_FOUND' || err.code === 'STORAGE_INVALID_KEY'
+        ? reply.status(404).send(e('NOT_FOUND', 'The document file is not available.'))
+        : reply
+            .status(err.retryable ? 503 : 500)
+            .send(e(err.code, 'Documents cannot be read right now.'));
+    }
+    // Fastify's own client errors (malformed JSON, body too large, wrong content type, …): a
+    // stable code and a fixed message, never the parser's text.
+    const status = (err as FastifyError).statusCode;
+    if (status !== undefined && status >= 400 && status < 500) {
+      const [code, message] =
+        status === 413
+          ? ['TOO_LARGE', 'The request is too large.']
+          : status === 415
+            ? ['UNSUPPORTED_MEDIA_TYPE', 'This content type is not accepted.']
+            : status === 406 || status === 429
+              ? ['BAD_REQUEST', 'The request could not be handled.']
+              : ['BAD_REQUEST', 'The request could not be read.'];
+      return reply.status(status).send(e(code, message));
+    }
+    // Everything else is internal: logged in full server-side, a generic answer to the client.
+    req.log.error({ err }, 'unhandled error');
+    return reply.status(500).send(e('INTERNAL', 'Something went wrong.'));
   });
 
   const user = () => veyra.designatedUserId();
 
   app.get('/api/v1/health', async () => ({
     ok: true,
+    environment,
+    demo: Boolean(options.resetDemo) && environment !== 'production',
     erp: veyra.erp.info,
     extractor: { id: veyra.extractor.id, version: veyra.extractor.version },
   }));
+  // Liveness: the process is up and serving. No dependency is checked.
+  app.get('/api/v1/health/live', async () => ({ status: 'ok' }));
+  // Readiness: this instance can do its work (database, storage, worker). 503 when it cannot.
+  app.get('/api/v1/health/ready', async (_req, reply) => {
+    if (!options.readiness) return { status: 'ready', environment };
+    const report = await options.readiness();
+    return reply.status(report.status === 'ready' ? 200 : 503).send(report);
+  });
 
   // ── Documents ────────────────────────────────────────────────────────────
   app.post('/api/v1/documents', async (req, reply) => {
     const file = await req.file();
     if (!file) throw new VeyraError('INVALID_INPUT', 'Attach the invoice file.');
     const bytes = await file.toBuffer();
-    const created = veyra.upload({ filename: file.filename, bytes });
+    const created = await veyra.upload({ filename: file.filename, bytes });
     return reply.status(201).send(created);
   });
 
@@ -198,7 +325,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       .header('content-type', d.mime)
       .header('content-disposition', `inline; filename="${d.filename.replace(/"/g, '')}"`)
       .header('x-content-type-options', 'nosniff')
-      .send(readFileSync(d.storagePath));
+      .send(Buffer.from(await veyra.readDocument(d)));
   });
 
   // ── Invoices ─────────────────────────────────────────────────────────────
@@ -433,7 +560,9 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   });
 
   // ── Dev ──────────────────────────────────────────────────────────────────
-  if (options.resetDemo && process.env.NODE_ENV !== 'production') {
+  // Never in production, whatever else is configured (enforced here, not by the UI). Staging may
+  // run with NODE_ENV=production; the Veyra environment decides.
+  if (options.resetDemo && environment !== 'production') {
     const reset = options.resetDemo;
     app.post('/api/v1/dev/reset', async (req) => {
       const { erp: mode } = z
@@ -451,7 +580,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     );
     app.post('/api/v1/dev/scenarios/:key', async (req, reply) => {
       const { key } = z.object({ key: z.string() }).parse(req.params);
-      const started = startScenario(veyra, key);
+      const started = await startScenario(veyra, key);
       if (!started) throw new VeyraError('NOT_FOUND', 'There is no such demo scenario.');
       return reply.status(started.existing ? 200 : 201).send(started);
     });

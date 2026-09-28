@@ -793,3 +793,41 @@ Strengthens the ERP integration boundary only. No change to the state machine, q
 - **IMPLEMENTATION DECISION** Tests use `@veyra/erp-connector/testing` (`scriptedConnector`), which is never wired into the app. It wraps a connector and injects faults: unavailable, timeout before/after a write, authentication, configuration, validation, not found, missing capabilities, overridden reads (a changed PO) and scripted connection status.
   - Its fault causes contain fake secrets; tests assert they never appear in errors, API responses, audit, failure reasons or job errors.
   - The contract suite gained boundary tests (identity, connection, capabilities, typed errors, reconciliation, idempotency) and runs against the fake ERP both directly and through the scripted wrapper.
+
+## 18. Phase 6: production foundation (without PostgreSQL)
+
+Infrastructure and operational hardening only. No change to business rules, question codes, the state machine, extraction logic, the ERP contract or payment behaviour. PostgreSQL was split out as Phase 6A: the persistence layer is synchronous better-sqlite3 throughout, so moving it is a rewrite of every data access, not configuration. Operating procedures are in [OPERATIONS.md](OPERATIONS.md). Labels as in §13.
+
+**Configuration and environments**
+- **IMPLEMENTATION DECISION** Environments are `development`, `staging` and `production` (`VEYRA_ENV`; `NODE_ENV=production` alone means production). `apps/api/src/config.ts` validates every variable once at startup and fails naming variables, never values. Production refuses the demo and the fixture extractor, requires explicit storage, ERP and data directory, and requires https for object storage.
+- **CLIENT REQUIREMENT** Production safety is enforced by the server:
+  - `/dev/reset` and the demo-scenario endpoints are not registered in production.
+  - Production never seeds demo data.
+  - The web app asks for demo scenarios only when `/health` says the demo is on.
+
+**Storage, migrations and jobs**
+- **IMPLEMENTATION DECISION** `DocumentStorage` port (`apps/api/src/storage`) with two implementations:
+  - A local filesystem implementation, with atomic writes and keys confined to the root.
+  - An S3-compatible implementation (AWS S3, DigitalOcean Spaces, MinIO, R2) over HTTPS with SigV4, with no SDK. The signer is tested against the AWS reference vector.
+  - Keys are made from ids only; a filename is metadata.
+  - Every read is verified against the SHA-256 recorded at upload.
+  - OCR gets a private temporary copy, deleted afterwards.
+  - `documents.storage_path` now holds the key; rows written before Phase 6 hold an absolute path whose file name is the key. There is no schema change.
+- **IMPLEMENTATION DECISION** Migrations stay Drizzle's versioned files. Production does not migrate at startup: `npm run db:migrate -w @veyra/api` is a deployment step, and a database with pending migrations is refused with their names.
+- **IMPLEMENTATION DECISION** Jobs (still the `jobs` table, no Redis):
+  - Leases: `locked_at` is renewed while a job runs. A job whose lease expired (worker gone) is re-queued, or failed once it has used its 5 attempts, so nothing stays `running`.
+  - Retries: 5 bounded attempts for ERP unavailable, storage unavailable and database busy. These now also apply during reading and matching; before, only commits were retried.
+  - Graceful shutdown: finish the current job or put it back in the queue.
+  - Retry keeps every idempotency guarantee: same keys, and pipeline steps that no-op when done.
+
+**HTTP: health, errors, logs, limits**
+- **IMPLEMENTATION DECISION** Health: `/health/live` (process only) and `/health/ready` (database, storage and worker; ERP status and job counts reported, not required). `/health` is kept.
+- **IMPLEMENTATION DECISION** Errors: every response has `x-request-id`, and every error body has a stable `code`, a safe `message` and `requestId`. Fastify's own errors (malformed JSON, too large, content type) map to fixed messages. Internal errors answer `INTERNAL` and are logged in full server-side. An invoice failed by an internal error shows a generic reason, never SQL or paths.
+- **IMPLEMENTATION DECISION** Logs: pino JSON with one line per request and per job outcome, safe error codes, and redaction of credentials. Logs never replace the audit trail.
+- **IMPLEMENTATION DECISION** Limits and rate limits:
+  - All configurable downward: upload size ≤ 20 MB, JSON body, PDF pages, image side and pixels. Document limits can only be lowered (`configureDocumentLimits`).
+  - Per-client, per-minute rate limits on uploads, processing actions and demo endpoints, returning 429 with `Retry-After`.
+
+**Constraints**
+- **TECHNICAL CONSTRAINT** With SQLite, one API+worker process per data directory, on a persistent volume. Horizontal scaling waits for Phase 6A.
+- **TECHNICAL CONSTRAINT** There is no authentication: the demo PIN is not security. Deploy only behind network-level access control until authentication is built (OPERATIONS.md).

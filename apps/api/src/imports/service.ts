@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename } from 'node:path';
 import { desc, eq } from 'drizzle-orm';
 import { importIdempotencyKey, type ApiImport } from '@veyra/shared';
 import { isErpConnectorError, type ImportBusinessRecordsResult } from '@veyra/erp-connector';
@@ -18,7 +17,10 @@ import {
 type ImportRow = typeof t.imports.$inferSelect;
 interface StoredFile {
   filename: string;
-  path: string;
+  /** Storage key (Phase 6). */
+  key?: string;
+  /** Before Phase 6: the absolute path under the uploads folder. */
+  path?: string;
   sha256: string;
   sizeBytes: number;
 }
@@ -34,8 +36,9 @@ interface StoredFile {
 export class BusinessImports {
   constructor(readonly veyra: Veyra) {}
 
-  private get dir(): string {
-    return join(this.veyra.storageDir, 'imports');
+  /** Storage key of a stored upload file (rows from before Phase 6 kept an absolute path). */
+  private keyOf(id: string, f: StoredFile): string {
+    return f.key ?? `imports/${id}/${basename(f.path ?? '')}`;
   }
 
   snapshot(): Promise<ErpSnapshot> {
@@ -50,21 +53,19 @@ export class BusinessImports {
   async check(files: readonly UploadedFile[], userId: string): Promise<ApiImport> {
     this.requireDesignated(userId);
     const id = ulid();
-    const folder = join(this.dir, id);
-    mkdirSync(folder, { recursive: true });
-    const stored: StoredFile[] = files.map((f, i) => {
+    const stored: StoredFile[] = [];
+    for (const [i, f] of files.entries()) {
       const safe =
-        (f.filename.split(/[\\/]/).pop() ?? 'file').replace(/[^\w.\- ()]/g, '_').slice(0, 120) ||
-        'file';
-      const path = join(folder, `${i + 1}-${safe}`);
-      writeFileSync(path, f.bytes);
-      return {
-        filename: safe,
-        path,
-        sha256: createHash('sha256').update(f.bytes).digest('hex'),
-        sizeBytes: f.bytes.length,
-      };
-    });
+        (f.filename.split(/[\\/]/).pop() ?? 'file')
+          .replace(/[^\w.\- ()]/g, '_')
+          .replace(/\.{2,}/g, '.')
+          .slice(0, 120)
+          .trim() || 'file';
+      const key = `imports/${id}/${i + 1}-${safe}`;
+      const sha256 = createHash('sha256').update(f.bytes).digest('hex');
+      await this.veyra.storage.put(key, f.bytes, { mime: 'application/octet-stream', sha256 });
+      stored.push({ filename: safe, key, sha256, sizeBytes: f.bytes.length });
+    }
     const check = await this.run(
       files.map((f, i) => ({ filename: stored[i]?.filename ?? f.filename, bytes: f.bytes })),
     );
@@ -109,10 +110,12 @@ export class BusinessImports {
     this.requireDesignated(userId);
     const row = this.row(id);
     if (row.status === 'imported') return this.dto(row);
-    const files = (JSON.parse(row.filesJson) as StoredFile[]).map((f) => ({
-      filename: f.filename,
-      bytes: readFileSync(f.path),
-    }));
+    const files = await Promise.all(
+      (JSON.parse(row.filesJson) as StoredFile[]).map(async (f) => ({
+        filename: f.filename,
+        bytes: await this.veyra.storage.get(this.keyOf(id, f), { sha256: f.sha256 }),
+      })),
+    );
     const check = await this.run(files);
     const save = (patch: Partial<typeof t.imports.$inferInsert>) =>
       this.veyra.db.update(t.imports).set(patch).where(eq(t.imports.id, id)).run();

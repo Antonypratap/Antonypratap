@@ -13,7 +13,11 @@ export {
   type LocalExtractorOptions,
 } from './local/local-extractor';
 export { checkImageSize, imageSize } from './local/image';
-export { LIMITS as DOCUMENT_LIMITS } from './local/limits';
+export {
+  LIMITS as DOCUMENT_LIMITS,
+  configureDocumentLimits,
+  type ConfigurableDocumentLimits,
+} from './local/limits';
 export { OllamaAssist, OLLAMA_MAX_CONFIDENCE_BP, type OllamaOptions } from './local/ollama';
 export { TesseractOcr, type OcrEngine, type OcrLine, type OcrWord } from './local/ocr';
 export { DemoRoutedExtractor } from './routed';

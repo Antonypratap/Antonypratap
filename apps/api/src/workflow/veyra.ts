@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, isAbsolute } from 'node:path';
 import { and, asc, desc, eq, inArray, lte, max, ne, sql } from 'drizzle-orm';
 import {
   ExtractionResultSchema,
@@ -22,6 +21,8 @@ import { checkImageSize, imageSize, sniffDocument, type Extractor } from '@veyra
 import type { VeyraDb, VeyraTx } from '../db/open';
 import * as t from '../db/schema';
 import { ulid } from '../ids';
+import type { DocumentStorage } from '../storage';
+import { INTERNAL_FAILURE_REASON, isInternalError, isRetryable } from './retry';
 import { readField, type JsonValue, type StoredField } from '../engine/fields';
 import { runEngine } from '../engine/run';
 import type {
@@ -93,7 +94,10 @@ export interface VeyraOptions {
   db: VeyraDb;
   erp: ErpConnector;
   extractor: Extractor;
-  storageDir: string;
+  /** Where uploaded documents are kept (Phase 6: local folder or object storage). */
+  storage: DocumentStorage;
+  /** Largest accepted upload; at most MAX_UPLOAD_BYTES. */
+  maxUploadBytes?: number;
   clock?: () => Date;
   initialSettings?: Omit<VeyraSettings, 'designatedUserId'>;
   commitHooks?: CommitHooks;
@@ -110,20 +114,23 @@ export class Veyra {
   readonly db: VeyraDb;
   readonly erp: ErpConnector;
   readonly extractor: Extractor;
-  readonly storageDir: string;
+  readonly storage: DocumentStorage;
+  readonly maxUploadBytes: number;
   readonly clock: () => Date;
   readonly commitHooks: CommitHooks;
   /** Called after work is queued, so a running job loop picks it up at once. */
   onEnqueue: () => void = () => undefined;
+  /** Called with an internal error that failed an invoice, so it can be logged server-side. */
+  onInternalError: (error: unknown, context: { invoiceId: string }) => void = () => undefined;
 
   constructor(options: VeyraOptions) {
     this.db = options.db;
     this.erp = options.erp;
     this.extractor = options.extractor;
-    this.storageDir = options.storageDir;
+    this.storage = options.storage;
+    this.maxUploadBytes = Math.min(options.maxUploadBytes ?? MAX_UPLOAD_BYTES, MAX_UPLOAD_BYTES);
     this.clock = options.clock ?? (() => new Date());
     this.commitHooks = options.commitHooks ?? {};
-    mkdirSync(this.storageDir, { recursive: true });
     this.bootstrap(options.initialSettings ?? DEFAULT_SETTINGS);
   }
 
@@ -270,11 +277,17 @@ export class Veyra {
    * Stores an uploaded invoice document and queues it. The file is untrusted: its type is decided
    * by its bytes, not its name or the browser's claim. An identical file (same SHA-256) is refused.
    */
-  upload(file: { filename: string; bytes: Uint8Array }): { documentId: string; invoiceId: string } {
+  async upload(file: {
+    filename: string;
+    bytes: Uint8Array;
+  }): Promise<{ documentId: string; invoiceId: string }> {
     const { bytes } = file;
     if (bytes.length === 0) throw new VeyraError('UNSUPPORTED_FILE', 'The file is empty.');
-    if (bytes.length > MAX_UPLOAD_BYTES)
-      throw new VeyraError('UNSUPPORTED_FILE', 'Files up to 20 MB are accepted.');
+    if (bytes.length > this.maxUploadBytes)
+      throw new VeyraError(
+        'UNSUPPORTED_FILE',
+        `Files up to ${uploadLimitText(this.maxUploadBytes)} are accepted.`,
+      );
     const mime = sniffDocument(bytes);
     if (!mime) throw new VeyraError('UNSUPPORTED_FILE', 'Upload a PDF, JPEG or PNG invoice.');
     checkDocumentShape(bytes, mime);
@@ -294,45 +307,65 @@ export class Veyra {
     const documentId = ulid();
     const invoiceId = ulid();
     const ext = mime === 'application/pdf' ? 'pdf' : mime === 'image/png' ? 'png' : 'jpg';
-    const storagePath = join(this.storageDir, `${documentId}.${ext}`);
-    writeFileSync(storagePath, bytes);
+    // The storage key is Veyra's own (ids only): the uploaded filename is metadata, never a path.
+    const storageKey = `${documentId}.${ext}`;
+    await this.storage.put(storageKey, bytes, { mime, sha256 });
     const filename = safeFilename(file.filename, ext);
     const userId = this.designatedUserId();
     const now = this.now();
-    this.db.transaction((tx) => {
-      tx.insert(t.documents)
-        .values({
-          id: documentId,
-          sha256,
+    try {
+      this.db.transaction((tx) => {
+        tx.insert(t.documents)
+          .values({
+            id: documentId,
+            sha256,
+            filename,
+            mime,
+            sizeBytes: bytes.length,
+            storagePath: storageKey,
+            uploadedByUserId: userId,
+            uploadedAt: now,
+          })
+          .run();
+        tx.insert(t.invoices)
+          .values({
+            id: invoiceId,
+            documentId,
+            state: 'UPLOADED',
+            stateVersion: 1,
+            runNo: 0,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .run();
+        this.audit(tx, invoiceId, { type: 'user', userId }, 'invoice.uploaded', {
           filename,
           mime,
           sizeBytes: bytes.length,
-          storagePath,
-          uploadedByUserId: userId,
-          uploadedAt: now,
-        })
-        .run();
-      tx.insert(t.invoices)
-        .values({
-          id: invoiceId,
-          documentId,
-          state: 'UPLOADED',
-          stateVersion: 1,
-          runNo: 0,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      this.audit(tx, invoiceId, { type: 'user', userId }, 'invoice.uploaded', {
-        filename,
-        mime,
-        sizeBytes: bytes.length,
-        sha256,
+          sha256,
+        });
+        this.enqueue(tx, invoiceId, 'pipeline');
       });
-      this.enqueue(tx, invoiceId, 'pipeline');
-    });
+    } catch (error) {
+      // Not recorded (e.g. the same file uploaded at the same moment): keep no orphan document.
+      await this.storage.delete(storageKey).catch(() => undefined);
+      throw error;
+    }
     this.onEnqueue();
     return { documentId, invoiceId };
+  }
+
+  /**
+   * The storage key of a document. Rows written before Phase 6 hold the absolute path of a file
+   * in the uploads folder; its file name is the key.
+   */
+  documentKey(doc: { storagePath: string }): string {
+    return isAbsolute(doc.storagePath) ? basename(doc.storagePath) : doc.storagePath;
+  }
+
+  /** The original uploaded bytes, verified against the checksum recorded at upload. */
+  async readDocument(doc: { storagePath: string; sha256: string }): Promise<Uint8Array> {
+    return this.storage.get(this.documentKey(doc), { sha256: doc.sha256 });
   }
 
   // ── Pipeline ─────────────────────────────────────────────────────────────
@@ -352,6 +385,9 @@ export class Veyra {
       }
       if (inv.state === 'MATCHING') await this.evaluate(invoiceId);
     } catch (error) {
+      // A temporary outage (ERP, storage, database) is retried by the job runner, which fails
+      // the invoice itself once the retries are used up (Phase 6 retry policy).
+      if (isRetryable(error)) throw error;
       this.fail(invoiceId, error);
     }
   }
@@ -383,11 +419,14 @@ export class Veyra {
     ];
     if (!systemStates.includes(inv.state as InvoiceState)) throw error;
     // ERP failures are described by their safe message only (no host, credential or raw error).
+    // Internal failures (SQL, filesystem, programming errors) get a generic reason; the detail
+    // stays in the server log.
+    if (isInternalError(error)) this.onInternalError(error, { invoiceId });
     const reason = isErpConnectorError(error)
       ? error.userMessage
-      : error instanceof Error
-        ? error.message
-        : String(error);
+      : isInternalError(error)
+        ? INTERNAL_FAILURE_REASON
+        : (error as Error).message;
     this.db.transaction((tx) => {
       this.transition(
         tx,
@@ -418,12 +457,19 @@ export class Veyra {
     if (!doc) throw new Error('document missing');
     let result: ExtractionResult;
     try {
-      const raw: unknown = await this.extractor.extract({
-        documentId: doc.id,
-        filePath: doc.storagePath,
-        mime: doc.mime,
-        sha256: doc.sha256,
-      });
+      // The reader gets a verified local copy of the original (object storage: a private
+      // temporary file, removed as soon as the document has been read).
+      const raw: unknown = await this.storage.withLocalFile(
+        this.documentKey(doc),
+        (filePath) =>
+          this.extractor.extract({
+            documentId: doc.id,
+            filePath,
+            mime: doc.mime,
+            sha256: doc.sha256,
+          }),
+        { sha256: doc.sha256 },
+      );
       const parsed = ExtractionResultSchema.safeParse(raw);
       if (!parsed.success)
         throw new Error(
@@ -431,6 +477,7 @@ export class Veyra {
         );
       result = parsed.data;
     } catch (error) {
+      if (isRetryable(error)) throw error;
       this.fail(invoiceId, error);
       return false;
     }
@@ -1129,6 +1176,72 @@ export class Veyra {
       .run().changes;
   }
 
+  /** Heartbeat: the job is still being worked on (renews its lease). */
+  touchJob(id: string): void {
+    this.db
+      .update(t.jobs)
+      .set({ lockedAt: this.now() })
+      .where(and(eq(t.jobs.id, id), eq(t.jobs.status, 'running')))
+      .run();
+  }
+
+  /**
+   * Running jobs whose lease expired: the worker that claimed them stopped (crash, kill, lost
+   * host) without finishing. `recoverJobs` handles a restart of this process; this handles any
+   * worker that disappeared while others keep running.
+   */
+  expiredJobs(leaseMs: number): { id: string; invoiceId: string; attempts: number }[] {
+    const cutoff = new Date(this.clock().getTime() - leaseMs).toISOString();
+    return this.db
+      .select({ id: t.jobs.id, invoiceId: t.jobs.invoiceId, attempts: t.jobs.attempts })
+      .from(t.jobs)
+      .where(and(eq(t.jobs.status, 'running'), lte(t.jobs.lockedAt, cutoff)))
+      .all();
+  }
+
+  /** Puts a claimed job back in the queue (shutdown, or an expired lease). */
+  releaseJob(id: string): void {
+    this.db
+      .update(t.jobs)
+      .set({ status: 'queued', lockedAt: null, updatedAt: this.now() })
+      .where(and(eq(t.jobs.id, id), eq(t.jobs.status, 'running')))
+      .run();
+  }
+
+  /** Job counts for readiness and diagnostics (no payloads). */
+  jobStats(leaseMs: number): {
+    queued: number;
+    running: number;
+    expired: number;
+    failedLast24h: number;
+    oldestQueuedAgeMs: number | null;
+  } {
+    const now = this.clock().getTime();
+    const rows = this.db
+      .select({
+        status: t.jobs.status,
+        lockedAt: t.jobs.lockedAt,
+        runAfter: t.jobs.runAfter,
+        updatedAt: t.jobs.updatedAt,
+      })
+      .from(t.jobs)
+      .where(ne(t.jobs.status, 'succeeded'))
+      .all();
+    const queued = rows.filter((r) => r.status === 'queued');
+    const due = queued.map((r) => Date.parse(r.runAfter)).filter((x) => x <= now);
+    return {
+      queued: queued.length,
+      running: rows.filter((r) => r.status === 'running').length,
+      expired: rows.filter(
+        (r) => r.status === 'running' && r.lockedAt && Date.parse(r.lockedAt) < now - leaseMs,
+      ).length,
+      failedLast24h: rows.filter(
+        (r) => r.status === 'failed' && Date.parse(r.updatedAt) > now - 24 * 60 * 60 * 1000,
+      ).length,
+      oldestQueuedAgeMs: due.length ? now - Math.min(...due) : null,
+    };
+  }
+
   claimJob(): {
     id: string;
     invoiceId: string;
@@ -1238,6 +1351,14 @@ function checkDocumentShape(
       error instanceof Error ? error.message : 'The image could not be read.',
     );
   }
+}
+
+/** "20 MB", "64 KB": the upload limit as a person reads it. */
+export function uploadLimitText(bytes: number): string {
+  const mb = bytes / (1024 * 1024);
+  return mb >= 1
+    ? `${Number.isInteger(mb) ? mb : mb.toFixed(1)} MB`
+    : `${Math.round(bytes / 1024)} KB`;
 }
 
 function safeFilename(name: string, ext: string): string {

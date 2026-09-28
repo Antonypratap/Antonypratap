@@ -274,20 +274,20 @@ describe('boundaries: the backend is authoritative', () => {
 
   it('rejects files that are not invoices, and the same file twice', async () => {
     h = createHarness();
-    expect(() =>
+    await expect(
       h.veyra.upload({ filename: 'x.pdf', bytes: new TextEncoder().encode('hello') }),
-    ).toThrow(/PDF, JPEG or PNG/);
+    ).rejects.toThrow(/PDF, JPEG or PNG/);
     const s = scenarioById('S01');
     if (!s) throw new Error('S01');
-    h.veyra.upload({ filename: s.file, bytes: renderScenario(s) });
-    expect(() => h.veyra.upload({ filename: 'again.pdf', bytes: renderScenario(s) })).toThrow(
-      /already uploaded/,
-    );
+    await h.veyra.upload({ filename: s.file, bytes: renderScenario(s) });
+    await expect(
+      h.veyra.upload({ filename: 'again.pdf', bytes: renderScenario(s) }),
+    ).rejects.toThrow(/already uploaded/);
   });
 
   it('an unknown document fails visibly; it can be retried or rejected, never guessed', async () => {
     h = createHarness();
-    const { invoiceId } = h.veyra.upload({
+    const { invoiceId } = await h.veyra.upload({
       filename: 'scan.pdf',
       // A complete-looking PDF whose body is damaged: accepted, then unreadable.
       bytes: new TextEncoder().encode('%PDF-1.4\n1 0 obj << /Garbage >>\ntrailer\n%%EOF\n'),
@@ -413,7 +413,7 @@ describe('idempotency and crash recovery', () => {
     h = createHarness();
     const s = scenarioById('S01');
     if (!s) throw new Error('S01');
-    const { invoiceId } = h.veyra.upload({ filename: s.file, bytes: renderScenario(s) });
+    const { invoiceId } = await h.veyra.upload({ filename: s.file, bytes: renderScenario(s) });
     await h.runner.step(); // pipeline: validated, COMMITTING, commit job queued
     expect(h.state(invoiceId)).toBe('COMMITTING');
     // Meanwhile someone records the same supplier invoice in the ERP directly.

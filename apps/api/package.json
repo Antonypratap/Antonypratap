@@ -13,6 +13,7 @@
     "start": "tsx src/main.ts",
     "db:generate": "drizzle-kit generate",
     "db:verify": "drizzle-kit generate --name drift | tee /dev/stderr | grep -q 'No schema changes'",
+    "db:migrate": "tsx src/cli/migrate.ts",
     "fixtures": "tsx src/cli/generate-import-fixtures.ts"
   },
   "dependencies": {
@@ -25,6 +26,7 @@
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.45.3",
     "fastify": "^5.12.5",
+    "pino": "^10.3.1",
     "zod": "^4.6.5"
   }
 }

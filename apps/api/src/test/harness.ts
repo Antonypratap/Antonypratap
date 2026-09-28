@@ -7,6 +7,7 @@ import { FakeErpConnector, type FakeErpTestHooks } from '@veyra/fake-erp';
 import { FixtureExtractor, renderScenario, scenarioById } from '@veyra/extractor';
 import { openVeyraDb } from '../db/open';
 import * as t from '../db/schema';
+import { LocalDocumentStorage } from '../storage';
 import { JobRunner } from '../workflow/runner';
 import { DEMO_SETTINGS, DEMO_USER, Veyra, type VeyraOptions } from '../workflow/veyra';
 
@@ -55,7 +56,7 @@ export function createHarness(
     db,
     erp: guardCapabilities(opts.wrapErp ? opts.wrapErp(erp) : erp),
     extractor: new FixtureExtractor({ allow: true, nodeEnv: 'test' }),
-    storageDir: join(dir, 'uploads'),
+    storage: new LocalDocumentStorage(join(dir, 'uploads')),
     clock: () => DEMO_NOW,
     initialSettings: DEMO_SETTINGS,
     ...(opts.commitHooks ? { commitHooks: opts.commitHooks } : {}),
@@ -82,7 +83,7 @@ export function createHarness(
     async upload(id) {
       const s = scenarioById(id);
       if (!s) throw new Error(`unknown scenario ${id}`);
-      const { invoiceId } = veyra.upload({ filename: s.file, bytes: renderScenario(s) });
+      const { invoiceId } = await veyra.upload({ filename: s.file, bytes: renderScenario(s) });
       await runner.drain();
       return invoiceId;
     },

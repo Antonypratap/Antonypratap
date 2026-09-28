@@ -1,12 +1,13 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { BUYER, DOCUMENT_SAMPLES, renderScenario, scenarioById } from '@veyra/extractor';
 import type { ApiInvoiceDetail, ApiQuestion } from '@veyra/shared';
 import { eq } from 'drizzle-orm';
 import { createApp } from '../app';
 import * as t from '../db/schema';
+import type { LocalDocumentStorage } from '../storage';
 import { DEMO_NOW } from '../test/harness';
 
 /**
@@ -356,8 +357,10 @@ describe('document upload safety', () => {
     const { documentId } = res.json<{ documentId: string }>();
     const row = app.veyra.db.select().from(t.documents).where(eq(t.documents.id, documentId)).get();
     expect(row?.filename).toBe('passwd.pdf');
-    expect(resolve(row?.storagePath ?? '').startsWith(resolve(dir))).toBe(true);
-    expect(row?.storagePath).toContain(documentId);
+    // Phase 6: stored under a key made of the id only, resolved inside the data directory.
+    expect(row?.storagePath).toBe(`${documentId}.pdf`);
+    const path = (app.storage as LocalDocumentStorage).pathOf(row?.storagePath ?? '');
+    expect(path.startsWith(resolve(dir) + sep)).toBe(true);
   });
 
   it('the same file twice is refused as a duplicate upload', async () => {
