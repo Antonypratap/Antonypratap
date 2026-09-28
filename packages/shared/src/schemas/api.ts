@@ -258,3 +258,48 @@ export const ApiErpSchema = {
     }),
   ),
 };
+
+// ── Business record import (Phase 3C) ──────────────────────────────────────
+
+export const ApiImportIssueSchema = z.object({
+  /** Sheet the problem is on, or null for a file-level problem. */
+  table: z.string().nullable(),
+  file: z.string(),
+  /** Spreadsheet row number as the user sees it, or null. */
+  row: int.nullable(),
+  column: z.string().nullable(),
+  message: z.string(),
+});
+export type ApiImportIssue = z.infer<typeof ApiImportIssueSchema>;
+
+export const ApiImportTableSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  noun: z.tuple([z.string(), z.string()]),
+  source: z.string(),
+  rows: int,
+  /** New records that will be added. */
+  ready: int,
+  /** Records that already exist with exactly these details (skipped). */
+  existing: int,
+  errors: int,
+});
+export type ApiImportTable = z.infer<typeof ApiImportTableSchema>;
+
+const Counts = z.object({ vendors: int, items: int, purchaseOrders: int, grns: int });
+
+export const ApiImportSchema = z.object({
+  id: z.string(),
+  status: z.enum(['ready', 'invalid', 'imported']),
+  files: z.array(z.string()),
+  kinds: z.string(),
+  createdAt: z.string(),
+  confirmedAt: z.string().nullable(),
+  tables: z.array(ApiImportTableSchema),
+  errors: z.array(ApiImportIssueSchema),
+  errorCount: int,
+  notices: z.array(z.string()),
+  canConfirm: z.boolean(),
+  result: z.object({ created: Counts, skipped: Counts }).nullable(),
+});
+export type ApiImport = z.infer<typeof ApiImportSchema>;

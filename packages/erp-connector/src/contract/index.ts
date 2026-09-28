@@ -14,6 +14,7 @@ import {
   InvoiceIdSchema,
   UserIdSchema,
   creationIdempotencyKey,
+  importIdempotencyKey,
   normalizeInvoiceNumber,
   normalizeName,
   purchaseInvoiceIdempotencyKey,
@@ -34,6 +35,7 @@ import {
   VendorSchema,
 } from '../entities';
 import type {
+  ImportBusinessRecordsInput,
   CreateGrnInput,
   CreateItemInput,
   CreatePurchaseOrderInput,
@@ -549,6 +551,179 @@ export function describeErpConnectorContract(options: ErpConnectorContractOption
         expect(invoices).toHaveLength(1);
         expect(PurchaseInvoiceSchema.safeParse(invoices[0]).success).toBe(true);
         expect(await erp.listPurchaseInvoices()).toEqual(invoices);
+      });
+    });
+
+    describe('business record import', () => {
+      const IMPORT = ulid(7001);
+      const batch = (
+        over: Partial<ImportBusinessRecordsInput> = {},
+      ): ImportBusinessRecordsInput => ({
+        importId: IMPORT,
+        vendors: [
+          {
+            code: 'SUP-01',
+            name: 'Nandi Stationers Pvt Ltd',
+            gstin: NANDI_GSTIN,
+            address: 'Bengaluru',
+            status: 'active',
+          },
+        ],
+        items: [
+          {
+            code: 'PAPER-A4',
+            name: 'A4 Copier Paper 75 GSM',
+            hsnSac: '4802',
+            uom: 'REAM',
+            gstRateBp: 1200,
+          },
+        ],
+        purchaseOrders: [
+          {
+            poNumber: 'PO-IMP-1',
+            vendorCode: 'SUP-01',
+            poDate: '2026-09-01',
+            status: 'open',
+            lines: [
+              {
+                lineNo: 1,
+                itemCode: 'PAPER-A4',
+                qtyMilli: 40_000,
+                unitPricePaise: 24_500,
+                gstRateBp: 1200,
+              },
+            ],
+          },
+        ],
+        grns: [
+          {
+            grnNumber: 'GRN-IMP-1',
+            poNumber: 'PO-IMP-1',
+            grnDate: '2026-09-02',
+            lines: [{ poLineNo: 1, receivedQtyMilli: 40_000, acceptedQtyMilli: 38_000 }],
+          },
+        ],
+        ...over,
+      });
+
+      it('imports vendors, items, POs and GRNs in one write, tagged as imported', async () => {
+        const result = await erp.importBusinessRecords(batch(), importIdempotencyKey(IMPORT));
+        expect(result).toEqual({
+          importId: IMPORT,
+          created: { vendors: 1, items: 1, purchaseOrders: 1, grns: 1 },
+          skipped: { vendors: 0, items: 0, purchaseOrders: 0, grns: 0 },
+        });
+        const vendor = await erp.findVendorByGstin(gstin(NANDI_GSTIN));
+        expect(vendor).toMatchObject({
+          code: 'SUP-01',
+          origin: 'imported',
+          sourceImportId: IMPORT,
+          sourceInvoiceId: null,
+        });
+        expect(VendorSchema.safeParse(vendor).success).toBe(true);
+        const po = await erp.getPurchaseOrderByNumber('PO-IMP-1');
+        expect(po).toMatchObject({ origin: 'imported', status: 'open', vendorId: vendor?.id });
+        expect(PurchaseOrderSchema.safeParse(po).success).toBe(true);
+        const [grn] = await erp.listGrnsForPo(po?.id as ErpId);
+        expect(grn).toMatchObject({
+          grnNumber: 'GRN-IMP-1',
+          origin: 'imported',
+          confirmedByUserId: null,
+        });
+        expect(grn?.lines[0]).toMatchObject({ receivedQtyMilli: 40_000, acceptedQtyMilli: 38_000 });
+        expect(
+          await erp.findItemsByNormalizedNameAndHsn(
+            normalizeName('A4 Copier Paper 75 GSM'),
+            '4802',
+          ),
+        ).toHaveLength(1);
+      });
+
+      it('replaying the key returns the same result; re-importing the same records skips them', async () => {
+        const first = await erp.importBusinessRecords(batch(), importIdempotencyKey(IMPORT));
+        expect(await erp.importBusinessRecords(batch(), importIdempotencyKey(IMPORT))).toEqual(
+          first,
+        );
+        const again = ulid(7002);
+        const second = await erp.importBusinessRecords(
+          batch({ importId: again }),
+          importIdempotencyKey(again),
+        );
+        expect(second.created).toEqual({ vendors: 0, items: 0, purchaseOrders: 0, grns: 0 });
+        expect(second.skipped).toEqual({ vendors: 1, items: 1, purchaseOrders: 1, grns: 1 });
+        expect(await erp.listVendors()).toHaveLength(1);
+      });
+
+      it('never changes an existing record: different values are a conflict and nothing is written', async () => {
+        await erp.importBusinessRecords(batch(), importIdempotencyKey(IMPORT));
+        const again = ulid(7003);
+        const changed = batch({
+          importId: again,
+          vendors: [
+            {
+              code: 'SUP-01',
+              name: 'Nandi Stationers (renamed)',
+              gstin: NANDI_GSTIN,
+              address: 'Bengaluru',
+              status: 'active',
+            },
+            {
+              code: 'SUP-02',
+              name: 'Eastline Office Supplies Pvt Ltd',
+              gstin: EASTLINE_GSTIN,
+              address: 'Bengaluru',
+              status: 'active',
+            },
+          ],
+        });
+        await expectErpError(
+          erp.importBusinessRecords(changed, importIdempotencyKey(again)),
+          'CONFLICT',
+        );
+        expect((await erp.listVendors()).map((v) => v.code)).toEqual(['SUP-01']);
+        expect((await erp.findVendorByGstin(gstin(NANDI_GSTIN)))?.name).toBe(
+          'Nandi Stationers Pvt Ltd',
+        );
+      });
+
+      it('a missing reference fails the whole batch (no partial import)', async () => {
+        const [po] = batch().purchaseOrders;
+        if (!po) throw new Error('fixture');
+        const bad = batch({ purchaseOrders: [{ ...po, vendorCode: 'NOPE' }] });
+        await expectErpError(
+          erp.importBusinessRecords(bad, importIdempotencyKey(IMPORT)),
+          'NOT_FOUND',
+        );
+        expect(await erp.listVendors()).toEqual([]);
+        expect(await erp.listItems()).toEqual([]);
+        // The failed write did not consume the key.
+        await erp.importBusinessRecords(batch(), importIdempotencyKey(IMPORT));
+        expect(await erp.listPurchaseOrders()).toHaveLength(1);
+      });
+
+      it('refuses accepted > received and duplicate natural keys in one batch', async () => {
+        const bad = batch({
+          grns: [
+            {
+              grnNumber: 'GRN-IMP-1',
+              poNumber: 'PO-IMP-1',
+              grnDate: '2026-09-02',
+              lines: [{ poLineNo: 1, receivedQtyMilli: 10, acceptedQtyMilli: 11 }],
+            },
+          ],
+        });
+        await expectErpError(
+          erp.importBusinessRecords(bad, importIdempotencyKey(IMPORT)),
+          'VALIDATION',
+        );
+        const [item] = batch().items;
+        if (!item) throw new Error('fixture');
+        const dup = batch({ items: [item, item] });
+        await expectErpError(
+          erp.importBusinessRecords(dup, importIdempotencyKey(IMPORT)),
+          'VALIDATION',
+        );
+        expect(await erp.listVendors()).toEqual([]);
       });
     });
 

@@ -155,3 +155,35 @@ npm run demo -- --reset      # API on :8787 (fixture extractor, DEMO.md seed) + 
 4. **ERP** shows the records Veyra wrote, tagged by origin; **Audit** shows every step, Veyra vs You.
 
 "Today" is the real date in Asia/Kolkata. The scenarios are dated September 2026 and the demo assumes it runs on or after 28 Sep 2026 (R05 rejects future-dated invoices).
+
+## 6. Excel business records (Phase 3C)
+
+A business with no ERP connection brings its records in Excel. The demo files in `fixtures/imports/` hold exactly the DEMO.md seed (§1.3–1.5), so every invoice scenario works against imported records as it does against the seed.
+
+```
+fixtures/imports/
+  templates/                      Vendors.xlsx, Items.xlsx, PurchaseOrders.xlsx, PurchaseOrderLines.xlsx,
+                                  GoodsReceipts.xlsx, GoodsReceiptLines.xlsx, Veyra-Master-Data-Import.xlsx
+  Demo-1-Vendors.xlsx             7 vendors
+  Demo-2-Items.xlsx               7 items
+  Demo-3-PurchaseOrders.xlsx      13 purchase orders with their lines
+  Demo-4-GoodsReceipts.xlsx       12 goods receipts with their lines
+  Demo-Business-Records.xlsx      all of the above in one workbook
+  Demo-Vendors.csv                the vendors as CSV
+  Demo-Items-With-Errors.xlsx     5 items, 4 with row-level errors (nothing is imported)
+```
+
+```sh
+npm run demo -- --empty      # starts from a business with only its company record
+```
+
+1. **ERP** → *Import business records* (or the **Import and export** tab). The Vendors tab is empty.
+2. Upload `Demo-Items-With-Errors.xlsx`: *Fix these and upload again*, with each problem by sheet and row. There is no import button; nothing changed.
+3. Upload `Demo-1-Vendors.xlsx`: *Check before importing* → *Import 7 records* → *Import complete*. Repeat with files 2, 3 and 4, in that order (uploading 3 before 1 and 2 fails: its vendors and items are unknown, and Veyra never creates them).
+4. Upload `Demo-1-Vendors.xlsx` again: every row *already exists*; nothing to import.
+5. **ERP** shows the records as *Imported by you*. **Audit** → *Business records* shows each upload and import (You) and what was added (Veyra).
+6. **Inbox** → upload `S08-missing-grn.pdf`. It matches the imported vendor and PO-2026-0104, which was imported without a receipt, so Veyra asks *Did the goods arrive?* Record the receipt; the invoice becomes *Ready* (`VERIFIED_PENDING_PAYMENT`). `S01-clean.pdf` is *Handled* with no question.
+7. **Invoices** / **Audit** → *Export*, or **ERP** → *Import and export* → *Export*: processed invoices, decisions and the audit trail as .xlsx or .csv; business records as .xlsx in the import format.
+
+The same run is an automated test: `apps/api/src/imports/excel-to-invoice.test.ts`.
+

@@ -1,0 +1,292 @@
+.wrap {
+  display: grid;
+  gap: var(--space-8);
+  max-width: 60rem;
+}
+.section {
+  display: grid;
+  gap: var(--space-4);
+}
+.title {
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.01em;
+}
+.sub {
+  margin-top: var(--space-1);
+  font-size: var(--text-small);
+  color: var(--color-ink-2);
+}
+.steps {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: 0 0 0 1px var(--color-line);
+  list-style: none;
+  counter-reset: step;
+}
+.steps li {
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  counter-increment: step;
+}
+.steps li::before {
+  content: counter(step);
+  grid-row: span 3;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--color-line-strong);
+  font-size: 0.75rem;
+  font-weight: var(--weight-medium);
+  color: var(--color-ink-3);
+}
+.stepTitle {
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+.note {
+  font-size: var(--text-xsmall);
+  line-height: 1.5;
+  color: var(--color-ink-3);
+}
+.templates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+.link {
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-2);
+  text-decoration: underline;
+  text-decoration-color: var(--color-line-strong);
+  text-underline-offset: 3px;
+}
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 2.25rem;
+  margin-top: var(--space-1);
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-ink);
+  color: var(--color-canvas);
+  font-size: var(--text-xsmall);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+.button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.quiet {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-3);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.problem {
+  font-size: var(--text-xsmall);
+  color: var(--color-attention);
+}
+
+/* Preview */
+.preview {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: 0 0 0 1px var(--color-line);
+}
+.preview[data-state='errors'] {
+  background: var(--color-attention-soft);
+  box-shadow: inset 0 0 0 1px var(--color-attention-line);
+}
+.previewHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+.previewTitle {
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+}
+.files {
+  overflow-wrap: anywhere;
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-3);
+}
+.counts {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.counts li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-line);
+  font-size: var(--text-small);
+}
+.countMain strong {
+  font-weight: var(--weight-semibold);
+}
+.countParts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-3);
+}
+.ok {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-accent);
+}
+.bad {
+  color: var(--color-attention);
+  font-weight: var(--weight-medium);
+}
+.errors {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-xsmall);
+  line-height: 1.45;
+  color: var(--color-ink-2);
+}
+.errors li {
+  display: grid;
+  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+  gap: var(--space-3);
+}
+.where {
+  color: var(--color-attention);
+  font-weight: var(--weight-medium);
+}
+.more {
+  color: var(--color-ink-3);
+}
+.notices {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-3);
+}
+.totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin: 0;
+}
+.totals dt {
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-3);
+}
+.totals dd {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.02em;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* Export and history */
+.exports {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.exports li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-line);
+  font-size: var(--text-small);
+}
+.exports li > span:first-child {
+  min-width: 11rem;
+}
+.scroll {
+  overflow-x: auto;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: 0 0 0 1px var(--color-line);
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xsmall);
+}
+.table th {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-line);
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-label);
+  text-align: left;
+  text-transform: uppercase;
+  color: var(--color-ink-4);
+  white-space: nowrap;
+}
+.table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-line);
+  color: var(--color-ink-2);
+  vertical-align: top;
+}
+.table tr:last-child td {
+  border-bottom: 0;
+}
+.table td[data-result='imported'] {
+  color: var(--color-accent);
+}
+.table td[data-result='invalid'] {
+  color: var(--color-attention);
+}
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 640px) {
+  .steps,
+  .preview {
+    padding: var(--space-4);
+  }
+  .errors li {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}

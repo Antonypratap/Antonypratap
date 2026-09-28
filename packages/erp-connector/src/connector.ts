@@ -17,6 +17,8 @@ import type {
   CreateVendorItemAliasInput,
   ReactivateVendorInput,
   RecordPurchaseInvoiceInput,
+  ImportBusinessRecordsInput,
+  ImportBusinessRecordsResult,
 } from './inputs';
 
 export interface ErpConnectorInfo {
@@ -115,4 +117,18 @@ export interface ErpConnector {
     input: RecordPurchaseInvoiceInput,
     key: IdempotencyKey,
   ): Promise<PurchaseInvoice>;
+
+  // ── Import (the business's own records, when no live ERP connection exists) ──
+  /**
+   * Imports vendors, items, purchase orders and GRNs in ONE atomic write, in dependency order.
+   * References are business keys. An existing record with the same natural key and identical
+   * values is skipped; with different values it is ErpConflictError and nothing is written.
+   * A reference to a record that exists neither in the batch nor in the ERP is ErpNotFoundError.
+   * Idempotent on `key` (`importIdempotencyKey(importId)`). A connector for an ERP that cannot
+   * accept imports throws ErpUnsupportedOperationError.
+   */
+  importBusinessRecords(
+    input: ImportBusinessRecordsInput,
+    key: IdempotencyKey,
+  ): Promise<ImportBusinessRecordsResult>;
 }

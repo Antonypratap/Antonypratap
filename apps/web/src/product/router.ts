@@ -6,11 +6,11 @@ import { useSyncExternalStore } from 'react';
  *   #/app/questions
  *   #/app/invoices[?filter]
  *   #/app/invoices/<id>
- *   #/app/erp/<tab>
+ *   #/app/erp/<tab>        (tab `data`: import and export business records)
  *   #/app/audit[/<id>]
  * Anything else (including the homepage's #section anchors) is the marketing site.
  */
-export const ERP_TABS = ['vendors', 'items', 'orders', 'receipts', 'invoices'] as const;
+export const ERP_TABS = ['vendors', 'items', 'orders', 'receipts', 'invoices', 'data'] as const;
 export type ErpTab = (typeof ERP_TABS)[number];
 export const INVOICE_FILTERS = ['all', 'attention', 'handled'] as const;
 export type InvoiceFilter = (typeof INVOICE_FILTERS)[number];

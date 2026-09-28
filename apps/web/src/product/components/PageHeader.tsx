@@ -20,3 +20,12 @@ export function PageHeader({
     </header>
   );
 }
+
+/** A quiet download link for a page header ("Export"). */
+export function ExportLink({ href, label = 'Export' }: { href: string; label?: string }) {
+  return (
+    <a className={styles.export} href={href} download>
+      {label}
+    </a>
+  );
+}

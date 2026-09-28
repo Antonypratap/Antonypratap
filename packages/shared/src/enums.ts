@@ -139,6 +139,9 @@ export const AUDIT_EVENTS = [
   'commit.conflict',
   'commit.completed',
   'settings.changed',
+  'records.import_checked',
+  'records.import_confirmed',
+  'records.imported',
 ] as const;
 export type AuditEventType = (typeof AUDIT_EVENTS)[number];
 
@@ -165,7 +168,8 @@ export type ErpEntityType = (typeof ERP_ENTITY_TYPES)[number];
 export const VENDOR_STATUSES = ['active', 'inactive'] as const;
 export type VendorStatus = (typeof VENDOR_STATUSES)[number];
 
-export const MASTER_ORIGINS = ['seed', 'created_by_veyra'] as const;
+/** `imported`: provided by the business through an import of its own records (Phase 3C). */
+export const MASTER_ORIGINS = ['seed', 'created_by_veyra', 'imported'] as const;
 export type MasterOrigin = (typeof MASTER_ORIGINS)[number];
 
 export const PO_STATUSES = ['open', 'closed'] as const;
@@ -175,10 +179,11 @@ export const PO_ORIGINS = [
   'seed',
   'auto_created_from_invoice',
   'created_from_invoice_on_approval',
+  'imported',
 ] as const;
 export type PoOrigin = (typeof PO_ORIGINS)[number];
 
-export const GRN_ORIGINS = ['seed', 'user_confirmed_via_veyra'] as const;
+export const GRN_ORIGINS = ['seed', 'user_confirmed_via_veyra', 'imported'] as const;
 export type GrnOrigin = (typeof GRN_ORIGINS)[number];
 
 /** V1 is India / GST / INR only. */

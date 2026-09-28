@@ -201,6 +201,8 @@ interface ErpConnector {
   createPurchaseOrder(input /* origin tag; ERP assigns number */, key): Promise<PurchaseOrder>;
   createGrn(input /* confirmedByUserId required */, key): Promise<Grn>;
   recordPurchaseInvoice(input, key): Promise<PurchaseInvoice>;  // natural key: (vendor, no, FY)
+  importBusinessRecords(input /* vendors, items, POs, GRNs by business key */, key)
+    : Promise<{ importId, created, skipped }>;  // Phase 3C, §14: atomic, identical records skipped
 }
 ```
 
@@ -623,3 +625,62 @@ Upload → extract → resolve → match → ask → validate → commit → `VE
 | C1 | UoM: apply a known conversion; otherwise ask for a factor and save the mapping | RULES R27: "Line UOM = item UOM (no conversion in V1)" | R27 as written: a mismatch raises `VF_R27` (correct a misread unit, re-check, or reject). No factor is asked for or stored. | Whether V2 adds approved UoM conversions (and where they live: ERP or Veyra). |
 | C2 | Items: allow "classify as non-stock expense" | RULES §2.3/§5 offer link, create or reject only; `recordPurchaseInvoice` requires an item and a PO line on every line | Not built. | Whether non-stock lines are in scope, and how they are recorded in the ERP. |
 | C3 | "Ask supplier" moves the invoice to a processing/follow-up state | §5 has no such state; RULES §5 has no such option | Not built. The invoice stays in NEEDS_INPUT (it waits indefinitely); the user can re-check once the supplier has answered, or reject. | Whether a follow-up state (and its exit conditions) should be added. |
+
+## 14. Phase 3C: the Excel business data bridge
+
+For a business whose ERP is not connected, the designated user provides the records Veyra checks invoices against in Excel: **download template → fill in → upload → validate → preview → confirm → records available**, plus exports. Imported records live in the same ERP store, behind the same `ErpConnector`, as every other record; the invoice workflow is unchanged and reads them exactly as it reads seeded or Veyra-created records. Labels as in §13.
+
+### 14.1 What runs
+
+| Part | Where | Notes |
+|---|---|---|
+| Import operation | `packages/erp-connector` (`importBusinessRecords`), `packages/fake-erp` | Contract-tested (5 tests). New origin `imported` with `source_import_id` on vendors, items, POs and GRNs. Migration `0001_import_origin`. |
+| Spreadsheet I/O | `apps/api/src/spreadsheet` | Zero-dependency, limit-checked ZIP, XLSX and CSV readers/writers. |
+| Templates, validation, import service | `apps/api/src/imports` | `spec.ts` (tables, columns), `templates.ts`, `validate.ts` (`checkImport`), `service.ts` (`BusinessImports`). Veyra table `imports` (migration `0001_imports`) keeps each upload's check and result. |
+| Exports | `apps/api/src/exports` | Processed invoices, decisions, audit trail (XLSX or CSV); business records (XLSX, in the import format). |
+| UI | `apps/web/src/product/screens/ErpData.tsx` | ERP → **Import and export** tab; *Import business records* link in the ERP header; *Export* links on Invoices and Audit; *Business records* entry in Audit. |
+| Demo files | `fixtures/imports/` | Templates and demo uploads, generated deterministically by `npm run fixtures:generate`. |
+
+API (`/api/v1`):
+
+```
+GET  /imports/templates                 list of templates
+GET  /imports/templates/:file           download (Vendors.xlsx … Veyra-Master-Data-Import.xlsx)
+POST /imports                           multipart, 1–8 .xlsx/.csv files → 201 import (checked, nothing written)
+GET  /imports                           import history
+GET  /imports/:id                       one import
+POST /imports/:id/confirm               re-check, then import atomically → import with result; 409 if it no longer passes
+GET  /exports/:name                     business-records.xlsx | (invoices|decisions|audit).(xlsx|csv)
+GET  /audit?scope=records               import history in the audit trail
+POST /dev/reset  { erp: 'demo'|'empty' } (not in production) 'empty' = company only
+```
+
+### 14.2 Client requirements implemented as specified
+
+- **CLIENT REQUIREMENT** Importable: vendors, items, purchase orders + lines, goods receipts + lines. Purchase invoices are not importable (they only enter through the invoice workflow).
+- **CLIENT REQUIREMENT** No parallel data model and no bypass: the import goes through `ErpConnector.importBusinessRecords`. The connector lacked a bulk write, so one was added to the port (the documented gap is closed in the port, not worked around); a real ERP connector that cannot support it throws `UNSUPPORTED_OPERATION`.
+- **CLIENT REQUIREMENT** Templates: one per table plus the combined `Veyra-Master-Data-Import.xlsx` (all six sheets and a *How to fill in* sheet). Every template has a *How to fill in* sheet listing each column as *Required* / *Optional* with a description and an example, and a data sheet per table with a frozen header row and one example row whose first cell starts with `EXAMPLE-`. Example rows are skipped (with a notice) if left in.
+- **CLIENT REQUIREMENT** Whole upload validated before anything is written; nothing is ever partially imported. Confirm is offered only with zero errors, re-validates against the ERP as it is at that moment, and the connector writes everything in one transaction or nothing.
+- **CLIENT REQUIREMENT** Retry-safe: the confirm is keyed `veyra:import:<importId>`; confirming twice returns the stored result. Re-uploading the same file finds every record already present and imports nothing.
+- **CLIENT REQUIREMENT** Existing records are never overwritten: an identical record (same natural key and same details) is skipped as *already exists*; a record whose key exists with different details is an error (*"already exists with different details. Veyra does not change existing records."*).
+- **CLIENT REQUIREMENT** References are never auto-created: a PO naming an unknown vendor, a line naming an unknown item, a receipt naming an unknown PO or PO line is an error. The dependency order is vendors → items → POs + lines → GRNs + lines, within one upload or across uploads.
+- **CLIENT REQUIREMENT** Uploaded files are untrusted: type by signature (ZIP/XLSX or text CSV), ≤ 5 MB each, ≤ 8 per upload, ZIP entry-count and expanded-size limits (zip-bomb guard), no encryption or zip64, ≤ 20,000 rows and 60 columns a sheet. Formulas and macros are never evaluated: a formula cell uses only the value Excel stored with it, and one with no stored value is an error. Every cell is parsed by type (codes, GSTIN with checksum, dates, integer-exact money, quantities and rates).
+- **CLIENT REQUIREMENT** Audit: *Business records uploaded* and *Business records imported* by You; *N records added* by Veyra, with counts per type. Import history shows file, type, date, records and result.
+- **CLIENT REQUIREMENT** Exports with business columns (no internal ids): processed invoices, decisions, audit trail.
+
+### 14.3 Implementation decisions
+
+- **IMPLEMENTATION DECISION** Template columns come from the domain schema; nothing was invented. Vendors: `vendor_code`, `name`, `gstin`, `pan`\*, `address`, `state`\*, `active`. Items: `item_code`, `name`, `hsn`, `uom`, `gst_rate`. POs: `po_number`, `vendor_code`, `po_date`, `status`. PO lines: `po_number`, `line_number`, `item_code`, `quantity`, `unit_rate`, `gst_rate`, `uom`\*. GRNs: `grn_number`, `po_number`, `grn_date`. GRN lines: `grn_number`, `po_line_number`, `item_code`\*, `received_quantity`, `accepted_quantity`, `uom`\*. Columns marked \* are optional *check* columns: they are not stored separately (PAN and state derive from the GSTIN; the line UoM is the item's) and must agree when filled in.
+- **IMPLEMENTATION DECISION** Not in the templates because the domain has no such field: item `active`, PO currency (INR only), GRN line ids (receipts link to PO lines, so GRN lines reference `po_line_number`).
+- **IMPLEMENTATION DECISION** Tables are recognised by sheet name, then file name, then header row (English aliases such as *Suppliers*, *Purchase order lines*); the *How to fill in* sheet and unrecognised sheets are ignored with a notice. Column order does not matter; headers do.
+- **IMPLEMENTATION DECISION** Row-level checks beyond types: duplicates within the upload (codes, GSTINs, numbers, PO lines); a GSTIN belonging to another vendor; PO date not in the future; every PO has lines numbered 1..n and every line has its PO in the same upload (likewise GRNs); GRN date between the PO date and today; the GRN line's PO line exists and its item matches; accepted ≤ received.
+- **IMPLEMENTATION DECISION** Imported records carry `origin = 'imported'` and `source_import_id`, shown as *Imported by you* in the ERP screen. The fake ERP enforces the pairing with CHECK constraints.
+- **IMPLEMENTATION DECISION** An upload is stored under the data directory with its check result; confirm re-reads the stored files, so the preview and the import always see the same bytes.
+- **IMPLEMENTATION DECISION** CSV is supported for both import (one table per file, named by file name or header) and export. Exported CSV cells starting with `=`, `+`, `-` or `@` are prefixed with `'` (formula injection guard). XLSX money cells are exact decimal strings, never floats.
+
+### 14.4 Technical constraints
+
+- **TECHNICAL CONSTRAINT** No spreadsheet library: a small, audited reader/writer covers the XLSX subset Excel, Google Sheets and openpyxl produce (shared/inline strings, number formats for dates and percentages, 1900/1904 date systems). Generated files were verified with openpyxl; LibreOffice was not available to test.
+- **TECHNICAL CONSTRAINT** Imports only add records. Updating or deactivating an existing record, importing the company, scheduled imports and two-way sync are out of scope.
+- **TECHNICAL CONSTRAINT** SQLite migrations that rebuild tables run with `foreign_keys` off and a `foreign_key_check` before it is turned back on (in both databases), because SQLite ignores the pragma inside the migration transaction. The generated `0001_import_origin.sql` was corrected by hand (the copy step selected a column that does not yet exist); a test upgrades a Phase 3B database.
+

@@ -2,6 +2,8 @@ import { z } from 'zod';
 import {
   ApiAuditEntrySchema,
   ApiErpSchema,
+  ApiImportSchema,
+  type ApiImport,
   ApiInboxSchema,
   ApiInvoiceDetailSchema,
   ApiQuestionSchema,
@@ -100,7 +102,19 @@ export const api = {
     request(Moved, `/invoices/${encodeURIComponent(invoiceId)}/reject`, json({ reason })),
   reprocess: (invoiceId: string) =>
     request(Moved, `/invoices/${encodeURIComponent(invoiceId)}/reprocess`, { method: 'POST' }),
-  resetDemo: () => request(z.object({ ok: z.boolean() }), '/dev/reset', { method: 'POST' }),
+  resetDemo: () => request(z.object({ ok: z.boolean() }).loose(), '/dev/reset', { method: 'POST' }),
+  recordsAudit: (): Promise<ApiAuditEntry[]> =>
+    request(z.array(ApiAuditEntrySchema), '/audit?scope=records'),
+  imports: {
+    list: (): Promise<ApiImport[]> => request(z.array(ApiImportSchema), '/imports'),
+    check: (files: readonly File[]): Promise<ApiImport> => {
+      const form = new FormData();
+      for (const f of files) form.append('file', f, f.name);
+      return request(ApiImportSchema, '/imports', { method: 'POST', body: form });
+    },
+    confirm: (id: string): Promise<ApiImport> =>
+      request(ApiImportSchema, `/imports/${encodeURIComponent(id)}/confirm`, { method: 'POST' }),
+  },
   erp: {
     vendors: () => request(ApiErpSchema.vendors, '/erp/vendors'),
     items: () => request(ApiErpSchema.items, '/erp/items'),
@@ -112,3 +126,17 @@ export const api = {
 
 export const documentUrl = (documentId: string): string =>
   `${BASE}/documents/${encodeURIComponent(documentId)}/file`;
+
+/** Downloadable business-record templates (served by the API, generated on request). */
+export const TEMPLATES: readonly { file: string; title: string }[] = [
+  { file: 'Veyra-Master-Data-Import.xlsx', title: 'All business records (one workbook)' },
+  { file: 'Vendors.xlsx', title: 'Vendors' },
+  { file: 'Items.xlsx', title: 'Items' },
+  { file: 'PurchaseOrders.xlsx', title: 'Purchase orders' },
+  { file: 'PurchaseOrderLines.xlsx', title: 'Purchase order lines' },
+  { file: 'GoodsReceipts.xlsx', title: 'Goods receipts' },
+  { file: 'GoodsReceiptLines.xlsx', title: 'Goods receipt lines' },
+];
+export const templateUrl = (file: string): string =>
+  `${BASE}/imports/templates/${encodeURIComponent(file)}`;
+export const exportUrl = (name: string): string => `${BASE}/exports/${name}`;

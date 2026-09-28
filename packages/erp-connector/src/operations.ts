@@ -22,7 +22,7 @@ export const ERP_READ_OPERATIONS = [
 ] as const;
 export type ErpReadOperation = (typeof ERP_READ_OPERATIONS)[number];
 
-/** Every write, in the order COMMITTING executes them (ARCHITECTURE §4.3). No payment operation exists. */
+/** Every write. The first seven are in the order COMMITTING executes them (ARCHITECTURE §4.3). No payment operation exists. */
 export const ERP_WRITE_OPERATIONS = [
   'reactivateVendor',
   'createVendor',
@@ -31,6 +31,8 @@ export const ERP_WRITE_OPERATIONS = [
   'createPurchaseOrder',
   'createGrn',
   'recordPurchaseInvoice',
+  // Not part of an invoice commit: imports a batch of the business's own records (Phase 3C).
+  'importBusinessRecords',
 ] as const;
 export type ErpWriteOperation = (typeof ERP_WRITE_OPERATIONS)[number];
 

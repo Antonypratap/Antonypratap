@@ -1,0 +1,1448 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "027e828e-b389-4093-8b6f-5ea55cdc5e3a",
+  "prevId": "2f365779-c2ba-4323-9460-220c8dbda68a",
+  "tables": {
+    "company": {
+      "name": "company",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "gstin": {
+          "name": "gstin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "state_code": {
+          "name": "state_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "company_gstin_unique": {
+          "name": "company_gstin_unique",
+          "columns": [
+            "gstin"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "company_singleton": {
+          "name": "company_singleton",
+          "value": "\"company\".\"id\" = 'company'"
+        },
+        "company_gstin": {
+          "name": "company_gstin",
+          "value": "length(\"company\".\"gstin\") = 15 AND \"company\".\"gstin\" GLOB '[0-9][0-9]*'"
+        },
+        "company_state_matches_gstin": {
+          "name": "company_state_matches_gstin",
+          "value": "\"company\".\"state_code\" = substr(\"company\".\"gstin\", 1, 2)"
+        }
+      }
+    },
+    "grn_lines": {
+      "name": "grn_lines",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "grn_id": {
+          "name": "grn_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "po_line_id": {
+          "name": "po_line_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "received_qty_milli": {
+          "name": "received_qty_milli",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "accepted_qty_milli": {
+          "name": "accepted_qty_milli",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "grn_lines_po_line_idx": {
+          "name": "grn_lines_po_line_idx",
+          "columns": [
+            "po_line_id"
+          ],
+          "isUnique": false
+        },
+        "grn_lines_grn_po_line_uq": {
+          "name": "grn_lines_grn_po_line_uq",
+          "columns": [
+            "grn_id",
+            "po_line_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "grn_lines_grn_id_grns_id_fk": {
+          "name": "grn_lines_grn_id_grns_id_fk",
+          "tableFrom": "grn_lines",
+          "tableTo": "grns",
+          "columnsFrom": [
+            "grn_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "grn_lines_po_line_id_po_lines_id_fk": {
+          "name": "grn_lines_po_line_id_po_lines_id_fk",
+          "tableFrom": "grn_lines",
+          "tableTo": "po_lines",
+          "columnsFrom": [
+            "po_line_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "grn_lines_received": {
+          "name": "grn_lines_received",
+          "value": "typeof(\"grn_lines\".\"received_qty_milli\") = 'integer' AND \"grn_lines\".\"received_qty_milli\" > 0"
+        },
+        "grn_lines_accepted": {
+          "name": "grn_lines_accepted",
+          "value": "typeof(\"grn_lines\".\"accepted_qty_milli\") = 'integer' AND \"grn_lines\".\"accepted_qty_milli\" >= 0 AND \"grn_lines\".\"accepted_qty_milli\" <= \"grn_lines\".\"received_qty_milli\""
+        }
+      }
+    },
+    "grns": {
+      "name": "grns",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "grn_number": {
+          "name": "grn_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "po_id": {
+          "name": "po_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "grn_date": {
+          "name": "grn_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "confirmed_by_user_id": {
+          "name": "confirmed_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_invoice_id": {
+          "name": "source_invoice_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_import_id": {
+          "name": "source_import_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "grns_grn_number_unique": {
+          "name": "grns_grn_number_unique",
+          "columns": [
+            "grn_number"
+          ],
+          "isUnique": true
+        },
+        "grns_po_idx": {
+          "name": "grns_po_idx",
+          "columns": [
+            "po_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "grns_po_id_purchase_orders_id_fk": {
+          "name": "grns_po_id_purchase_orders_id_fk",
+          "tableFrom": "grns",
+          "tableTo": "purchase_orders",
+          "columnsFrom": [
+            "po_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "grns_date": {
+          "name": "grns_date",
+          "value": "date(\"grns\".\"grn_date\") IS \"grns\".\"grn_date\""
+        },
+        "grns_origin": {
+          "name": "grns_origin",
+          "value": "\"grns\".\"origin\" IN ('seed', 'user_confirmed_via_veyra', 'imported')"
+        },
+        "grns_origin_source": {
+          "name": "grns_origin_source",
+          "value": "(\"grns\".\"origin\" IN ('user_confirmed_via_veyra')) = (\"grns\".\"source_invoice_id\" IS NOT NULL)"
+        },
+        "grns_origin_import": {
+          "name": "grns_origin_import",
+          "value": "(\"grns\".\"origin\" = 'imported') = (\"grns\".\"source_import_id\" IS NOT NULL)"
+        },
+        "grns_origin_confirmer": {
+          "name": "grns_origin_confirmer",
+          "value": "(\"grns\".\"origin\" = 'user_confirmed_via_veyra') = (\"grns\".\"confirmed_by_user_id\" IS NOT NULL)"
+        },
+        "grns_created_at": {
+          "name": "grns_created_at",
+          "value": "\"grns\".\"created_at\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]*Z'"
+        }
+      }
+    },
+    "idempotency_log": {
+      "name": "idempotency_log",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "operation": {
+          "name": "operation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payload_hash": {
+          "name": "payload_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "result_id": {
+          "name": "result_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "idempotency_log_operation": {
+          "name": "idempotency_log_operation",
+          "value": "\"idempotency_log\".\"operation\" IN ('reactivateVendor', 'createVendor', 'createItem', 'createVendorItemAlias', 'createPurchaseOrder', 'createGrn', 'recordPurchaseInvoice', 'importBusinessRecords')"
+        },
+        "idempotency_log_hash": {
+          "name": "idempotency_log_hash",
+          "value": "length(\"idempotency_log\".\"payload_hash\") = 64 AND \"idempotency_log\".\"payload_hash\" NOT GLOB '*[^0-9a-f]*'"
+        },
+        "idempotency_log_created_at": {
+          "name": "idempotency_log_created_at",
+          "value": "\"idempotency_log\".\"created_at\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]*Z'"
+        }
+      }
+    },
+    "items": {
+      "name": "items",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name_normalized": {
+          "name": "name_normalized",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "hsn_sac": {
+          "name": "hsn_sac",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "uom": {
+          "name": "uom",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "gst_rate_bp": {
+          "name": "gst_rate_bp",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_invoice_id": {
+          "name": "source_invoice_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_import_id": {
+          "name": "source_import_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "items_code_unique": {
+          "name": "items_code_unique",
+          "columns": [
+            "code"
+          ],
+          "isUnique": true
+        },
+        "items_hsn_idx": {
+          "name": "items_hsn_idx",
+          "columns": [
+            "hsn_sac"
+          ],
+          "isUnique": false
+        },
+        "items_name_hsn_idx": {
+          "name": "items_name_hsn_idx",
+          "columns": [
+            "name_normalized",
+            "hsn_sac"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "items_hsn": {
+          "name": "items_hsn",
+          "value": "length(\"items\".\"hsn_sac\") IN (4, 6, 8) AND \"items\".\"hsn_sac\" NOT GLOB '*[^0-9]*'"
+        },
+        "items_gst_rate": {
+          "name": "items_gst_rate",
+          "value": "typeof(\"items\".\"gst_rate_bp\") = 'integer' AND \"items\".\"gst_rate_bp\" BETWEEN 0 AND 10000"
+        },
+        "items_origin": {
+          "name": "items_origin",
+          "value": "\"items\".\"origin\" IN ('seed', 'created_by_veyra', 'imported')"
+        },
+        "items_origin_source": {
+          "name": "items_origin_source",
+          "value": "(\"items\".\"origin\" IN ('created_by_veyra')) = (\"items\".\"source_invoice_id\" IS NOT NULL)"
+        },
+        "items_origin_import": {
+          "name": "items_origin_import",
+          "value": "(\"items\".\"origin\" = 'imported') = (\"items\".\"source_import_id\" IS NOT NULL)"
+        },
+        "items_created_at": {
+          "name": "items_created_at",
+          "value": "\"items\".\"created_at\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]*Z'"
+        }
+      }
+    },
+    "po_lines": {
+      "name": "po_lines",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "po_id": {
+          "name": "po_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "line_no": {
+          "name": "line_no",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "item_id": {
+          "name": "item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "qty_milli": {
+          "name": "qty_milli",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "unit_price_paise": {
+          "name": "unit_price_paise",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "gst_rate_bp": {
+          "name": "gst_rate_bp",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "po_lines_item_idx": {
+          "name": "po_lines_item_idx",
+          "columns": [
+            "item_id"
+          ],
+          "isUnique": false
+        },
+        "po_lines_po_line_uq": {
+          "name": "po_lines_po_line_uq",
+          "columns": [
+            "po_id",
+            "line_no"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "po_lines_po_id_purchase_orders_id_fk": {
+          "name": "po_lines_po_id_purchase_orders_id_fk",
+          "tableFrom": "po_lines",
+          "tableTo": "purchase_orders",
+          "columnsFrom": [
+            "po_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "po_lines_item_id_items_id_fk": {
+          "name": "po_lines_item_id_items_id_fk",
+          "tableFrom": "po_lines",
+          "tableTo": "items",
+          "columnsFrom": [
+            "item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "po_lines_line_no": {
+          "name": "po_lines_line_no",
+          "value": "typeof(\"po_lines\".\"line_no\") = 'integer' AND \"po_lines\".\"line_no\" > 0"
+        },
+        "po_lines_qty": {
+          "name": "po_lines_qty",
+          "value": "typeof(\"po_lines\".\"qty_milli\") = 'integer' AND \"po_lines\".\"qty_milli\" > 0"
+        },
+        "po_lines_price": {
+          "name": "po_lines_price",
+          "value": "typeof(\"po_lines\".\"unit_price_paise\") = 'integer' AND \"po_lines\".\"unit_price_paise\" >= 0"
+        },
+        "po_lines_gst_rate": {
+          "name": "po_lines_gst_rate",
+          "value": "typeof(\"po_lines\".\"gst_rate_bp\") = 'integer' AND \"po_lines\".\"gst_rate_bp\" BETWEEN 0 AND 10000"
+        }
+      }
+    },
+    "purchase_invoice_lines": {
+      "name": "purchase_invoice_lines",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "purchase_invoice_id": {
+          "name": "purchase_invoice_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "line_no": {
+          "name": "line_no",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "po_line_id": {
+          "name": "po_line_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "item_id": {
+          "name": "item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "qty_milli": {
+          "name": "qty_milli",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "unit_price_paise": {
+          "name": "unit_price_paise",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "taxable_paise": {
+          "name": "taxable_paise",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "gst_rate_bp": {
+          "name": "gst_rate_bp",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cgst_paise": {
+          "name": "cgst_paise",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sgst_paise": {
+          "name": "sgst_paise",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "igst_paise": {
+          "name": "igst_paise",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "purchase_invoice_lines_po_line_idx": {
+          "name": "purchase_invoice_lines_po_line_idx",
+          "columns": [
+            "po_line_id"
+          ],
+          "isUnique": false
+        },
+        "purchase_invoice_lines_line_uq": {
+          "name": "purchase_invoice_lines_line_uq",
+          "columns": [
+            "purchase_invoice_id",
+            "line_no"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "purchase_invoice_lines_purchase_invoice_id_purchase_invoices_id_fk": {
+          "name": "purchase_invoice_lines_purchase_invoice_id_purchase_invoices_id_fk",
+          "tableFrom": "purchase_invoice_lines",
+          "tableTo": "purchase_invoices",
+          "columnsFrom": [
+            "purchase_invoice_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "purchase_invoice_lines_po_line_id_po_lines_id_fk": {
+          "name": "purchase_invoice_lines_po_line_id_po_lines_id_fk",
+          "tableFrom": "purchase_invoice_lines",
+          "tableTo": "po_lines",
+          "columnsFrom": [
+            "po_line_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "purchase_invoice_lines_item_id_items_id_fk": {
+          "name": "purchase_invoice_lines_item_id_items_id_fk",
+          "tableFrom": "purchase_invoice_lines",
+          "tableTo": "items",
+          "columnsFrom": [
+            "item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "purchase_invoice_lines_line_no": {
+          "name": "purchase_invoice_lines_line_no",
+          "value": "typeof(\"purchase_invoice_lines\".\"line_no\") = 'integer' AND \"purchase_invoice_lines\".\"line_no\" > 0"
+        },
+        "purchase_invoice_lines_qty": {
+          "name": "purchase_invoice_lines_qty",
+          "value": "typeof(\"purchase_invoice_lines\".\"qty_milli\") = 'integer' AND \"purchase_invoice_lines\".\"qty_milli\" > 0"
+        },
+        "purchase_invoice_lines_price": {
+          "name": "purchase_invoice_lines_price",
+          "value": "typeof(\"purchase_invoice_lines\".\"unit_price_paise\") = 'integer' AND \"purchase_invoice_lines\".\"unit_price_paise\" >= 0"
+        },
+        "purchase_invoice_lines_taxable": {
+          "name": "purchase_invoice_lines_taxable",
+          "value": "typeof(\"purchase_invoice_lines\".\"taxable_paise\") = 'integer' AND \"purchase_invoice_lines\".\"taxable_paise\" >= 0"
+        },
+        "purchase_invoice_lines_gst_rate": {
+          "name": "purchase_invoice_lines_gst_rate",
+          "value": "typeof(\"purchase_invoice_lines\".\"gst_rate_bp\") = 'integer' AND \"purchase_invoice_lines\".\"gst_rate_bp\" BETWEEN 0 AND 10000"
+        },
+        "purchase_invoice_lines_cgst": {
+          "name": "purchase_invoice_lines_cgst",
+          "value": "(\"purchase_invoice_lines\".\"cgst_paise\" IS NULL OR typeof(\"purchase_invoice_lines\".\"cgst_paise\") = 'integer')"
+        },
+        "purchase_invoice_lines_sgst": {
+          "name": "purchase_invoice_lines_sgst",
+          "value": "(\"purchase_invoice_lines\".\"sgst_paise\" IS NULL OR typeof(\"purchase_invoice_lines\".\"sgst_paise\") = 'integer')"
+        },
+        "purchase_invoice_lines_igst": {
+          "name": "purchase_invoice_lines_igst",
+          "value": "(\"purchase_invoice_lines\".\"igst_paise\" IS NULL OR typeof(\"purchase_invoice_lines\".\"igst_paise\") = 'integer')"
+        }
+      }
+    },
+    "purchase_invoices": {
+      "name": "purchase_invoices",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "vendor_id": {
+          "name": "vendor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "vendor_invoice_no": {
+          "name": "vendor_invoice_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "vendor_invoice_no_normalized": {
+          "name": "vendor_invoice_no_normalized",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "invoice_date": {
+          "name": "invoice_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fy": {
+          "name": "fy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "po_id": {
+          "name": "po_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "taxable_paise": {
+          "name": "taxable_paise",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cgst_paise": {
+          "name": "cgst_paise",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sgst_paise": {
+          "name": "sgst_paise",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "igst_paise": {
+          "name": "igst_paise",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "round_off_paise": {
+          "name": "round_off_paise",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "total_paise": {
+          "name": "total_paise",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "veyra_invoice_id": {
+          "name": "veyra_invoice_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "purchase_invoices_veyra_invoice_id_unique": {
+          "name": "purchase_invoices_veyra_invoice_id_unique",
+          "columns": [
+            "veyra_invoice_id"
+          ],
+          "isUnique": true
+        },
+        "purchase_invoices_idempotency_key_unique": {
+          "name": "purchase_invoices_idempotency_key_unique",
+          "columns": [
+            "idempotency_key"
+          ],
+          "isUnique": true
+        },
+        "purchase_invoices_po_idx": {
+          "name": "purchase_invoices_po_idx",
+          "columns": [
+            "po_id"
+          ],
+          "isUnique": false
+        },
+        "purchase_invoices_vendor_no_fy_uq": {
+          "name": "purchase_invoices_vendor_no_fy_uq",
+          "columns": [
+            "vendor_id",
+            "vendor_invoice_no_normalized",
+            "fy"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "purchase_invoices_vendor_id_vendors_id_fk": {
+          "name": "purchase_invoices_vendor_id_vendors_id_fk",
+          "tableFrom": "purchase_invoices",
+          "tableTo": "vendors",
+          "columnsFrom": [
+            "vendor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "purchase_invoices_po_id_purchase_orders_id_fk": {
+          "name": "purchase_invoices_po_id_purchase_orders_id_fk",
+          "tableFrom": "purchase_invoices",
+          "tableTo": "purchase_orders",
+          "columnsFrom": [
+            "po_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "purchase_invoices_date": {
+          "name": "purchase_invoices_date",
+          "value": "date(\"purchase_invoices\".\"invoice_date\") IS \"purchase_invoices\".\"invoice_date\""
+        },
+        "purchase_invoices_fy": {
+          "name": "purchase_invoices_fy",
+          "value": "\"purchase_invoices\".\"fy\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]'"
+        },
+        "purchase_invoices_taxable": {
+          "name": "purchase_invoices_taxable",
+          "value": "typeof(\"purchase_invoices\".\"taxable_paise\") = 'integer' AND \"purchase_invoices\".\"taxable_paise\" >= 0"
+        },
+        "purchase_invoices_cgst": {
+          "name": "purchase_invoices_cgst",
+          "value": "typeof(\"purchase_invoices\".\"cgst_paise\") = 'integer' AND \"purchase_invoices\".\"cgst_paise\" >= 0"
+        },
+        "purchase_invoices_sgst": {
+          "name": "purchase_invoices_sgst",
+          "value": "typeof(\"purchase_invoices\".\"sgst_paise\") = 'integer' AND \"purchase_invoices\".\"sgst_paise\" >= 0"
+        },
+        "purchase_invoices_igst": {
+          "name": "purchase_invoices_igst",
+          "value": "typeof(\"purchase_invoices\".\"igst_paise\") = 'integer' AND \"purchase_invoices\".\"igst_paise\" >= 0"
+        },
+        "purchase_invoices_round_off": {
+          "name": "purchase_invoices_round_off",
+          "value": "(\"purchase_invoices\".\"round_off_paise\" IS NULL OR typeof(\"purchase_invoices\".\"round_off_paise\") = 'integer')"
+        },
+        "purchase_invoices_total_int": {
+          "name": "purchase_invoices_total_int",
+          "value": "typeof(\"purchase_invoices\".\"total_paise\") = 'integer' AND \"purchase_invoices\".\"total_paise\" >= 0"
+        },
+        "purchase_invoices_total": {
+          "name": "purchase_invoices_total",
+          "value": "\"purchase_invoices\".\"total_paise\" = \"purchase_invoices\".\"taxable_paise\" + \"purchase_invoices\".\"cgst_paise\" + \"purchase_invoices\".\"sgst_paise\" + \"purchase_invoices\".\"igst_paise\" + coalesce(\"purchase_invoices\".\"round_off_paise\", 0)"
+        },
+        "purchase_invoices_status": {
+          "name": "purchase_invoices_status",
+          "value": "\"purchase_invoices\".\"status\" = 'verified_pending_payment'"
+        },
+        "purchase_invoices_created_at": {
+          "name": "purchase_invoices_created_at",
+          "value": "\"purchase_invoices\".\"created_at\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]*Z'"
+        }
+      }
+    },
+    "purchase_orders": {
+      "name": "purchase_orders",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "po_number": {
+          "name": "po_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "vendor_id": {
+          "name": "vendor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "po_date": {
+          "name": "po_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_invoice_id": {
+          "name": "source_invoice_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "approved_by_user_id": {
+          "name": "approved_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_import_id": {
+          "name": "source_import_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "purchase_orders_po_number_unique": {
+          "name": "purchase_orders_po_number_unique",
+          "columns": [
+            "po_number"
+          ],
+          "isUnique": true
+        },
+        "purchase_orders_vendor_idx": {
+          "name": "purchase_orders_vendor_idx",
+          "columns": [
+            "vendor_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "purchase_orders_vendor_id_vendors_id_fk": {
+          "name": "purchase_orders_vendor_id_vendors_id_fk",
+          "tableFrom": "purchase_orders",
+          "tableTo": "vendors",
+          "columnsFrom": [
+            "vendor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "purchase_orders_date": {
+          "name": "purchase_orders_date",
+          "value": "date(\"purchase_orders\".\"po_date\") IS \"purchase_orders\".\"po_date\""
+        },
+        "purchase_orders_status": {
+          "name": "purchase_orders_status",
+          "value": "\"purchase_orders\".\"status\" IN ('open', 'closed')"
+        },
+        "purchase_orders_origin": {
+          "name": "purchase_orders_origin",
+          "value": "\"purchase_orders\".\"origin\" IN ('seed', 'auto_created_from_invoice', 'created_from_invoice_on_approval', 'imported')"
+        },
+        "purchase_orders_origin_source": {
+          "name": "purchase_orders_origin_source",
+          "value": "(\"purchase_orders\".\"origin\" IN ('auto_created_from_invoice', 'created_from_invoice_on_approval')) = (\"purchase_orders\".\"source_invoice_id\" IS NOT NULL)"
+        },
+        "purchase_orders_origin_import": {
+          "name": "purchase_orders_origin_import",
+          "value": "(\"purchase_orders\".\"origin\" = 'imported') = (\"purchase_orders\".\"source_import_id\" IS NOT NULL)"
+        },
+        "purchase_orders_origin_approver": {
+          "name": "purchase_orders_origin_approver",
+          "value": "(\"purchase_orders\".\"origin\" = 'created_from_invoice_on_approval') = (\"purchase_orders\".\"approved_by_user_id\" IS NOT NULL)"
+        },
+        "purchase_orders_created_at": {
+          "name": "purchase_orders_created_at",
+          "value": "\"purchase_orders\".\"created_at\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]*Z'"
+        }
+      }
+    },
+    "vendor_item_aliases": {
+      "name": "vendor_item_aliases",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "vendor_id": {
+          "name": "vendor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "vendor_item_code": {
+          "name": "vendor_item_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "item_id": {
+          "name": "item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_invoice_id": {
+          "name": "source_invoice_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "vendor_item_aliases_item_idx": {
+          "name": "vendor_item_aliases_item_idx",
+          "columns": [
+            "item_id"
+          ],
+          "isUnique": false
+        },
+        "vendor_item_aliases_vendor_code_uq": {
+          "name": "vendor_item_aliases_vendor_code_uq",
+          "columns": [
+            "vendor_id",
+            "vendor_item_code"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "vendor_item_aliases_vendor_id_vendors_id_fk": {
+          "name": "vendor_item_aliases_vendor_id_vendors_id_fk",
+          "tableFrom": "vendor_item_aliases",
+          "tableTo": "vendors",
+          "columnsFrom": [
+            "vendor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "vendor_item_aliases_item_id_items_id_fk": {
+          "name": "vendor_item_aliases_item_id_items_id_fk",
+          "tableFrom": "vendor_item_aliases",
+          "tableTo": "items",
+          "columnsFrom": [
+            "item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "vendor_item_aliases_code": {
+          "name": "vendor_item_aliases_code",
+          "value": "length(\"vendor_item_aliases\".\"vendor_item_code\") > 0"
+        },
+        "vendor_item_aliases_origin": {
+          "name": "vendor_item_aliases_origin",
+          "value": "\"vendor_item_aliases\".\"origin\" IN ('seed', 'created_by_veyra')"
+        },
+        "vendor_item_aliases_origin_source": {
+          "name": "vendor_item_aliases_origin_source",
+          "value": "(\"vendor_item_aliases\".\"origin\" IN ('created_by_veyra')) = (\"vendor_item_aliases\".\"source_invoice_id\" IS NOT NULL)"
+        },
+        "vendor_item_aliases_created_at": {
+          "name": "vendor_item_aliases_created_at",
+          "value": "\"vendor_item_aliases\".\"created_at\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]*Z'"
+        }
+      }
+    },
+    "vendors": {
+      "name": "vendors",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name_normalized": {
+          "name": "name_normalized",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "gstin": {
+          "name": "gstin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "pan": {
+          "name": "pan",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "state_code": {
+          "name": "state_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_invoice_id": {
+          "name": "source_invoice_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_import_id": {
+          "name": "source_import_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "vendors_code_unique": {
+          "name": "vendors_code_unique",
+          "columns": [
+            "code"
+          ],
+          "isUnique": true
+        },
+        "vendors_gstin_unique": {
+          "name": "vendors_gstin_unique",
+          "columns": [
+            "gstin"
+          ],
+          "isUnique": true
+        },
+        "vendors_pan_idx": {
+          "name": "vendors_pan_idx",
+          "columns": [
+            "pan"
+          ],
+          "isUnique": false
+        },
+        "vendors_name_normalized_idx": {
+          "name": "vendors_name_normalized_idx",
+          "columns": [
+            "name_normalized"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "vendors_gstin": {
+          "name": "vendors_gstin",
+          "value": "length(\"vendors\".\"gstin\") = 15 AND \"vendors\".\"gstin\" GLOB '[0-9][0-9]*'"
+        },
+        "vendors_pan_matches_gstin": {
+          "name": "vendors_pan_matches_gstin",
+          "value": "\"vendors\".\"pan\" = substr(\"vendors\".\"gstin\", 3, 10)"
+        },
+        "vendors_state_matches_gstin": {
+          "name": "vendors_state_matches_gstin",
+          "value": "\"vendors\".\"state_code\" = substr(\"vendors\".\"gstin\", 1, 2)"
+        },
+        "vendors_status": {
+          "name": "vendors_status",
+          "value": "\"vendors\".\"status\" IN ('active', 'inactive')"
+        },
+        "vendors_origin": {
+          "name": "vendors_origin",
+          "value": "\"vendors\".\"origin\" IN ('seed', 'created_by_veyra', 'imported')"
+        },
+        "vendors_origin_source": {
+          "name": "vendors_origin_source",
+          "value": "(\"vendors\".\"origin\" IN ('created_by_veyra')) = (\"vendors\".\"source_invoice_id\" IS NOT NULL)"
+        },
+        "vendors_origin_import": {
+          "name": "vendors_origin_import",
+          "value": "(\"vendors\".\"origin\" = 'imported') = (\"vendors\".\"source_import_id\" IS NOT NULL)"
+        },
+        "vendors_created_at": {
+          "name": "vendors_created_at",
+          "value": "\"vendors\".\"created_at\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]*Z'"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

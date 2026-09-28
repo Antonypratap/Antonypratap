@@ -32,7 +32,7 @@ describe('ErpConnector type contract', () => {
   });
 
   it('writes are listed in commit dependency order (ARCHITECTURE §4.3)', () => {
-    expect(ERP_WRITE_OPERATIONS).toEqual([
+    expect(ERP_WRITE_OPERATIONS.slice(0, 7)).toEqual([
       'reactivateVendor',
       'createVendor',
       'createItem',
@@ -41,6 +41,7 @@ describe('ErpConnector type contract', () => {
       'createGrn',
       'recordPurchaseInvoice',
     ]);
+    expect(ERP_WRITE_OPERATIONS.at(-1)).toBe('importBusinessRecords');
   });
 
   it('exports the contract suite for connector implementations', () => {

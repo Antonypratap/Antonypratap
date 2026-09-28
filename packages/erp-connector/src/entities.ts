@@ -41,6 +41,15 @@ import {
 
 const text = z.string().min(1);
 
+/** Imported records name their import; no other record does. */
+function importProvenance(
+  r: { origin: string; sourceImportId: string | null },
+  ctx: Parameters<typeof issue>[0],
+): void {
+  if ((r.origin === 'imported') !== (r.sourceImportId !== null))
+    issue(ctx, 'sourceImportId is set exactly for imported records');
+}
+
 export const HsnSacSchema = z.string().refine(isValidHsnSac, 'HSN/SAC must be 4, 6 or 8 digits');
 
 export const CompanySchema = z
@@ -63,9 +72,12 @@ export const VendorSchema = z
     status: z.enum(VENDOR_STATUSES),
     origin: z.enum(MASTER_ORIGINS),
     sourceInvoiceId: InvoiceIdSchema.nullable(),
+    /** Set exactly for records the business imported (importBusinessRecords). */
+    sourceImportId: z.string().nullable(),
     createdAt: IsoDateTimeSchema,
   })
   .superRefine((v, ctx) => {
+    importProvenance(v, ctx);
     if (v.pan !== v.gstin.slice(2, 12)) issue(ctx, 'pan must be GSTIN characters 3–12');
     if (v.stateCode !== v.gstin.slice(0, 2)) issue(ctx, 'stateCode must be GSTIN characters 1–2');
     if (v.nameNormalized !== normalizeName(v.name))
@@ -87,9 +99,11 @@ export const ItemSchema = z
     gstRateBp: RateBpSchema,
     origin: z.enum(MASTER_ORIGINS),
     sourceInvoiceId: InvoiceIdSchema.nullable(),
+    sourceImportId: z.string().nullable(),
     createdAt: IsoDateTimeSchema,
   })
   .superRefine((i, ctx) => {
+    importProvenance(i, ctx);
     if (i.nameNormalized !== normalizeName(i.name))
       issue(ctx, 'nameNormalized must equal normalizeName(name)');
     if ((i.origin === 'created_by_veyra') !== (i.sourceInvoiceId !== null)) {
@@ -104,7 +118,7 @@ export const VendorItemAliasSchema = z
     vendorId: ErpIdSchema,
     vendorItemCode: text,
     itemId: ErpIdSchema,
-    origin: z.enum(MASTER_ORIGINS),
+    origin: z.enum(['seed', 'created_by_veyra']),
     sourceInvoiceId: InvoiceIdSchema.nullable(),
     createdAt: IsoDateTimeSchema,
   })
@@ -136,13 +150,16 @@ export const PurchaseOrderSchema = z
     origin: z.enum(PO_ORIGINS),
     sourceInvoiceId: InvoiceIdSchema.nullable(),
     approvedByUserId: UserIdSchema.nullable(),
+    sourceImportId: z.string().nullable(),
     createdAt: IsoDateTimeSchema,
     lines: z.array(PoLineSchema).min(1),
   })
   .superRefine((po, ctx) => {
     checkLineNumbers(po.lines, ctx);
+    importProvenance(po, ctx);
     if (po.lines.some((l) => l.poId !== po.id)) issue(ctx, 'every line belongs to this PO');
-    const fromInvoice = po.origin !== 'seed';
+    const fromInvoice =
+      po.origin === 'auto_created_from_invoice' || po.origin === 'created_from_invoice_on_approval';
     if (fromInvoice !== (po.sourceInvoiceId !== null))
       issue(ctx, 'sourceInvoiceId is set exactly for POs created from an invoice');
     if ((po.origin === 'created_from_invoice_on_approval') !== (po.approvedByUserId !== null)) {
@@ -174,10 +191,12 @@ export const GrnSchema = z
     origin: z.enum(GRN_ORIGINS),
     confirmedByUserId: UserIdSchema.nullable(),
     sourceInvoiceId: InvoiceIdSchema.nullable(),
+    sourceImportId: z.string().nullable(),
     createdAt: IsoDateTimeSchema,
     lines: z.array(GrnLineSchema).min(1),
   })
   .superRefine((g, ctx) => {
+    importProvenance(g, ctx);
     if (g.lines.some((l) => l.grnId !== g.id)) issue(ctx, 'every line belongs to this GRN');
     const viaVeyra = g.origin === 'user_confirmed_via_veyra';
     if (viaVeyra !== (g.confirmedByUserId !== null) || viaVeyra !== (g.sourceInvoiceId !== null)) {

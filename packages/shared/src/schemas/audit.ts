@@ -26,7 +26,7 @@ export const AuditEventSchema = z
       issue('state changes record from and to');
     if (!isTransition && (e.fromState !== null || e.toState !== null))
       issue('only state changes record states');
-    if (e.event !== 'settings.changed' && e.invoiceId === null)
-      issue('invoice events reference the invoice');
+    const businessWide = e.event === 'settings.changed' || e.event.startsWith('records.');
+    if (!businessWide && e.invoiceId === null) issue('invoice events reference the invoice');
   });
 export type AuditEvent = z.infer<typeof AuditEventSchema>;

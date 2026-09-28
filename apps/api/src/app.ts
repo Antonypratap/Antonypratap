@@ -52,11 +52,12 @@ export async function createApp(config: AppConfig) {
   if ((await erp.listVendors()).length === 0 && config.demo) erp.reset('demo');
   const runner = new JobRunner(veyra);
 
-  const resetDemo = async () => {
+  const resetDemo = async (mode: 'demo' | 'empty' = 'demo') => {
     runner.stop();
-    erp.reset('demo');
+    erp.reset(mode === 'empty' ? 'company-only' : 'demo');
     db.transaction((tx) => {
       for (const table of [
+        'imports',
         'jobs',
         'audit_events',
         'questions',

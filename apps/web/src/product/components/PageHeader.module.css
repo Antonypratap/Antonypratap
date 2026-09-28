@@ -20,3 +20,11 @@
   align-items: center;
   gap: var(--space-3);
 }
+.export {
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-3);
+  text-decoration: underline;
+  text-decoration-color: var(--color-line-strong);
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}

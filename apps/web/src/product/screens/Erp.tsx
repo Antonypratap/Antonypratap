@@ -6,6 +6,7 @@ import { api } from '../api/client';
 import { formatDate, inr } from '../format';
 import { ERP_TABS, hrefFor, type ErpTab } from '../router';
 import { useResource } from '../state/data';
+import { ErpData } from './ErpData';
 import styles from './Erp.module.css';
 
 const TAB_LABEL: Record<ErpTab, string> = {
@@ -14,6 +15,7 @@ const TAB_LABEL: Record<ErpTab, string> = {
   orders: 'Purchase orders',
   receipts: 'Goods receipts',
   invoices: 'Purchase invoices',
+  data: 'Import and export',
 };
 
 function Table({
@@ -55,6 +57,7 @@ function Table({
 
 const ORIGIN: Record<string, string> = {
   seed: 'Existing',
+  imported: 'Imported by you',
   created_by_veyra: 'Added by Veyra',
   auto_created_from_invoice: 'Created from invoice (automatic)',
   created_from_invoice_on_approval: 'Created from invoice (your approval)',
@@ -101,6 +104,8 @@ function useTab(tab: ErpTab) {
           g.accepted,
           origin(g.origin),
         ]);
+      case 'data':
+        return [];
       case 'invoices':
         return (await api.erp.purchaseInvoices()).map((i) => [
           i.id,
@@ -120,13 +125,16 @@ const HEAD: Record<ErpTab, { head: string[]; numeric?: number[] }> = {
   orders: { head: ['Order', 'Vendor', 'Date', 'Lines', 'Status', 'Source'] },
   receipts: { head: ['Receipt', 'Order', 'Date', 'Accepted', 'Source'] },
   invoices: { head: ['Record', 'Invoice', 'Vendor', 'Date', 'Total', 'Status'], numeric: [4] },
+  data: { head: [] },
 };
 
 export function Erp({ tab }: { tab: ErpTab }) {
   const { data, error } = useTab(tab);
   const spec = HEAD[tab];
   const body: ReactNode =
-    data === null ? (
+    tab === 'data' ? (
+      <ErpData />
+    ) : data === null ? (
       <p className={styles.none}>{error ?? 'Loading…'}</p>
     ) : data.length === 0 ? (
       <p className={styles.none}>
@@ -141,7 +149,13 @@ export function Erp({ tab }: { tab: ErpTab }) {
       <PageHeader
         title="ERP"
         sub="Business records Veyra checks invoices against."
-        aside={<span className={styles.badge}>Read-only</span>}
+        aside={
+          tab === 'data' ? undefined : (
+            <a className={styles.action} href={hrefFor({ name: 'erp', tab: 'data' })}>
+              Import business records
+            </a>
+          )
+        }
       />
       <nav className={styles.tabs} aria-label="ERP records">
         {ERP_TABS.map((t) => (

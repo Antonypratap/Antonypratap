@@ -84,11 +84,11 @@ describe('constraints', () => {
 
   it('natural keys are unique', () => {
     fails(
-      `INSERT INTO vendors VALUES ('V999','V999','Dup','dup','29AAFCS5678K1ZK','AAFCS5678K','29','x','active','seed',NULL,'${TS}')`,
+      `INSERT INTO vendors VALUES ('V999','V999','Dup','dup','29AAFCS5678K1ZK','AAFCS5678K','29','x','active','seed',NULL,NULL,'${TS}')`,
       'SQLITE_CONSTRAINT_UNIQUE',
     );
     fails(
-      `INSERT INTO purchase_orders VALUES ('P2','PO-2026-0101','V001','2026-09-01','open','seed',NULL,NULL,'${TS}')`,
+      `INSERT INTO purchase_orders VALUES ('P2','PO-2026-0101','V001','2026-09-01','open','seed',NULL,NULL,NULL,'${TS}')`,
       'SQLITE_CONSTRAINT_UNIQUE',
     );
     fails(

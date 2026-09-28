@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Icon, StatusPill } from '../../design-system';
-import { PageHeader } from '../components/PageHeader';
+import { ExportLink, PageHeader } from '../components/PageHeader';
+import { exportUrl } from '../api/client';
 import { formatDate, inr } from '../format';
 import { INVOICE_FILTERS, hrefFor, type InvoiceFilter } from '../router';
 import { useProductData } from '../state/data';
@@ -36,7 +37,11 @@ export function Invoices({ filter }: { filter: InvoiceFilter }) {
 
   return (
     <div className={styles.page}>
-      <PageHeader title="Invoices" sub="Every invoice received, with where it stands." />
+      <PageHeader
+        title="Invoices"
+        sub="Every invoice received, with where it stands."
+        aside={<ExportLink href={exportUrl('invoices.xlsx')} />}
+      />
       <div className={styles.tools}>
         <div className={styles.filters} role="tablist" aria-label="Filter invoices">
           {INVOICE_FILTERS.map((f) => (

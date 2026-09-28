@@ -28,12 +28,13 @@ export type ErpId = z.infer<typeof ErpIdSchema>;
 /**
  * Idempotency key for ERP writes (ARCHITECTURE §4.3):
  *   `veyra:<invoiceId>:<creationActionId>` for a staged creation, and
- *   `veyra:<invoiceId>:purchase_invoice` for recording the invoice itself.
+ *   `veyra:<invoiceId>:purchase_invoice` for recording the invoice itself, and
+ *   `veyra:import:<importId>` for importing a batch of business records.
  */
 export const IdempotencyKeySchema = z
   .string()
   .regex(
-    /^veyra:[0-9A-HJKMNP-TV-Z]{26}:([0-9A-HJKMNP-TV-Z]{26}|purchase_invoice)$/,
+    /^veyra:([0-9A-HJKMNP-TV-Z]{26}:([0-9A-HJKMNP-TV-Z]{26}|purchase_invoice)|import:[0-9A-HJKMNP-TV-Z]{26})$/,
     'bad idempotency key',
   )
   .brand<'IdempotencyKey'>();
@@ -48,4 +49,8 @@ export function creationIdempotencyKey(
 
 export function purchaseInvoiceIdempotencyKey(invoiceId: InvoiceId): IdempotencyKey {
   return `veyra:${invoiceId}:purchase_invoice` as IdempotencyKey;
+}
+
+export function importIdempotencyKey(importId: string): IdempotencyKey {
+  return IdempotencyKeySchema.parse(`veyra:import:${importId}`);
 }

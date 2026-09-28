@@ -61,7 +61,13 @@ export default tseslint.config(
     // ERP and extractor boundary inside the API: workflow code sees only the ErpConnector and
     // Extractor ports. Only the composition root (app.ts) and tests wire in the implementations.
     files: ['apps/api/src/**/*.ts'],
-    ignores: ['apps/api/src/app.ts', 'apps/api/src/**/*.test.ts', 'apps/api/src/test/**'],
+    ignores: [
+      'apps/api/src/app.ts',
+      'apps/api/src/**/*.test.ts',
+      'apps/api/src/test/**',
+      // Demo fixture generation reads the DEMO.md seed (dev tooling, not the runtime path).
+      'apps/api/src/imports/fixtures.ts',
+    ],
     rules: {
       'no-restricted-imports': [
         'error',

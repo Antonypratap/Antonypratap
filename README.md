@@ -5,7 +5,7 @@ AI-assisted business transaction automation. The V1 use case is purchase invoice
 **READ → FIND → USE → IF MISSING, CREATE → VALIDATE → ASK HUMAN WHEN UNCERTAIN.**
 Never guess · No tolerance · No approval hierarchy · No timeout · No payment execution.
 
-Status: architecture approved (rev 3). Phases 0–2 complete; Phase 3B vertical slice complete: upload → extract (fixture) → resolve → match → ask → validate → commit to the ERP → **Verified Pending Payment**, with the product UI on the real API.
+Status: architecture approved (rev 3). Phases 0–2 complete; Phase 3B vertical slice complete: upload → extract (fixture) → resolve → match → ask → validate → commit to the ERP → **Verified Pending Payment**, with the product UI on the real API. Phase 3C adds the Excel business data bridge: businesses without a connected ERP import vendors, items, purchase orders and goods receipts from Excel/CSV templates (validated, previewed, imported atomically) and export invoices, decisions and the audit trail ([ARCHITECTURE §14](docs/ARCHITECTURE.md), [DEMO §6](docs/DEMO.md)).
 
 - [Architecture & implementation plan](docs/ARCHITECTURE.md)
 - [Business rules](docs/RULES.md)
@@ -30,8 +30,9 @@ npm run check        # format:check → lint → typecheck → test → db:verif
 | `npm run health` | Toolchain and workspace wiring check |
 | `npm run db:verify` | Fails if the fake ERP or Veyra schema and its migration drift apart |
 | `npm run demo` | API (fixture extractor, demo ERP) + web app. `npm run demo -- --reset` starts from the DEMO.md seed. Open http://localhost:5173/#/app/inbox and upload files from `fixtures/invoices/` |
+| `npm run demo -- --empty` | The same, starting from a business with only its company record: import records from `fixtures/imports/` (DEMO.md §6) |
 | `npm run dev:api` / `dev:web` | The API alone (http://127.0.0.1:8787/api/v1) / the web app alone (proxies `/api` to the API) |
-| `npm run fixtures:generate` | Regenerate the deterministic demo invoice files in `fixtures/invoices/` |
+| `npm run fixtures:generate` | Regenerate the deterministic demo invoice files in `fixtures/invoices/` and the import templates and demo files in `fixtures/imports/` |
 | `npm run erp:reset [-- <path>]` | Recreate `data/fake_erp.db` with the DEMO.md seed (deterministic) |
 
 Workspaces: `packages/{shared,india-tax,erp-connector,fake-erp,extractor}`, `apps/{api,web}`.

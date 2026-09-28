@@ -35,6 +35,10 @@ import {
   PurchaseOrderSchema,
   ReactivateVendorInputSchema,
   RecordPurchaseInvoiceInputSchema,
+  ImportBusinessRecordsInputSchema,
+  type ImportBusinessRecordsInput,
+  type ImportBusinessRecordsResult,
+  type ImportCounts,
   VendorItemAliasSchema,
   VendorSchema,
   decideIdempotentWrite,
@@ -73,7 +77,17 @@ import {
   vendors,
 } from './db/schema';
 import { mapError } from './errors';
-import { grnId, grnLineId, pad, poLineId, purchaseInvoiceId, purchaseInvoiceLineId } from './ids';
+import {
+  grnId,
+  grnLineId,
+  itemId as itemIdOf,
+  pad,
+  poId as poIdOf,
+  poLineId,
+  purchaseInvoiceId,
+  purchaseInvoiceLineId,
+  vendorId as vendorIdOf,
+} from './ids';
 import { resetAndSeed, type FakeErpSeed } from './seed/seed';
 
 type Tx = Parameters<Parameters<FakeErpDb['transaction']>[0]>[0];
@@ -756,6 +770,264 @@ export class FakeErpConnector implements ErpConnector {
     );
   }
 
+  // ── Import ───────────────────────────────────────────────────────────────
+
+  /**
+   * Imports the business's own records in one transaction, in dependency order (vendors, items,
+   * POs, GRNs). Identical existing records are skipped; different ones are a CONFLICT; missing
+   * references are NOT_FOUND. Nothing already in the ERP is ever changed.
+   */
+  async importBusinessRecords(
+    input: ImportBusinessRecordsInput,
+    key: IdempotencyKey,
+  ): Promise<ImportBusinessRecordsResult> {
+    const parsed = ImportBusinessRecordsInputSchema.safeParse(input);
+    const sizes: ImportCounts = parsed.success
+      ? {
+          vendors: parsed.data.vendors.length,
+          items: parsed.data.items.length,
+          purchaseOrders: parsed.data.purchaseOrders.length,
+          grns: parsed.data.grns.length,
+        }
+      : { vendors: 0, items: 0, purchaseOrders: 0, grns: 0 };
+    return this.#write(
+      'importBusinessRecords',
+      ImportBusinessRecordsInputSchema,
+      input,
+      key,
+      (tx, b, now) => {
+        const imported = {
+          origin: 'imported' as const,
+          sourceImportId: b.importId,
+          createdAt: now,
+        };
+        const conflict = (
+          entity: ConstructorParameters<typeof ErpConflictError>[0],
+          naturalKey: Record<string, string>,
+          id: string,
+        ) => new ErpConflictError(entity, naturalKey, id as ErpId);
+
+        for (const v of b.vendors) {
+          const parsedGstin = validateGstin(v.gstin);
+          if (!parsedGstin.ok)
+            throw new ErpValidationError('importBusinessRecords', [
+              { path: `vendors.${v.code}.gstin`, message: parsedGstin.error.message },
+            ]);
+          const byCode = tx.select().from(vendors).where(eq(vendors.code, v.code)).get();
+          if (byCode) {
+            const same =
+              byCode.name === v.name &&
+              byCode.gstin === v.gstin &&
+              byCode.address === v.address &&
+              byCode.status === v.status;
+            if (!same) throw conflict('vendor', { code: v.code }, byCode.id);
+            continue;
+          }
+          const byGstin = tx
+            .select({ id: vendors.id })
+            .from(vendors)
+            .where(eq(vendors.gstin, v.gstin))
+            .get();
+          if (byGstin) throw conflict('vendor', { gstin: v.gstin }, byGstin.id);
+          tx.insert(vendors)
+            .values({
+              id: vendorIdOf(v.code),
+              code: v.code,
+              name: v.name,
+              nameNormalized: normalizeName(v.name),
+              gstin: v.gstin,
+              pan: parsedGstin.value.pan,
+              stateCode: parsedGstin.value.stateCode,
+              address: v.address,
+              status: v.status,
+              sourceInvoiceId: null,
+              ...imported,
+            })
+            .run();
+        }
+
+        for (const i of b.items) {
+          const existing = tx.select().from(items).where(eq(items.code, i.code)).get();
+          if (existing) {
+            const same =
+              existing.name === i.name &&
+              existing.hsnSac === i.hsnSac &&
+              existing.uom === i.uom &&
+              existing.gstRateBp === i.gstRateBp;
+            if (!same) throw conflict('item', { code: i.code }, existing.id);
+            continue;
+          }
+          tx.insert(items)
+            .values({
+              id: itemIdOf(i.code),
+              code: i.code,
+              name: i.name,
+              nameNormalized: normalizeName(i.name),
+              hsnSac: i.hsnSac,
+              uom: i.uom,
+              gstRateBp: i.gstRateBp,
+              sourceInvoiceId: null,
+              ...imported,
+            })
+            .run();
+        }
+
+        const vendorByCode = (c: string) =>
+          requireRow(
+            tx.select({ id: vendors.id }).from(vendors).where(eq(vendors.code, c)).get(),
+            'vendor',
+            c,
+          ).id;
+        const itemByCode = (c: string) =>
+          requireRow(
+            tx.select({ id: items.id }).from(items).where(eq(items.code, c)).get(),
+            'item',
+            c,
+          ).id;
+
+        for (const po of b.purchaseOrders) {
+          const vendorId = vendorByCode(po.vendorCode);
+          const lines = po.lines.map((l) => ({ ...l, itemId: itemByCode(l.itemCode) }));
+          const existing = loadPurchaseOrderByNumber(tx, po.poNumber);
+          if (existing) {
+            const same =
+              existing.vendorId === vendorId &&
+              existing.poDate === po.poDate &&
+              existing.status === po.status &&
+              existing.lines.length === lines.length &&
+              existing.lines.every((el, k) => {
+                const l = lines[k];
+                return (
+                  l !== undefined &&
+                  el.lineNo === l.lineNo &&
+                  el.itemId === l.itemId &&
+                  el.qtyMilli === l.qtyMilli &&
+                  el.unitPricePaise === l.unitPricePaise &&
+                  el.gstRateBp === l.gstRateBp
+                );
+              });
+            if (!same) throw conflict('purchase_order', { poNumber: po.poNumber }, existing.id);
+            continue;
+          }
+          const id = poIdOf(po.poNumber);
+          tx.insert(purchaseOrders)
+            .values({
+              id,
+              poNumber: po.poNumber,
+              vendorId,
+              poDate: po.poDate,
+              status: po.status,
+              sourceInvoiceId: null,
+              approvedByUserId: null,
+              ...imported,
+            })
+            .run();
+          this.#failpoint('purchase_order.header_inserted');
+          for (const l of lines) {
+            tx.insert(poLines)
+              .values({
+                id: poLineId(id, l.lineNo),
+                poId: id,
+                lineNo: l.lineNo,
+                itemId: l.itemId,
+                qtyMilli: l.qtyMilli,
+                unitPricePaise: l.unitPricePaise,
+                gstRateBp: l.gstRateBp,
+              })
+              .run();
+          }
+        }
+
+        for (const g of b.grns) {
+          const po = loadPurchaseOrderByNumber(tx, g.poNumber);
+          if (!po) throw new ErpNotFoundError('purchase_order', g.poNumber);
+          const lines = g.lines.map((l) => {
+            const pl = po.lines.find((x) => x.lineNo === l.poLineNo);
+            if (!pl) throw new ErpNotFoundError('po_line', `${g.poNumber} line ${l.poLineNo}`);
+            return { ...l, poLineId: pl.id };
+          });
+          const existingRow = tx
+            .select({ id: grns.id })
+            .from(grns)
+            .where(eq(grns.grnNumber, g.grnNumber))
+            .get();
+          if (existingRow) {
+            const existing = mustLoad(loadGrn(tx, existingRow.id));
+            const same =
+              existing.poId === po.id &&
+              existing.grnDate === g.grnDate &&
+              existing.lines.length === lines.length &&
+              existing.lines.every((el, k) => {
+                const l = lines[k];
+                return (
+                  l !== undefined &&
+                  el.poLineId === l.poLineId &&
+                  el.receivedQtyMilli === l.receivedQtyMilli &&
+                  el.acceptedQtyMilli === l.acceptedQtyMilli
+                );
+              });
+            if (!same) throw conflict('grn', { grnNumber: g.grnNumber }, existingRow.id);
+            continue;
+          }
+          const id = grnId(g.grnNumber);
+          tx.insert(grns)
+            .values({
+              id,
+              grnNumber: g.grnNumber,
+              poId: po.id,
+              grnDate: g.grnDate,
+              confirmedByUserId: null,
+              sourceInvoiceId: null,
+              ...imported,
+            })
+            .run();
+          this.#failpoint('grn.header_inserted');
+          lines.forEach((l, k) => {
+            tx.insert(grnLines)
+              .values({
+                id: grnLineId(id, k + 1),
+                grnId: id,
+                poLineId: l.poLineId,
+                receivedQtyMilli: l.receivedQtyMilli,
+                acceptedQtyMilli: l.acceptedQtyMilli,
+              })
+              .run();
+          });
+        }
+        return b.importId;
+      },
+      (q, importId) => {
+        const created: ImportCounts = {
+          vendors:
+            q.select({ n: count() }).from(vendors).where(eq(vendors.sourceImportId, importId)).get()
+              ?.n ?? 0,
+          items:
+            q.select({ n: count() }).from(items).where(eq(items.sourceImportId, importId)).get()
+              ?.n ?? 0,
+          purchaseOrders:
+            q
+              .select({ n: count() })
+              .from(purchaseOrders)
+              .where(eq(purchaseOrders.sourceImportId, importId))
+              .get()?.n ?? 0,
+          grns:
+            q.select({ n: count() }).from(grns).where(eq(grns.sourceImportId, importId)).get()?.n ??
+            0,
+        };
+        return {
+          importId,
+          created,
+          skipped: {
+            vendors: sizes.vendors - created.vendors,
+            items: sizes.items - created.items,
+            purchaseOrders: sizes.purchaseOrders - created.purchaseOrders,
+            grns: sizes.grns - created.grns,
+          },
+        };
+      },
+    );
+  }
+
   // ── Internals ────────────────────────────────────────────────────────────
 
   #failpoint(name: FakeErpFailpoint): void {
@@ -891,6 +1163,15 @@ function loadPurchaseOrder(q: Q, id: string): PurchaseOrder | null {
     .orderBy(asc(poLines.lineNo))
     .all();
   return PurchaseOrderSchema.parse({ ...row, lines });
+}
+
+function loadPurchaseOrderByNumber(q: Q, poNumber: string): PurchaseOrder | null {
+  const row = q
+    .select({ id: purchaseOrders.id })
+    .from(purchaseOrders)
+    .where(eq(purchaseOrders.poNumber, poNumber))
+    .get();
+  return row ? loadPurchaseOrder(q, row.id) : null;
 }
 
 function loadGrn(q: Q, id: string): Grn | null {

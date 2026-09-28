@@ -26,6 +26,7 @@ describe('VendorSchema', () => {
     status: 'active',
     origin: 'seed',
     sourceInvoiceId: null,
+    sourceImportId: null,
     createdAt: NOW,
   };
 
@@ -43,6 +44,12 @@ describe('VendorSchema', () => {
   it('records created by Veyra reference their invoice; seed records do not', () => {
     expect(ok(VendorSchema.safeParse({ ...vendor, origin: 'created_by_veyra' }))).toBe(false);
     expect(ok(VendorSchema.safeParse({ ...vendor, sourceInvoiceId: INV }))).toBe(false);
+    // Imported records name their import, and only they do.
+    expect(
+      ok(VendorSchema.safeParse({ ...vendor, origin: 'imported', sourceImportId: 'IMP1' })),
+    ).toBe(true);
+    expect(ok(VendorSchema.safeParse({ ...vendor, origin: 'imported' }))).toBe(false);
+    expect(ok(VendorSchema.safeParse({ ...vendor, sourceImportId: 'IMP1' }))).toBe(false);
     expect(
       ok(VendorSchema.safeParse({ ...vendor, origin: 'created_by_veyra', sourceInvoiceId: INV })),
     ).toBe(true);
@@ -58,6 +65,7 @@ describe('PurchaseOrderSchema', () => {
     status: 'open',
     origin: 'auto_created_from_invoice',
     sourceInvoiceId: INV,
+    sourceImportId: null,
     approvedByUserId: null,
     createdAt: NOW,
     lines: [
@@ -118,6 +126,7 @@ describe('GrnSchema', () => {
     origin: 'seed',
     confirmedByUserId: null,
     sourceInvoiceId: null,
+    sourceImportId: null,
     createdAt: NOW,
     lines: [
       {

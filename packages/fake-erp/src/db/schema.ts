@@ -27,9 +27,16 @@ const isRateBp = (c: AnySQLiteColumn): SQL =>
   sql`typeof(${c}) = 'integer' AND ${c} BETWEEN 0 AND 10000`;
 const isHsn = (c: AnySQLiteColumn): SQL =>
   sql`length(${c}) IN (4, 6, 8) AND ${c} NOT GLOB '*[^0-9]*'`;
-/** A record created by Veyra references its source invoice; a seeded one does not. */
-const originMatchesSource = (origin: AnySQLiteColumn, source: AnySQLiteColumn): SQL =>
-  sql`(${origin} = 'seed') = (${source} IS NULL)`;
+/** A record created by Veyra from an invoice references that invoice; no other record does. */
+const originMatchesSource = (
+  origin: AnySQLiteColumn,
+  source: AnySQLiteColumn,
+  fromInvoice: readonly string[] = ['created_by_veyra'],
+): SQL =>
+  sql`(${origin} IN (${sql.raw(fromInvoice.map((o) => `'${o}'`).join(', '))})) = (${source} IS NOT NULL)`;
+/** An imported record references its import; no other record does. */
+const originMatchesImport = (origin: AnySQLiteColumn, source: AnySQLiteColumn): SQL =>
+  sql`(${origin} = 'imported') = (${source} IS NOT NULL)`;
 
 export const company = sqliteTable(
   'company',
@@ -58,8 +65,9 @@ export const vendors = sqliteTable(
     stateCode: text('state_code').notNull(),
     address: text('address').notNull(),
     status: text('status', { enum: ['active', 'inactive'] }).notNull(),
-    origin: text('origin', { enum: ['seed', 'created_by_veyra'] }).notNull(),
+    origin: text('origin', { enum: ['seed', 'created_by_veyra', 'imported'] }).notNull(),
     sourceInvoiceId: text('source_invoice_id'),
+    sourceImportId: text('source_import_id'),
     createdAt: text('created_at').notNull(),
   },
   (t) => [
@@ -69,8 +77,9 @@ export const vendors = sqliteTable(
     check('vendors_pan_matches_gstin', sql`${t.pan} = substr(${t.gstin}, 3, 10)`),
     check('vendors_state_matches_gstin', sql`${t.stateCode} = substr(${t.gstin}, 1, 2)`),
     check('vendors_status', sql`${t.status} IN ('active', 'inactive')`),
-    check('vendors_origin', sql`${t.origin} IN ('seed', 'created_by_veyra')`),
+    check('vendors_origin', sql`${t.origin} IN ('seed', 'created_by_veyra', 'imported')`),
     check('vendors_origin_source', originMatchesSource(t.origin, t.sourceInvoiceId)),
+    check('vendors_origin_import', originMatchesImport(t.origin, t.sourceImportId)),
     check('vendors_created_at', isTimestamp(t.createdAt)),
   ],
 );
@@ -85,8 +94,9 @@ export const items = sqliteTable(
     hsnSac: text('hsn_sac').notNull(),
     uom: text('uom').notNull(),
     gstRateBp: integer('gst_rate_bp').notNull(),
-    origin: text('origin', { enum: ['seed', 'created_by_veyra'] }).notNull(),
+    origin: text('origin', { enum: ['seed', 'created_by_veyra', 'imported'] }).notNull(),
     sourceInvoiceId: text('source_invoice_id'),
+    sourceImportId: text('source_import_id'),
     createdAt: text('created_at').notNull(),
   },
   (t) => [
@@ -94,8 +104,9 @@ export const items = sqliteTable(
     index('items_name_hsn_idx').on(t.nameNormalized, t.hsnSac),
     check('items_hsn', isHsn(t.hsnSac)),
     check('items_gst_rate', isRateBp(t.gstRateBp)),
-    check('items_origin', sql`${t.origin} IN ('seed', 'created_by_veyra')`),
+    check('items_origin', sql`${t.origin} IN ('seed', 'created_by_veyra', 'imported')`),
     check('items_origin_source', originMatchesSource(t.origin, t.sourceInvoiceId)),
+    check('items_origin_import', originMatchesImport(t.origin, t.sourceImportId)),
     check('items_created_at', isTimestamp(t.createdAt)),
   ],
 );
@@ -136,10 +147,11 @@ export const purchaseOrders = sqliteTable(
     poDate: text('po_date').notNull(),
     status: text('status', { enum: ['open', 'closed'] }).notNull(),
     origin: text('origin', {
-      enum: ['seed', 'auto_created_from_invoice', 'created_from_invoice_on_approval'],
+      enum: ['seed', 'auto_created_from_invoice', 'created_from_invoice_on_approval', 'imported'],
     }).notNull(),
     sourceInvoiceId: text('source_invoice_id'),
     approvedByUserId: text('approved_by_user_id'),
+    sourceImportId: text('source_import_id'),
     createdAt: text('created_at').notNull(),
   },
   (t) => [
@@ -148,9 +160,16 @@ export const purchaseOrders = sqliteTable(
     check('purchase_orders_status', sql`${t.status} IN ('open', 'closed')`),
     check(
       'purchase_orders_origin',
-      sql`${t.origin} IN ('seed', 'auto_created_from_invoice', 'created_from_invoice_on_approval')`,
+      sql`${t.origin} IN ('seed', 'auto_created_from_invoice', 'created_from_invoice_on_approval', 'imported')`,
     ),
-    check('purchase_orders_origin_source', originMatchesSource(t.origin, t.sourceInvoiceId)),
+    check(
+      'purchase_orders_origin_source',
+      originMatchesSource(t.origin, t.sourceInvoiceId, [
+        'auto_created_from_invoice',
+        'created_from_invoice_on_approval',
+      ]),
+    ),
+    check('purchase_orders_origin_import', originMatchesImport(t.origin, t.sourceImportId)),
     check(
       'purchase_orders_origin_approver',
       sql`(${t.origin} = 'created_from_invoice_on_approval') = (${t.approvedByUserId} IS NOT NULL)`,
@@ -193,16 +212,21 @@ export const grns = sqliteTable(
       .notNull()
       .references(() => purchaseOrders.id),
     grnDate: text('grn_date').notNull(),
-    origin: text('origin', { enum: ['seed', 'user_confirmed_via_veyra'] }).notNull(),
+    origin: text('origin', { enum: ['seed', 'user_confirmed_via_veyra', 'imported'] }).notNull(),
     confirmedByUserId: text('confirmed_by_user_id'),
     sourceInvoiceId: text('source_invoice_id'),
+    sourceImportId: text('source_import_id'),
     createdAt: text('created_at').notNull(),
   },
   (t) => [
     index('grns_po_idx').on(t.poId),
     check('grns_date', isDate(t.grnDate)),
-    check('grns_origin', sql`${t.origin} IN ('seed', 'user_confirmed_via_veyra')`),
-    check('grns_origin_source', originMatchesSource(t.origin, t.sourceInvoiceId)),
+    check('grns_origin', sql`${t.origin} IN ('seed', 'user_confirmed_via_veyra', 'imported')`),
+    check(
+      'grns_origin_source',
+      originMatchesSource(t.origin, t.sourceInvoiceId, ['user_confirmed_via_veyra']),
+    ),
+    check('grns_origin_import', originMatchesImport(t.origin, t.sourceImportId)),
     check(
       'grns_origin_confirmer',
       sql`(${t.origin} = 'user_confirmed_via_veyra') = (${t.confirmedByUserId} IS NOT NULL)`,
@@ -336,7 +360,7 @@ export const idempotencyLog = sqliteTable(
   (t) => [
     check(
       'idempotency_log_operation',
-      sql`${t.operation} IN ('reactivateVendor', 'createVendor', 'createItem', 'createVendorItemAlias', 'createPurchaseOrder', 'createGrn', 'recordPurchaseInvoice')`,
+      sql`${t.operation} IN ('reactivateVendor', 'createVendor', 'createItem', 'createVendorItemAlias', 'createPurchaseOrder', 'createGrn', 'recordPurchaseInvoice', 'importBusinessRecords')`,
     ),
     check(
       'idempotency_log_hash',

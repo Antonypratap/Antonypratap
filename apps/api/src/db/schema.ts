@@ -332,3 +332,32 @@ export const jobs = sqliteTable(
     index('jobs_queue').on(t.status, t.runAfter),
   ],
 );
+
+/**
+ * Business-record imports (Phase 3C). The uploaded files are kept (storage dir) so a confirmation
+ * re-validates against the ERP as it is at that moment. Records themselves live in the ERP.
+ */
+export const imports = sqliteTable(
+  'imports',
+  {
+    id: text('id').primaryKey(),
+    filesJson: text('files_json').notNull(),
+    kinds: text('kinds').notNull(),
+    status: text('status').notNull(),
+    checkJson: text('check_json').notNull(),
+    resultJson: text('result_json'),
+    uploadedByUserId: text('uploaded_by_user_id')
+      .notNull()
+      .references(() => users.id),
+    confirmedByUserId: text('confirmed_by_user_id').references(() => users.id),
+    createdAt: text('created_at').notNull(),
+    confirmedAt: text('confirmed_at'),
+  },
+  (t) => [
+    check('imports_status', inList(t.status, ['ready', 'invalid', 'imported'])),
+    check(
+      'imports_confirmed',
+      sql`(${t.status} = 'imported') = (${t.resultJson} IS NOT NULL AND ${t.confirmedAt} IS NOT NULL AND ${t.confirmedByUserId} IS NOT NULL)`,
+    ),
+  ],
+);

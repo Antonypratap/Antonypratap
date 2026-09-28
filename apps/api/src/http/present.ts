@@ -32,6 +32,15 @@ interface QuestionContext {
   optionMeta: Record<string, { emphasis: 'primary' | 'secondary' | 'quiet'; result: string }>;
 }
 
+/** Status labels in business language, as the product shows them. */
+export const STATUS_TEXT: Record<UiStatus, string> = {
+  attention: 'Needs your attention',
+  processing: 'Processing',
+  ready: 'Ready',
+  handled: 'Handled',
+  rejected: 'Rejected',
+};
+
 /** Status in business language (the approved product semantics). */
 export function uiStatus(state: InvoiceState, decidedByYou: boolean): UiStatus {
   if (state === 'NEEDS_INPUT' || state === 'FAILED') return 'attention';
@@ -372,6 +381,17 @@ export class Presenter {
     });
   }
 
+  /** Business-record import events (no invoice). */
+  recordsAudit(): ApiAuditEntry[] {
+    return this.v.db
+      .select()
+      .from(t.auditEvents)
+      .where(sql`${t.auditEvents.invoiceId} IS NULL AND ${t.auditEvents.event} LIKE 'records.%'`)
+      .orderBy(asc(sql`rowid`))
+      .all()
+      .flatMap((e) => auditEntry(e));
+  }
+
   audit(invoiceId: string | null): ApiAuditEntry[] {
     const rows = this.v.db
       .select()
@@ -502,6 +522,43 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
             `The ${ENTITY[s('entity')] ?? s('entity')} stays here for the record`,
           )
         : [];
+    case 'records.import_checked': {
+      const tables =
+        (d.tables as { label: string; rows: number; errors: number }[] | undefined) ?? [];
+      const n = Number(d.errorCount ?? 0);
+      const files = ((d.files as string[] | undefined) ?? []).join(', ');
+      const what = tables.map((x) => `${x.rows} ${x.label.toLowerCase()}`).join(', ');
+      return make(
+        'Business records uploaded',
+        `${files}${what ? `: ${what}` : ''}${n ? `. ${n} problem${n === 1 ? '' : 's'} to fix; nothing imported` : '. Checked, ready to import'}`,
+        n ? 'attention' : 'neutral',
+      );
+    }
+    case 'records.import_confirmed':
+      return make(
+        'Business records imported',
+        ((d.files as string[] | undefined) ?? []).join(', '),
+      );
+    case 'records.imported': {
+      const c = (d.created ?? {}) as Record<string, number>;
+      const k = (d.skipped ?? {}) as Record<string, number>;
+      const labels: [string, string][] = [
+        ['vendors', 'vendors'],
+        ['items', 'items'],
+        ['purchaseOrders', 'purchase orders'],
+        ['grns', 'goods receipts'],
+      ];
+      const added = labels
+        .filter(([key]) => (c[key] ?? 0) > 0)
+        .map(([key, label]) => `${c[key]} ${label}`);
+      const total = labels.reduce((n, [key]) => n + (c[key] ?? 0), 0);
+      const skipped = labels.reduce((n, [key]) => n + (k[key] ?? 0), 0);
+      return make(
+        `${total} record${total === 1 ? '' : 's'} added`,
+        `${added.length ? `${added.join(', ')} added to your business records` : 'Nothing new to add'}${skipped ? `; ${skipped} already existed and were left unchanged` : ''}.`,
+        'handled',
+      );
+    }
     case 'invoice.failed':
       return make("Veyra couldn't finish", plainFailure(s('reason')), 'attention');
     default:
