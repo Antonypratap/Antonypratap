@@ -1,0 +1,505 @@
+# Veyra — Architecture (V1)
+
+Status: **Approved with changes (rev 2)**. No application code has been written yet.
+
+Veyra is an AI-assisted business transaction automation platform. The V1 use case:
+
+> Purchase invoice (photo / PDF) → extract data → find vendor / items / PO / GRN →
+> create missing records only when policy allows → validate → ask the designated user
+> when uncertain → **Verified Pending Payment**.
+
+## 0. Non-negotiable principles
+
+| # | Principle | What it means in code |
+|---|---|---|
+| 1 | **READ → FIND → USE → IF MISSING, CREATE → VALIDATE → ASK HUMAN WHEN UNCERTAIN** | Pipeline stages, in this order, on every run. |
+| 2 | **Never guess** | Missing, low-confidence, ambiguous or failing → a Question. No defaults, no "best candidate" auto-picks, no fuzzy auto-links. |
+| 3 | **No tolerance** | All comparisons are exact integer comparisons (paise, milli-units, basis points). |
+| 4 | **No approval hierarchy** | Exactly one designated user answers every question. |
+| 5 | **No timeout** | An invoice in `NEEDS_INPUT` waits indefinitely. Nothing escalates or auto-resolves. |
+| 6 | **No payment execution** | Terminal success state is `VERIFIED_PENDING_PAYMENT`. Veyra has no payment code path. |
+| 7 | **AI only reads** | AI (OCR / LLM) proposes extracted field values with evidence. All matching, creation, validation and state transitions are deterministic code. |
+| 8 | **No human "Verify" click** | If every deterministic rule passes, the invoice transitions automatically to `VERIFIED_PENDING_PAYMENT`. |
+| 9 | **₹0 to build and run** | Only free/open-source tooling; everything runs locally and offline. |
+
+V1 scope: **India, GST, INR only.** One buyer company. One PO per invoice.
+
+## 1. System overview
+
+```
+┌──────────────────────────── apps/web (React + TS, Vite) ────────────────────────────┐
+│ Inbox · Upload · Invoice Review · Questions · ERP Browser · Audit · Settings        │
+└───────────────────────────────────────┬─────────────────────────────────────────────┘
+                                        │ REST/JSON (polling; no websockets in V1)
+┌───────────────────────────── apps/api (Node + TS, Fastify) ─────────────────────────┐
+│ routes → services                                                                   │
+│                                                                                     │
+│  READ            FIND            USE / CREATE        VALIDATE         ASK           │
+│ ┌──────────┐   ┌──────────┐    ┌──────────────┐    ┌───────────┐   ┌───────────┐    │
+│ │Extraction│──▶│ Matching │──▶ │  Resolution  │──▶ │ Validation│──▶│ Questions │    │
+│ │ (AI)     │   │          │    │ (policy,     │    │ (rules)   │   │           │    │
+│ └────┬─────┘   └────┬─────┘    │  staging)    │    └─────┬─────┘   └─────┬─────┘    │
+│      │              │          └──────┬───────┘          │               │          │
+│      │              └────────┬────────┘                  │               │          │
+│      │              ┌────────▼────────────────────────────▼───────────────▼──┐       │
+│      │              │ Workflow engine: state machine · job runner · audit    │       │
+│      │              │ Commit: executes staged creations + records invoice    │       │
+│      │              └────────┬───────────────────────────────────────────────┘       │
+│ ┌────▼─────────┐     ┌───────▼───────┐                                               │
+│ │ Extractor    │     │ ErpConnector  │   ← ports (interfaces)                        │
+│ └────┬─────────┘     └───────┬───────┘                                               │
+└──────┼───────────────────────┼───────────────────────────────────────────────────────┘
+       │                       │
+ FixtureExtractor (demo/test)  FakeErpConnector ──▶ fake_erp.db (SQLite)
+ LocalOcrExtractor (default)   (later: Tally / Zoho Books / SAP B1 / …)
+ OllamaExtractor (optional)
+                               veyra.db (SQLite): workflow, extraction, matches,
+                               staged creations, validations, questions, audit, jobs
+```
+
+### Key decisions
+
+| Area | Decision | Rationale |
+|---|---|---|
+| Runtime | Node 20+, TypeScript strict, npm workspaces | Free, one language end to end. |
+| API | Fastify + Zod (schemas shared with web) | Typed, fast, request/response validation. |
+| DB | SQLite via `better-sqlite3` + Drizzle ORM/migrations | Zero-cost, file-based, synchronous transactions. |
+| ERP boundary | **Two SQLite files**: `veyra.db` and `fake_erp.db`. Veyra reaches ERP data only via `ErpConnector`. | Makes replacing the fake ERP with a real connector a drop-in change. |
+| Money | Integer **paise** (`*_paise`). Never floats. | No tolerance requires exact arithmetic. |
+| Quantity | Integer **milli-units** (`*_milli`, 1 kg = 1000). | Exact fractional quantities. |
+| Rates | Integer **basis points** (`*_bp`, 18% = 1800). | Exact tax arithmetic. |
+| Background work | SQLite-backed `jobs` table, in-process runner. Commit jobs run with global concurrency 1. | No Redis, no cost; serialised commits avoid races on GRN quantities. |
+| Web | React 18 + Vite + React Router + TanStack Query; plain CSS modules | Free, minimal. |
+| PDF/Images | `pdfjs-dist` (text layer + page render), `sharp` (image preprocessing), `tesseract.js` (OCR, `eng`) | All free, offline. |
+| Tests | Vitest (unit/integration), Playwright (e2e, pre-installed Chromium) | Free. |
+
+## 2. Folder structure
+
+```
+veyra/                               (repo root)
+├── package.json                     npm workspaces, root scripts (check, test, dev, demo)
+├── tsconfig.base.json
+├── .github/workflows/ci.yml         typecheck + lint + test (free GitHub Actions minutes)
+├── docs/
+│   ├── ARCHITECTURE.md              this file
+│   ├── RULES.md                     matching, creation, validation & question rules
+│   └── DEMO.md                      seed data + demo scenarios
+├── apps/
+│   ├── api/
+│   │   ├── src/
+│   │   │   ├── server.ts            Fastify bootstrap
+│   │   │   ├── config.ts            env + settings loader
+│   │   │   ├── auth/                single designated-user dev login (cookie session)
+│   │   │   ├── db/                  veyra.db schema, migrations, client
+│   │   │   ├── routes/              invoices, questions, erp, audit, settings, auth, dev
+│   │   │   ├── workflow/            state machine, transitions, job runner, pipeline
+│   │   │   ├── extraction/          runs Extractor, normalises, applies confidence policy
+│   │   │   ├── matching/            vendor / item / PO / GRN finders (read-only)
+│   │   │   ├── resolution/          creation policy, staging of creation_actions
+│   │   │   ├── validation/          rule registry; one file per rule, pure functions
+│   │   │   ├── questions/           question builders + deterministic answer effects
+│   │   │   ├── commit/              executes staged creations + recordPurchaseInvoice
+│   │   │   └── audit/               append-only audit writer
+│   │   ├── storage/uploads/         original files (gitignored)
+│   │   └── test/
+│   └── web/
+│       └── src/
+│           ├── pages/               Inbox, Upload, InvoiceReview, Questions, Erp/*, Audit, Settings, Login
+│           ├── components/          DocumentViewer, FieldPanel, LineMatchTable, ChecksList,
+│           │                        QuestionCard, StatusBadge, Timeline, MoneyText
+│           ├── api/                 typed client using packages/shared schemas
+│           └── App.tsx
+├── packages/
+│   ├── shared/                      Zod schemas, DTOs, enums (states, question kinds, rule codes),
+│   │                                money/qty/rate helpers
+│   ├── india-tax/                   GSTIN checksum, state codes, PAN, HSN/SAC format,
+│   │                                FY derivation, GST computation (half-up to paisa)
+│   ├── erp-connector/               ErpConnector interface + reusable contract test suite
+│   ├── fake-erp/                    FakeErpConnector, fake_erp.db schema, seed data
+│   └── extractor/                   Extractor interface + fixture / local-ocr / ollama
+├── fixtures/
+│   └── invoices/                    S01…S17 PDFs/photos + *.expected.json (see DEMO.md)
+└── scripts/
+    ├── generate-fixtures.ts         renders demo invoices with pdfkit; photo variants via sharp
+    └── reset-demo.ts                recreates both DBs and seeds them
+```
+
+## 3. Ports (interfaces)
+
+### 3.1 Extractor
+
+All three implementations implement exactly this interface. Nothing downstream knows which one ran.
+
+```ts
+interface Extractor {
+  readonly id: 'fixture' | 'local_ocr' | 'ollama';
+  readonly version: string;
+  isAvailable(): Promise<{ ok: true } | { ok: false; reason: string }>;
+  extract(input: { documentId: string; filePath: string; mime: string; sha256: string })
+    : Promise<ExtractionResult>;
+}
+
+interface ExtractedField<T> {
+  value: T | null;                 // null = not found
+  confidence: number;              // 0..1
+  evidence: { page: number; text: string; bbox?: [number, number, number, number] } | null;
+}
+
+interface ExtractionResult {
+  header: {
+    vendorName, vendorGstin, vendorAddress, buyerGstin, placeOfSupply,
+    invoiceNumber, invoiceDate, poNumber,
+    taxablePaise, cgstPaise, sgstPaise, igstPaise, roundOffPaise, totalPaise
+  };                                // each an ExtractedField<...>
+  lines: Array<{
+    description, vendorItemCode, hsnSac, qtyMilli, uom,
+    unitPricePaise, taxablePaise, gstRateBp, cgstPaise, sgstPaise, igstPaise
+  }>;                               // each an ExtractedField<...>
+  pages: number;
+  warnings: string[];
+}
+```
+
+| Implementation | Purpose | How confidence is produced |
+|---|---|---|
+| `FixtureExtractor` | **Demo and tests only.** Looks up `fixtures/invoices/<sha256>.expected.json`. Disabled unless `VEYRA_ALLOW_FIXTURE_EXTRACTOR=true`, and refuses in `NODE_ENV=production`. | Taken from the fixture file, so scripted low-confidence cases work. |
+| `LocalOcrExtractor` | **Real, free default.** 1) `pdfjs-dist` text layer when present. 2) Otherwise render page → `sharp` (grayscale, deskew, threshold) → `tesseract.js`. 3) Deterministic field parser: label-anchored patterns (GSTIN regex, "Invoice No", "PO No", dates), and table reconstruction from word bounding boxes. | Text-layer values start at 1.0. OCR values use the Tesseract word confidence. Either is reduced to 0 if the value fails format validation (e.g. a GSTIN pattern). |
+| `OllamaExtractor` | **Optional.** Local vision model via Ollama HTTP (e.g. `qwen2.5vl:7b`). Prompted for strict JSON, parsed by Zod. | LLMs do not provide calibrated confidence. Each value is **cross-checked verbatim** against the OCR/text-layer tokens. If found, the OCR confidence is used; if not found, confidence 0 (it becomes a question). |
+
+Honest limitation: reconstructing line-item tables from phone photos with Tesseract is the weakest part. Weak reads produce questions, not guesses.
+
+### 3.2 ErpConnector
+
+```ts
+interface ErpConnector {
+  // READ / FIND
+  getCompany(): Promise<Company>;
+  findVendorByGstin(gstin: string): Promise<Vendor | null>;
+  findVendorsByPan(pan: string): Promise<Vendor[]>;
+  findVendorsByNormalizedName(name: string): Promise<Vendor[]>;
+  findItemByVendorAlias(vendorId: string, vendorItemCode: string): Promise<Item | null>;
+  findItemsByNormalizedNameAndHsn(name: string, hsn: string): Promise<Item[]>;
+  findItemsByHsn(hsn: string): Promise<Item[]>;
+  getPurchaseOrderByNumber(poNumber: string): Promise<PurchaseOrder | null>;
+  listOpenPurchaseOrders(vendorId: string): Promise<PurchaseOrder[]>;  // open = status open AND remaining uninvoiced qty
+  listGrnsForPo(poId: string): Promise<Grn[]>;
+  getInvoicedQtyByPoLine(poLineId: string): Promise<number>;            // milli
+  findPurchaseInvoice(vendorId: string, normalizedInvoiceNo: string, fy: string): Promise<PurchaseInvoice | null>;
+
+  // CREATE (all idempotent on `idempotencyKey`)
+  createVendor(input, idempotencyKey): Promise<Vendor>;
+  reactivateVendor(vendorId, idempotencyKey): Promise<Vendor>;
+  createItem(input, idempotencyKey): Promise<Item>;
+  createVendorItemAlias(input, idempotencyKey): Promise<VendorItemAlias>;
+  createPurchaseOrder(input /* includes origin tag */, idempotencyKey): Promise<PurchaseOrder>;
+  createGrn(input /* includes confirmedByUserId */, idempotencyKey): Promise<Grn>;
+  recordPurchaseInvoice(input, idempotencyKey): Promise<PurchaseInvoice>;  // status verified_pending_payment
+}
+```
+
+`packages/erp-connector` ships a **contract test suite** that any connector (fake or real) must pass. There is deliberately no `pay*` method.
+
+## 4. Database schema
+
+Conventions: ids are ULIDs (TEXT). Timestamps are ISO-8601 UTC TEXT. Money is `_paise` INTEGER, quantity is `_milli` INTEGER, rates are `_bp` INTEGER.
+
+### 4.1 `fake_erp.db`
+
+```sql
+company(id, name, gstin, state_code)
+
+vendors(id, code UNIQUE, name, name_normalized, gstin UNIQUE, pan, state_code, address,
+        status CHECK IN ('active','inactive'),
+        origin CHECK IN ('seed','created_by_veyra'), source_invoice_id NULL, created_at)
+
+items(id, code UNIQUE, name, name_normalized, hsn_sac, uom, gst_rate_bp,
+      origin, source_invoice_id NULL, created_at)
+
+vendor_item_aliases(id, vendor_id, vendor_item_code, item_id, origin, created_at,
+      UNIQUE(vendor_id, vendor_item_code))
+
+purchase_orders(id, po_number UNIQUE, vendor_id, po_date, status CHECK IN ('open','closed'),
+      origin CHECK IN ('seed','auto_created_from_invoice','created_from_invoice_on_approval'),
+      source_invoice_id NULL, approved_by_user_id NULL, created_at)
+
+po_lines(id, po_id, line_no, item_id, qty_milli, unit_price_paise, gst_rate_bp,
+      UNIQUE(po_id, line_no))
+
+grns(id, grn_number UNIQUE, po_id, grn_date,
+      origin CHECK IN ('seed','user_confirmed_via_veyra'),
+      confirmed_by_user_id NULL, source_invoice_id NULL, created_at)
+
+grn_lines(id, grn_id, po_line_id, received_qty_milli, accepted_qty_milli)
+
+purchase_invoices(id, vendor_id, vendor_invoice_no, vendor_invoice_no_normalized, invoice_date, fy,
+      po_id, taxable_paise, cgst_paise, sgst_paise, igst_paise, round_off_paise, total_paise,
+      status CHECK IN ('verified_pending_payment'),
+      veyra_invoice_id, idempotency_key UNIQUE, created_at,
+      UNIQUE(vendor_id, vendor_invoice_no_normalized, fy))
+
+purchase_invoice_lines(id, purchase_invoice_id, line_no, po_line_id, item_id,
+      qty_milli, unit_price_paise, taxable_paise, gst_rate_bp,
+      cgst_paise, sgst_paise, igst_paise)
+
+idempotency_log(key PRIMARY KEY, operation, result_id, created_at)
+```
+
+### 4.2 `veyra.db`
+
+```sql
+users(id, name, email UNIQUE, active, created_at)
+    -- V1: one user. No roles table. Multi-user later = more rows + a roles table; no reshaping.
+
+settings(key PRIMARY KEY, value_json, updated_by_user_id, updated_at)
+    -- designated_user_id, extractor_mode, extraction_confidence_min_bp,
+    -- po_auto_create_enabled, po_auto_create_below_paise
+
+sessions(id, user_id, created_at, expires_at)            -- dev login cookie
+
+documents(id, sha256 UNIQUE, filename, mime, pages, storage_path,
+          uploaded_by_user_id, uploaded_at)
+
+invoices(id, document_id, state, state_version,            -- optimistic locking
+         vendor_erp_id NULL, po_erp_id NULL, erp_purchase_invoice_id NULL,
+         failed_stage NULL, failure_reason NULL,
+         rejected_by_user_id NULL, rejected_reason NULL,
+         created_at, updated_at)
+
+extractions(id, invoice_id, extractor_id, extractor_version, raw_json, created_at)
+
+fields(id, invoice_id, path, value_json, confidence_bp,
+       evidence_json, source CHECK IN ('extracted','human_confirmed','human_corrected','derived_from_erp_choice'),
+       extraction_id, updated_by_user_id NULL, updated_at,
+       UNIQUE(invoice_id, path))
+       -- path: 'header.vendorGstin', 'lines[2].unitPricePaise', ...
+       -- human_* values are never overwritten by re-extraction
+
+invoice_lines(id, invoice_id, line_no,
+       item_erp_id NULL, po_line_erp_id NULL,
+       item_ref_staged_action_id NULL)              -- links to a staged item creation
+
+match_results(id, invoice_id, run_no, entity CHECK IN ('vendor','item','po','grn'), line_no NULL,
+       outcome CHECK IN ('found','not_found','ambiguous'), method, candidates_json, chosen_erp_id NULL)
+
+creation_actions(id, invoice_id, entity CHECK IN ('vendor','item','alias','po','grn','vendor_reactivation'),
+       payload_json, policy_code,                   -- which rule allowed it (see RULES.md)
+       trigger CHECK IN ('auto_policy','user_approval'),
+       approved_by_user_id NULL, question_id NULL,
+       status CHECK IN ('staged','committed','discarded'),
+       erp_id NULL, idempotency_key UNIQUE, created_at, committed_at NULL)
+
+validation_results(id, invoice_id, run_no, rule_code,
+       outcome CHECK IN ('pass','fail','not_applicable','not_evaluated'),
+       na_reason NULL,                               -- e.g. 'PO_DERIVED_FROM_INVOICE'
+       expected_json, actual_json, message, created_at)
+
+questions(id, invoice_id, kind, code, subject_key,
+       prompt, context_json, options_json, input_schema_json NULL,
+       status CHECK IN ('open','answered','superseded'),
+       assigned_to_user_id,
+       answer_json NULL, answered_by_user_id NULL, answered_at NULL,
+       created_at)
+       -- kind ∈ MISSING_DATA | AMBIGUOUS_MATCH | BUSINESS_DECISION | VALIDATION_FAILURE | CREATION_APPROVAL
+       -- partial unique index: (invoice_id, code, subject_key) WHERE status='open'
+
+audit_events(id, invoice_id NULL, actor_type CHECK IN ('system','ai','user'), actor_user_id NULL,
+       event, from_state NULL, to_state NULL, detail_json, created_at)   -- append-only
+
+jobs(id, invoice_id, type CHECK IN ('pipeline','commit'), status, attempts,
+       run_after, locked_at NULL, last_error NULL, created_at)
+```
+
+### 4.3 Staging and commit
+
+Nothing is written to the ERP until an invoice is fully valid. Creations (vendor, item, alias, PO, GRN, vendor reactivation) are **staged** in `creation_actions`. Matching and validation read from **ERP data plus this invoice's staged records** (an overlay). When all rules pass, the `COMMITTING` step executes the staged actions in dependency order, then calls `recordPurchaseInvoice`:
+
+`vendor_reactivation → vendor → item → alias → po → grn → purchase invoice`
+
+- Each call carries `idempotencyKey = veyra:<invoiceId>:<actionId>`, so a crashed commit can resume safely.
+- Commit jobs run one at a time. Immediately before committing, the ERP-dependent rules (duplicate, remaining GRN qty, vendor/PO status) are re-evaluated against live ERP data.
+- A natural-key conflict at commit (another invoice created the same vendor GSTIN first) sends the invoice back to `MATCHING`, which now finds the existing record. It does not fail.
+- On `REJECTED`, staged actions become `discarded`. The ERP never receives orphan records from abandoned invoices. **Consequence:** a GRN confirmed on an invoice that is later rejected is not written to the ERP. The confirmation remains in the audit log.
+
+## 5. Workflow state machine
+
+`AWAITING_CONFIRMATION` has been **removed**. There is no final human verify step.
+
+```
+                 upload
+                    │
+                    ▼
+               ┌─────────┐
+               │UPLOADED │
+               └────┬────┘
+                    ▼
+               ┌──────────┐  extractor error   ┌────────┐
+               │EXTRACTING├───────────────────▶│ FAILED │── reprocess ──┐
+               └────┬─────┘                    └────────┘               │
+                    ▼                               ▲                   │
+               ┌──────────┐ ◀───────────────────────┼───────────────────┘
+          ┌──▶ │ MATCHING │   FIND                  │ unexpected error
+          │    └────┬─────┘                         │ (any system state)
+          │         ▼
+          │    ┌──────────┐
+          │    │RESOLVING │   USE / IF MISSING, CREATE (stage per policy)
+          │    └────┬─────┘
+          │         ▼
+          │    ┌──────────┐
+          │    │VALIDATING│   VALIDATE (all rules, all failures recorded)
+          │    └────┬─────┘
+          │         │
+          │   any open question            all rules pass/N-A and
+          │   or failed rule               zero open questions
+          │         │                              │
+          │         ▼                              ▼
+          │   ┌────────────┐              ┌────────────┐  natural-key conflict
+          └───┤NEEDS_INPUT │              │ COMMITTING ├──────────────▶ MATCHING
+   answer     └─────┬──────┘              └─────┬──────┘
+   (re-run)         │ reject                    │ success
+                    ▼                           ▼
+              ┌──────────┐          ┌──────────────────────────┐
+              │ REJECTED │          │ VERIFIED_PENDING_PAYMENT │
+              └──────────┘          └──────────────────────────┘
+               (terminal)                    (terminal)
+```
+
+| From | To | Trigger | Actor |
+|---|---|---|---|
+| — | UPLOADED | `POST /invoices` | user |
+| UPLOADED | EXTRACTING | pipeline job picked up | system |
+| EXTRACTING | MATCHING | extraction stored | system (AI output) |
+| EXTRACTING / MATCHING / RESOLVING / VALIDATING / COMMITTING | FAILED | unexpected error (`failed_stage` recorded) | system |
+| FAILED | EXTRACTING | `POST /invoices/:id/reprocess` | user |
+| MATCHING | RESOLVING | matches recorded | system |
+| RESOLVING | VALIDATING | creation actions staged / questions raised | system |
+| VALIDATING | NEEDS_INPUT | ≥1 open question or ≥1 failed rule | system |
+| VALIDATING | COMMITTING | all rules `pass` or `not_applicable`, zero open questions | system (**automatic**) |
+| NEEDS_INPUT | MATCHING | a question answered, or a field corrected (full deterministic re-run) | user |
+| NEEDS_INPUT | NEEDS_INPUT | nothing (no timeout; waits indefinitely) | — |
+| NEEDS_INPUT / FAILED | REJECTED | reject answer or `POST /invoices/:id/reject` | designated user |
+| COMMITTING | VERIFIED_PENDING_PAYMENT | all staged actions + invoice recorded in ERP | system |
+| COMMITTING | MATCHING | pre-commit re-check found new ERP state (e.g. vendor now exists) | system |
+
+Notes:
+- Every run is a **full deterministic re-run** from MATCHING using current fields, which include human corrections. Answers are stored as data (fields, choices, approvals), not as one-off patches, so re-runs are reproducible.
+- Questions are idempotent by `(invoice_id, code, subject_key)`. A re-run keeps questions that are still valid, marks resolved ones `superseded`, and adds new ones.
+- Illegal transitions throw, and every transition writes an `audit_events` row.
+- There is no payment state and no transition beyond `VERIFIED_PENDING_PAYMENT`.
+
+## 6. Questions
+
+| Kind | Raised when | Typical options |
+|---|---|---|
+| `MISSING_DATA` | Required field absent, below confidence threshold, or unparseable | Confirm shown value · Enter correct value · Reject invoice |
+| `AMBIGUOUS_MATCH` | More than one candidate (vendor, item, PO line, open PO), or a name-only vendor candidate without a readable GSTIN | Pick candidate · None of these · Reject invoice |
+| `BUSINESS_DECISION` | Facts are clear but a policy choice is needed (inactive vendor, closed PO) | Explicit decision (e.g. reactivate vendor) · Reject invoice |
+| `VALIDATION_FAILURE` | A deterministic rule failed | Correct a misread field · "Fixed in ERP — re-check" · Reject invoice (**there is no override option**) |
+| `CREATION_APPROVAL` | A record may be created only with the user's approval (vendor not auto-eligible, item master, PO ≥ threshold, **every GRN**) | Approve (with required inputs, e.g. GRN quantities) · Decline / reject invoice |
+
+Every option maps to a **typed, deterministic effect** (`SET_FIELD`, `CONFIRM_FIELD`, `LINK_ERP_RECORD`, `APPROVE_CREATION`, `DECLINE_CREATION`, `RECHECK`, `REJECT_INVOICE`). All questions are assigned to the single designated user. See RULES.md for every question code.
+
+## 7. Users and auth (V1)
+
+- `users` table plus `settings.designated_user_id`. V1 seeds exactly one user.
+- Dev login: `POST /auth/dev-login { userId }` sets an httpOnly session cookie. No passwords in V1; bind to localhost.
+- A single guard, `requireDesignatedUser`, protects answering questions, correcting fields, rejecting invoices and changing settings. **No RBAC, no hierarchy.**
+- Every actor reference is a `user_id` (`uploaded_by`, `answered_by`, `approved_by`, audit `actor_user_id`), so adding users later needs no schema reshaping.
+
+## 8. REST API (`/api/v1`)
+
+```
+Auth
+POST   /auth/dev-login                 { userId } → session cookie
+POST   /auth/logout
+GET    /auth/me
+
+Invoices
+POST   /invoices                       multipart (pdf|jpg|png, ≤ 20 MB) → 201 {invoice}
+                                       409 if identical file (sha256) already uploaded
+GET    /invoices?state=&q=&page=       inbox list
+GET    /invoices/:id                   full view: state, fields, lines, matches, staged creations,
+                                       validation results, questions
+GET    /invoices/:id/document          original file
+GET    /invoices/:id/audit             timeline
+PATCH  /invoices/:id/fields            [{ path, value }] → human_corrected; re-run   (designated user)
+POST   /invoices/:id/fields/confirm    [{ path }] → human_confirmed; re-run          (designated user)
+POST   /invoices/:id/reprocess         FAILED → EXTRACTING                           (designated user)
+POST   /invoices/:id/reject            { reason } → REJECTED                         (designated user)
+
+Questions
+GET    /questions?status=open&invoiceId=
+GET    /questions/:id
+POST   /questions/:id/answer           { optionId, input? } → effect applied, re-run (designated user)
+
+ERP (read-only, via ErpConnector)
+GET    /erp/company
+GET    /erp/vendors         /erp/vendors/:id
+GET    /erp/items           /erp/items/:id
+GET    /erp/purchase-orders /erp/purchase-orders/:id   (lines, GRNs, invoiced qty)
+GET    /erp/grns/:id
+GET    /erp/purchase-invoices
+
+Settings / Admin
+GET    /settings
+PUT    /settings                                                                    (designated user)
+GET    /audit?invoiceId=&page=
+GET    /health
+POST   /dev/reset-demo                 reseed both DBs (only when NODE_ENV!=production)
+```
+
+Errors use one shape: `{ "error": { "code": "INVALID_TRANSITION", "message": "...", "details": {} } }`. `409` means a state_version conflict or a duplicate upload, and `422` means a schema violation.
+
+## 9. Main screens
+
+1. **Login (dev)**: choose the designated user.
+2. **Inbox**: invoices with state badge, vendor, total, open-question count and age. Filter by state.
+3. **Upload**: drag-and-drop or phone camera capture; multiple files.
+4. **Invoice Review** (core screen). The **document viewer** on the left highlights the evidence bbox of the selected field. Tabs on the right:
+   - **Fields**: value, confidence, source badge (extracted / confirmed / corrected), inline correct/confirm.
+   - **Lines**: invoice ↔ PO line ↔ GRN accepted ↔ already invoiced ↔ remaining, with mismatches highlighted.
+   - **Records**: FIND results and staged creations, each tagged `auto_created_from_invoice`, `user approval` or `existing`.
+   - **Checks**: every rule as pass / fail / N-A with expected vs actual. N-A shows its reason (e.g. "PO derived from this invoice").
+   - **Questions**: open and answered.
+   - **Timeline**: audit trail.
+5. **Questions Queue**: all open questions, grouped by invoice. Each card has kind, prompt, evidence snippet, options and required inputs (e.g. the GRN quantity form).
+6. **ERP Browser**: vendors, items, POs (with origin tags), GRNs, purchase invoices. Read-only.
+7. **Audit Log**: global and filterable.
+8. **Settings**: designated user, extractor mode, confidence threshold, PO auto-create switch + threshold, demo reset (dev only).
+
+## 10. Settings (defaults)
+
+| Key | Default | Notes |
+|---|---|---|
+| `designated_user_id` | seeded user | Exactly one. |
+| `extractor_mode` | `local_ocr` | `fixture` is allowed only with `VEYRA_ALLOW_FIXTURE_EXTRACTOR=true` (demo/tests). |
+| `extraction_confidence_min_bp` | `9000` (0.90) | Below → `MISSING_DATA`. |
+| `po_auto_create_enabled` | `false` | Safe default; the demo seed turns it on. |
+| `po_auto_create_below_paise` | `0` | Eligible only if invoice **grand total incl. GST < value**. `0` means nothing is eligible. The demo uses ₹25,000.00. |
+
+## 11. Implementation plan
+
+Each phase ends green on `npm run check` (typecheck + lint + tests) and is pushed separately.
+
+| Phase | Scope | Exit criteria |
+|---|---|---|
+| **0. Scaffold** | npm workspaces, tsconfig, ESLint/Prettier, Vitest, CI workflow, empty apps/packages | `npm run check` passes in CI |
+| **1. Domain foundations** | `shared` (enums, Zod schemas, money/qty/rate helpers), `india-tax` (GSTIN checksum, state codes, PAN, FY, GST calc half-up) | 100% unit coverage of the arithmetic and GSTIN code |
+| **2. ERP port + fake ERP** | `ErpConnector` interface, contract test suite, `FakeErpConnector`, `fake_erp.db` migrations, seed from DEMO.md, idempotency log | Contract suite passes; seed loads; idempotent re-calls return the same ids |
+| **3. Veyra DB + workflow core** | `veyra.db` migrations, state machine, job runner (commit concurrency 1), audit writer, users/settings, dev auth | Every legal transition tested; illegal transitions throw; the audit row is written in the same transaction |
+| **4. Extraction** | `Extractor` interface; `FixtureExtractor`; `LocalOcrExtractor` (pdf text layer → OCR → field parser); `OllamaExtractor` with verbatim cross-check; fixture generator script | All S01–S17 fixtures extract as expected via fixture mode; LocalOcr reproduces header fields on the generated text-layer PDFs; Ollama skipped when unavailable |
+| **5. Matching (FIND/USE)** | Vendor, item, PO, GRN finders + overlay of staged records | Unit tests per RULES.md §2 |
+| **6. Resolution (CREATE)** | Creation policy (vendor, item, alias, PO threshold, GRN never auto), staging | Unit tests per RULES.md §3, including the threshold boundary (equal → question) |
+| **7. Validation** | Rule registry; each rule a pure function `(ctx) → pass/fail/NA` | Unit tests per rule, including 1-paisa and 1-milli boundaries |
+| **8. Questions + re-run loop** | Builders per code, answer effects, supersede logic, reject | Every question code has an answer-effect test |
+| **9. Commit** | Ordered execution of staged actions, pre-commit re-check, conflict → MATCHING, idempotent resume | Crash-mid-commit test resumes without duplicates |
+| **10. API** | Fastify routes, Zod validation, error shape | API integration tests drive S01–S17 to their expected terminal/waiting state |
+| **11. Web UI** | All screens in §9 | Scenarios can be clicked through manually |
+| **12. Demo polish** | `npm run demo` (reset + seed + start), DEMO.md script, Playwright e2e for S01, S03, S08 | e2e green in CI |
+
+Phases 1–10 are headless and API-first. The UI is built last on tested logic.
+
+## 12. Open items (not blocking Phase 0–2)
+
+1. **Staging vs immediate GRN commit.** Per §4.3, a user-confirmed GRN reaches the ERP only when its invoice verifies. The alternative is to commit user-confirmed GRNs immediately when the PO already exists in the ERP.
+2. **Round-off line.** RULES.md §4 accepts an explicit "Round off" line only when it equals exactly the amount needed to reach the nearest rupee. Otherwise it fails.
+3. **Place of supply.** If it is not printed on the invoice, it becomes a `MISSING_DATA` question (it is never derived from the buyer GSTIN). This is strict and may cause frequent questions on real invoices.
