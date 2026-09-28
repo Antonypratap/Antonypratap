@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { and, asc, count, eq, like, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, like, sql } from 'drizzle-orm';
 import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { z } from 'zod';
 import {
@@ -324,6 +324,63 @@ export class FakeErpConnector implements ErpConnector {
         .get();
       return row ? loadPurchaseInvoice(q, row.id) : null;
     });
+  }
+
+  // ── Browsing ─────────────────────────────────────────────────────────────
+
+  async listVendors(): Promise<Vendor[]> {
+    return this.#read('listVendors', (q) =>
+      q
+        .select()
+        .from(vendors)
+        .orderBy(asc(vendors.code))
+        .all()
+        .map((r) => VendorSchema.parse(r)),
+    );
+  }
+
+  async listItems(): Promise<Item[]> {
+    return this.#read('listItems', (q) =>
+      q
+        .select()
+        .from(items)
+        .orderBy(asc(items.code))
+        .all()
+        .map((r) => ItemSchema.parse(r)),
+    );
+  }
+
+  async listPurchaseOrders(): Promise<PurchaseOrder[]> {
+    return this.#read('listPurchaseOrders', (q) =>
+      q
+        .select({ id: purchaseOrders.id })
+        .from(purchaseOrders)
+        .orderBy(asc(purchaseOrders.poNumber))
+        .all()
+        .map((r) => mustLoad(loadPurchaseOrder(q, r.id))),
+    );
+  }
+
+  async listGrns(): Promise<Grn[]> {
+    return this.#read('listGrns', (q) =>
+      q
+        .select({ id: grns.id })
+        .from(grns)
+        .orderBy(asc(grns.grnNumber))
+        .all()
+        .map((r) => mustLoad(loadGrn(q, r.id))),
+    );
+  }
+
+  async listPurchaseInvoices(): Promise<PurchaseInvoice[]> {
+    return this.#read('listPurchaseInvoices', (q) =>
+      q
+        .select({ id: purchaseInvoices.id })
+        .from(purchaseInvoices)
+        .orderBy(desc(purchaseInvoices.createdAt), desc(purchaseInvoices.id))
+        .all()
+        .map((r) => mustLoad(loadPurchaseInvoice(q, r.id))),
+    );
   }
 
   // ── Writes (all idempotent) ──────────────────────────────────────────────

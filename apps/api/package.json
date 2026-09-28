@@ -8,13 +8,22 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "dev": "VEYRA_ALLOW_FIXTURE_EXTRACTOR=true tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:verify": "drizzle-kit generate --name drift | tee /dev/stderr | grep -q 'No schema changes'"
   },
   "dependencies": {
-    "@veyra/shared": "*",
-    "@veyra/india-tax": "*",
+    "@fastify/multipart": "^10.1.2",
     "@veyra/erp-connector": "*",
+    "@veyra/extractor": "*",
     "@veyra/fake-erp": "*",
-    "@veyra/extractor": "*"
+    "@veyra/india-tax": "*",
+    "@veyra/shared": "*",
+    "better-sqlite3": "^13.0.3",
+    "drizzle-orm": "^0.45.3",
+    "fastify": "^5.12.5",
+    "zod": "^4.6.5"
   }
 }

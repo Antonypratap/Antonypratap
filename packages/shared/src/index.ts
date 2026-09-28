@@ -24,3 +24,4 @@ export * from './schemas/question';
 export * from './schemas/match';
 export * from './schemas/creation';
 export * from './schemas/audit';
+export * from './schemas/api';

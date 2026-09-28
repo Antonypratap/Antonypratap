@@ -112,6 +112,8 @@ Buyer GSTIN and place of supply are Karnataka (29) on every invoice unless state
 | **S17** | **Photo**, "VASUDHA TRADERS" `VT-5520`, 25-Sep, PO-2026-0108; GSTIN unreadable (0.35); toner 10 NOS @ 2,450.00 | 24,500.00 / 2,205.00 + 2,205.00 / **28,910.00** | `AM_VENDOR` (V005, V006) → pick V005 | **VERIFIED** | Name-only candidates are never auto-linked. (Picking V006 instead fails `VF_R18`.) |
 | **S18** | Shakti `SSS/26-27/0490`, 26-Sep, cites **PO-2026-0099 (closed)**, rod 10 KGS @ 62.50, round-off +0.50 | 625.00 / 56.25 + 56.25 / 0.50 / **738.00** | `BD_PO_CLOSED` → reject | **REJECTED** | Closed PO → business decision |
 
+| **S19** | Apex `APX-7799`, 26-Sep, PO-2026-0111, ball bearing 20 **PCS** @ 145.00 | 2,900.00 / IGST 522.00 / **3,422.00** | `VF_R27` (PCS ≠ NOS) → "The unit was misread" = NOS | **VERIFIED** | Units must match exactly; NOS and PCS are different; no conversion is invented (added in Phase 3B) |
+
 **Waiting-forever check:** leave any `NEEDS_INPUT` invoice untouched. It stays in `NEEDS_INPUT` and nothing escalates (no timeout).
 
 **No-payment check:** the ERP browser shows verified invoices with status `verified_pending_payment`. No screen or API endpoint pays anything.
@@ -128,15 +130,28 @@ Buyer GSTIN and place of supply are Karnataka (29) on every invoice unless state
 8. Upload **S17**. Resolve the ambiguous vendor.
 9. Audit log: every AI read, system decision and human answer is visible.
 
-## 4. Fixture layout
+## 4. Fixture layout (as built in Phase 3B)
 
 ```
 fixtures/invoices/
-  S01-clean.pdf                S01-clean.expected.json
-  S11b-S01-photo.jpg           S11b-S01-photo.expected.json
-  S14-blurry.jpg               S14-blurry.expected.json
-  S17-vasudha-photo.jpg        S17-vasudha-photo.expected.json
-  …
+  S01-clean.pdf        S02-apex-interstate.pdf   S03-new-vendor.pdf   …
+  S11b-S01-photo.png   S14-blurry.png            S17-vasudha-photo.png
+  S19-uom-differs.pdf
 ```
 
-`scripts/generate-fixtures.ts` renders the PDFs with `pdfkit`, which produces a real text layer that LocalOcr can read. Photo variants are rasterised from those PDFs and degraded with `sharp` (rotation, blur, noise). Each `*.expected.json` is keyed by the file's sha256 and states per-field values and confidences, including the deliberately low ones.
+- The scenarios are defined in `packages/extractor/src/fixture/scenarios.ts`: what is printed on each invoice and how well each value can be read (e.g. S14's total at 0.41, S17's GSTIN at 0.35). They contain facts only; the engine decides.
+- `npm run fixtures:generate` renders each scenario to a small PDF (real text layer) or PNG "photo". The writers are deterministic, so each file's SHA-256 never changes; a test checks that the committed files match.
+- The `FixtureExtractor` recognises an uploaded file by its SHA-256 and returns that scenario's reading. Any other file is refused, and the invoice fails visibly.
+
+## 5. Running the vertical slice
+
+```sh
+npm run demo -- --reset      # API on :8787 (fixture extractor, DEMO.md seed) + web on :5173
+```
+
+1. Open http://localhost:5173/#/app/inbox and click **Upload invoice**. Choose files from `fixtures/invoices/`.
+2. Each invoice shows as *Processing*, then either *Handled* (S01, S02) or *Needs your attention*.
+3. Open one from the queue, answer the question (for example S08: **Record the receipt**, date and quantities), and watch it resume, commit and become *Ready* (`VERIFIED_PENDING_PAYMENT`).
+4. **ERP** shows the records Veyra wrote, tagged by origin; **Audit** shows every step, Veyra vs You.
+
+"Today" is the real date in Asia/Kolkata. The scenarios are dated September 2026 and the demo assumes it runs on or after 28 Sep 2026 (R05 rejects future-dated invoices).

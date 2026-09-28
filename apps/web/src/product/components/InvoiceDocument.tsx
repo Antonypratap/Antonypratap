@@ -1,12 +1,53 @@
 import type { ReactNode } from 'react';
-import { formatInr, formatQty, formatRate, milliQty, paise, rateBp } from '@veyra/shared';
-import { lineTaxableAmount } from '@veyra/india-tax';
-import { BUYER, DOCUMENT_MARKS, type DemoInvoice, type DocField } from '../data/invoices';
+import {
+  formatInr,
+  formatQty,
+  formatRate,
+  milliQty,
+  paise,
+  rateBp,
+  type ApiInvoiceDetail,
+} from '@veyra/shared';
 import { amountInWords, formatDate } from '../format';
 import styles from './InvoiceDocument.module.css';
 
 /** Plain rupee figure as printed on Indian invoices: 1,13,870.00 */
-const amt = (p: number): string => formatInr(paise(p), { symbol: false });
+const amt = (p: number | null): string =>
+  p === null ? '—' : formatInr(paise(p), { symbol: false });
+
+/** Where on the document a value sits, for marking what a question is about. */
+export type DocField =
+  'supplier' | 'gstin' | 'number' | 'date' | 'po' | 'pos' | 'qty' | 'rate' | 'tax' | 'total';
+
+function docField(path: string): DocField | null {
+  const key = path.replace(/^header\./, '').replace(/^lines\[\d+\]\./, 'line.');
+  const map: Record<string, DocField> = {
+    vendorName: 'supplier',
+    vendorAddress: 'supplier',
+    vendorGstin: 'gstin',
+    invoiceNumber: 'number',
+    invoiceDate: 'date',
+    poNumber: 'po',
+    placeOfSupply: 'pos',
+    cgstPaise: 'tax',
+    sgstPaise: 'tax',
+    igstPaise: 'tax',
+    roundOffPaise: 'total',
+    taxablePaise: 'total',
+    totalPaise: 'total',
+    'line.qtyMilli': 'qty',
+    'line.uom': 'qty',
+    'line.unitPricePaise': 'rate',
+    'line.taxablePaise': 'rate',
+    'line.cgstPaise': 'tax',
+    'line.sgstPaise': 'tax',
+    'line.igstPaise': 'tax',
+  };
+  return map[key] ?? null;
+}
+
+const fieldsOf = (paths: readonly string[]): DocField[] =>
+  paths.map(docField).filter((f): f is DocField => f !== null);
 
 /** A value on the document, marked where a question refers to it or blurred where a photo is unreadable. */
 function MarkedField({
@@ -31,21 +72,24 @@ function MarkedField({
   );
 }
 
-/** A sample Indian GST tax invoice, drawn in HTML. Clearly marked as a sample. */
-export function InvoiceDocument({ invoice }: { invoice: DemoInvoice }) {
-  const marks = DOCUMENT_MARKS[invoice.id];
-  const markedFields = marks?.marked ?? [];
-  const unreadableFields = marks?.unreadable ?? [];
-  const intra = invoice.supply === 'intra_state';
+/**
+ * The invoice as Veyra read it, drawn in HTML: every value here comes from the stored reading of
+ * the uploaded document. Values a question is about are marked; unclear ones are blurred.
+ */
+export function InvoiceDocument({ invoice }: { invoice: ApiInvoiceDetail }) {
+  const open = invoice.questions.find((q) => q.status === 'open');
+  const markedFields = fieldsOf(open?.paths ?? []);
+  const unreadableFields = fieldsOf(invoice.unclearPaths);
+  const firstRate = invoice.lines[0]?.gstRateBp ?? 0;
   const halfRate = (bp: number): string => formatRate(rateBp(bp / 2));
 
   return (
     <article
       className={styles.paper}
       data-photo={invoice.source === 'Photo'}
-      aria-label={`Sample invoice ${invoice.number}`}
+      aria-label={`Invoice ${invoice.number ?? ''} as read by Veyra`}
     >
-      <span className={styles.sample}>Sample</span>
+      <span className={styles.sample}>As read</span>
 
       <header className={styles.top}>
         <div>
@@ -58,12 +102,14 @@ export function InvoiceDocument({ invoice }: { invoice: DemoInvoice }) {
           <p className={styles.small}>
             GSTIN:{' '}
             <MarkedField field="gstin" marked={markedFields} unreadable={unreadableFields}>
-              {invoice.supplier.gstin ?? '29AA?CV1??4F1Z?'}
+              {invoice.supplier.gstin ?? '—'}
             </MarkedField>
           </p>
-          <p className={styles.small}>
-            State: {invoice.supplier.state} ({invoice.supplier.stateCode})
-          </p>
+          {invoice.supplier.state && (
+            <p className={styles.small}>
+              State: {invoice.supplier.state} ({invoice.supplier.stateCode})
+            </p>
+          )}
         </div>
         <div className={styles.titleBlock}>
           <p className={styles.docTitle}>Tax Invoice</p>
@@ -78,7 +124,11 @@ export function InvoiceDocument({ invoice }: { invoice: DemoInvoice }) {
             </div>
             <div>
               <dt>Invoice Date</dt>
-              <dd>{formatDate(invoice.date)}</dd>
+              <dd>
+                <MarkedField field="date" marked={markedFields} unreadable={unreadableFields}>
+                  {invoice.invoiceDate ? formatDate(invoice.invoiceDate) : '—'}
+                </MarkedField>
+              </dd>
             </div>
             <div>
               <dt>PO Reference</dt>
@@ -90,7 +140,11 @@ export function InvoiceDocument({ invoice }: { invoice: DemoInvoice }) {
             </div>
             <div>
               <dt>Place of Supply</dt>
-              <dd>Karnataka (29)</dd>
+              <dd>
+                <MarkedField field="pos" marked={markedFields} unreadable={unreadableFields}>
+                  {invoice.placeOfSupply ?? '—'}
+                </MarkedField>
+              </dd>
             </div>
           </dl>
         </div>
@@ -99,14 +153,13 @@ export function InvoiceDocument({ invoice }: { invoice: DemoInvoice }) {
       <section className={styles.parties}>
         <div>
           <p className={styles.label}>Bill to</p>
-          <p className={styles.strong}>{BUYER.name}</p>
-          <p className={styles.small}>Plot 14, KIADB Industrial Area, Bengaluru 562114</p>
-          <p className={styles.small}>GSTIN: {BUYER.gstin}</p>
+          <p className={styles.strong}>{invoice.buyer.name}</p>
+          <p className={styles.small}>GSTIN: {invoice.buyer.gstin ?? '—'}</p>
         </div>
         <div>
-          <p className={styles.label}>Ship to</p>
-          <p className={styles.strong}>{BUYER.name}</p>
-          <p className={styles.small}>Stores, Plot 14, KIADB Industrial Area, Bengaluru</p>
+          <p className={styles.label}>Source</p>
+          <p className={styles.strong}>{invoice.filename}</p>
+          <p className={styles.small}>{invoice.source === 'Photo' ? 'Phone photo' : 'PDF'}</p>
         </div>
       </section>
 
@@ -122,14 +175,14 @@ export function InvoiceDocument({ invoice }: { invoice: DemoInvoice }) {
           </tr>
         </thead>
         <tbody>
-          {invoice.lines.map((l, i) => (
-            <tr key={l.description}>
-              <td>{i + 1}</td>
-              <td>{l.description}</td>
-              <td>{l.hsn}</td>
+          {invoice.lines.map((l) => (
+            <tr key={l.lineNo}>
+              <td>{l.lineNo}</td>
+              <td>{l.description ?? '—'}</td>
+              <td>{l.hsnSac ?? '—'}</td>
               <td className={styles.num}>
                 <MarkedField field="qty" marked={markedFields} unreadable={unreadableFields}>
-                  {formatQty(milliQty(l.qtyMilli))} {l.uom}
+                  {l.qtyMilli === null ? '—' : formatQty(milliQty(l.qtyMilli))} {l.uom}
                 </MarkedField>
               </td>
               <td className={styles.num}>
@@ -137,9 +190,7 @@ export function InvoiceDocument({ invoice }: { invoice: DemoInvoice }) {
                   {amt(l.unitPricePaise)}
                 </MarkedField>
               </td>
-              <td className={styles.num}>
-                {amt(lineTaxableAmount(milliQty(l.qtyMilli), paise(l.unitPricePaise)))}
-              </td>
+              <td className={styles.num}>{amt(l.taxablePaise)}</td>
             </tr>
           ))}
         </tbody>
@@ -148,45 +199,33 @@ export function InvoiceDocument({ invoice }: { invoice: DemoInvoice }) {
       <section className={styles.bottom}>
         <div className={styles.words}>
           <p className={styles.label}>Amount in words</p>
-          <p>{amountInWords(invoice.totalPaise)}</p>
-          <p className={styles.bank}>
-            Bank: State Bank of India · A/c 3021 4478 9910 · IFSC SBIN0004212
-          </p>
+          <p>{invoice.readTotalPaise === null ? '—' : amountInWords(invoice.readTotalPaise)}</p>
         </div>
         <dl className={styles.totals}>
           <div>
             <dt>Taxable value</dt>
             <dd>{amt(invoice.taxablePaise)}</dd>
           </div>
-          {intra ? (
-            <>
-              <div>
-                <dt>CGST @ {halfRate(invoice.lines[0]?.rateBp ?? 0)}</dt>
+          {(
+            [
+              ['CGST', invoice.cgstPaise, halfRate(firstRate)],
+              ['SGST', invoice.sgstPaise, halfRate(firstRate)],
+              ['IGST', invoice.igstPaise, formatRate(rateBp(firstRate))],
+            ] as const
+          )
+            .filter(([, value]) => value !== null)
+            .map(([head, value, rate]) => (
+              <div key={head}>
+                <dt>
+                  {head} @ {rate}
+                </dt>
                 <dd>
                   <MarkedField field="tax" marked={markedFields} unreadable={unreadableFields}>
-                    {amt(invoice.cgstPaise)}
+                    {amt(value)}
                   </MarkedField>
                 </dd>
               </div>
-              <div>
-                <dt>SGST @ {halfRate(invoice.lines[0]?.rateBp ?? 0)}</dt>
-                <dd>
-                  <MarkedField field="tax" marked={markedFields} unreadable={unreadableFields}>
-                    {amt(invoice.sgstPaise)}
-                  </MarkedField>
-                </dd>
-              </div>
-            </>
-          ) : (
-            <div>
-              <dt>IGST @ {formatRate(rateBp(invoice.lines[0]?.rateBp ?? 0))}</dt>
-              <dd>
-                <MarkedField field="tax" marked={markedFields} unreadable={unreadableFields}>
-                  {amt(invoice.igstPaise)}
-                </MarkedField>
-              </dd>
-            </div>
-          )}
+            ))}
           {invoice.roundOffPaise !== null && (
             <div>
               <dt>Round off</dt>
@@ -197,7 +236,7 @@ export function InvoiceDocument({ invoice }: { invoice: DemoInvoice }) {
             <dt>Total</dt>
             <dd>
               <MarkedField field="total" marked={markedFields} unreadable={unreadableFields}>
-                ₹ {amt(invoice.totalPaise)}
+                ₹ {amt(invoice.readTotalPaise)}
               </MarkedField>
             </dd>
           </div>
@@ -209,7 +248,7 @@ export function InvoiceDocument({ invoice }: { invoice: DemoInvoice }) {
           Goods once sold will not be taken back. Subject to Bengaluru jurisdiction.
         </p>
         <p className={styles.signature}>
-          For {invoice.supplier.name}
+          For {invoice.supplier.name ?? 'the supplier'}
           <span>Authorised Signatory</span>
         </p>
       </footer>

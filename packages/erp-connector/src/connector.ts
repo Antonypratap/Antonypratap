@@ -79,6 +79,18 @@ export interface ErpConnector {
     fy: FinancialYear,
   ): Promise<PurchaseInvoice | null>;
 
+  // ── Browsing (read-only lists for the ERP screen; never used to match) ─────
+  /** All vendors, ordered by code. */
+  listVendors(): Promise<Vendor[]>;
+  /** All items, ordered by code. */
+  listItems(): Promise<Item[]>;
+  /** All purchase orders with lines, ordered by PO number. */
+  listPurchaseOrders(): Promise<PurchaseOrder[]>;
+  /** All GRNs with lines, ordered by GRN number. */
+  listGrns(): Promise<Grn[]>;
+  /** All recorded purchase invoices with lines, newest first. */
+  listPurchaseInvoices(): Promise<PurchaseInvoice[]>;
+
   // ── Writes (COMMITTING only; all idempotent on `key`) ────────────────────
   /** Returns the vendor, active. Reactivating an already active vendor changes nothing. */
   reactivateVendor(input: ReactivateVendorInput, key: IdempotencyKey): Promise<Vendor>;

@@ -7,7 +7,7 @@ import {
   creationIdempotencyKey,
   purchaseInvoiceIdempotencyKey,
 } from './ids';
-import { normalizeInvoiceNumber, normalizeName } from './text';
+import { normalizeInvoiceNumber, normalizeName, normalizeUom } from './text';
 
 describe('IsoDate', () => {
   it('accepts real calendar dates only', () => {
@@ -72,5 +72,20 @@ describe('normalizeInvoiceNumber', () => {
     expect(normalizeInvoiceNumber('APX-0007781')).toBe('APX-0007781'); // leading zeros kept
     expect(normalizeInvoiceNumber('ＡＰＸ－７７８１')).toBe('APX-7781');
     expect(normalizeInvoiceNumber('APX-7781')).not.toBe(normalizeInvoiceNumber('APX7781'));
+  });
+});
+
+describe('normalizeUom (fixed synonym table)', () => {
+  it('maps synonyms and keeps NOS and PCS distinct', () => {
+    expect(normalizeUom('kg')).toBe('KGS');
+    expect(normalizeUom(' Kgs. ')).toBe('KGS');
+    expect(normalizeUom('Numbers')).toBe('NOS');
+    expect(normalizeUom('Pieces')).toBe('PCS');
+    expect(normalizeUom('NOS')).not.toBe(normalizeUom('PCS'));
+  });
+
+  it('never guesses an unknown unit', () => {
+    expect(normalizeUom('bundle')).toBeNull();
+    expect(normalizeUom('')).toBeNull();
   });
 });

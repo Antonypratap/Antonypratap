@@ -58,6 +58,46 @@ export default tseslint.config(
     },
   },
   {
+    // ERP and extractor boundary inside the API: workflow code sees only the ErpConnector and
+    // Extractor ports. Only the composition root (app.ts) and tests wire in the implementations.
+    files: ['apps/api/src/**/*.ts'],
+    ignores: ['apps/api/src/app.ts', 'apps/api/src/**/*.test.ts', 'apps/api/src/test/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@veyra/fake-erp',
+              message: 'Use the ErpConnector port; only app.ts wires the fake ERP.',
+            },
+          ],
+          patterns: [{ group: ['@veyra/fake-erp/*'], message: 'Use the ErpConnector port.' }],
+        },
+      ],
+    },
+  },
+  {
+    // The deterministic engine never touches storage: it reads ERP data through the port and
+    // returns what should be persisted.
+    files: ['apps/api/src/engine/**/*.ts'],
+    ignores: ['apps/api/src/engine/**/*.test.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: ['better-sqlite3', 'drizzle-orm', '@veyra/fake-erp'],
+          patterns: [
+            {
+              group: ['../db/*', '../workflow/*', '../http/*', 'drizzle-orm/*'],
+              message: 'The engine is pure: no storage, no HTTP.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Web app: browser code with React hooks rules.
     files: ['apps/web/src/**/*.{ts,tsx}'],
     ...reactHooks.configs.flat['recommended-latest'],

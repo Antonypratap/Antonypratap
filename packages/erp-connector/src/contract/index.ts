@@ -522,6 +522,36 @@ export function describeErpConnectorContract(options: ErpConnectorContractOption
       });
     });
 
+    describe('browsing lists', () => {
+      it('start empty apart from the company', async () => {
+        expect(await erp.listVendors()).toEqual([]);
+        expect(await erp.listItems()).toEqual([]);
+        expect(await erp.listPurchaseOrders()).toEqual([]);
+        expect(await erp.listGrns()).toEqual([]);
+        expect(await erp.listPurchaseInvoices()).toEqual([]);
+      });
+
+      it('list every record written, schema-valid, and change nothing', async () => {
+        const chain = await seedPoChain();
+        await erp.recordPurchaseInvoice(
+          invoiceInput(chain),
+          purchaseInvoiceIdempotencyKey(INVOICE),
+        );
+        const vendors = await erp.listVendors();
+        expect(vendors.map((v) => v.id)).toContain(chain.vendorId);
+        expect(vendors.every((v) => VendorSchema.safeParse(v).success)).toBe(true);
+        expect((await erp.listItems()).every((i) => ItemSchema.safeParse(i).success)).toBe(true);
+        const pos = await erp.listPurchaseOrders();
+        expect(pos.map((p) => p.id)).toEqual([chain.poId]);
+        expect(pos.every((p) => PurchaseOrderSchema.safeParse(p).success)).toBe(true);
+        expect((await erp.listGrns()).every((g) => GrnSchema.safeParse(g).success)).toBe(true);
+        const invoices = await erp.listPurchaseInvoices();
+        expect(invoices).toHaveLength(1);
+        expect(PurchaseInvoiceSchema.safeParse(invoices[0]).success).toBe(true);
+        expect(await erp.listPurchaseInvoices()).toEqual(invoices);
+      });
+    });
+
     describe('purchase invoices', () => {
       it('records an invoice as verified_pending_payment and counts invoiced quantity once', async () => {
         const chain = await seedPoChain();

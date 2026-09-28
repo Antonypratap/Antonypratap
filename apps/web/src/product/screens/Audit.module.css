@@ -147,3 +147,7 @@
     box-shadow: 0 0 0 1px var(--color-line);
   }
 }
+.empty {
+  font-size: var(--text-small);
+  color: var(--color-ink-3);
+}

@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import { Icon, Logo, type IconName } from '../../design-system';
 import { hrefFor, type Route } from '../router';
-import { useDemoDispatch, useDemoState } from '../state/DemoStore';
-import { openQuestions } from '../state/demo';
+import { api } from '../api/client';
+import { useProductData } from '../state/data';
 import styles from './AppShell.module.css';
 
 type Section = 'inbox' | 'questions' | 'invoices' | 'erp' | 'audit';
@@ -37,10 +37,9 @@ export function sectionOf(route: Route): Section {
 }
 
 export function AppShell({ route, children }: { route: Route; children: ReactNode }) {
-  const state = useDemoState();
-  const dispatch = useDemoDispatch();
-  const decided = Object.keys(state.decisions).length;
-  const waiting = openQuestions(state).length;
+  const { inbox, refresh } = useProductData();
+  const hasData = (inbox?.counts.received ?? 0) > 0;
+  const waiting = inbox?.counts.needsYou ?? 0;
   const active = route.name === 'invoice' ? null : sectionOf(route);
 
   return (
@@ -71,12 +70,19 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
           </ul>
         </nav>
         <div className={styles.sidebarFoot}>
-          <p className={styles.demoNote}>Demo workspace. Sample data, nothing is sent.</p>
-          {decided > 0 && (
+          <p className={styles.demoNote}>Demo workspace. Sample ERP; no payments are made.</p>
+          {hasData && (
             <button
               type="button"
               className={styles.siteLink}
-              onClick={() => dispatch({ type: 'reset' })}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    'Reset the demo? This clears every invoice and restores the sample ERP.',
+                  )
+                )
+                  void api.resetDemo().then(refresh);
+              }}
             >
               Reset demo
             </button>

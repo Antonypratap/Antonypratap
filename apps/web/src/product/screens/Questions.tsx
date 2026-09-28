@@ -2,14 +2,14 @@ import { Icon, Struck } from '../../design-system';
 import { PageHeader } from '../components/PageHeader';
 import { inr } from '../format';
 import { hrefFor } from '../router';
-import { useDemoState } from '../state/DemoStore';
-import { STATUS_LABEL, answeredQuestions, openQuestions } from '../state/demo';
+import { attentionQueue, useProductData } from '../state/data';
+import { STATUS_LABEL } from '../state/status';
 import styles from './Questions.module.css';
 
 export function Questions() {
-  const state = useDemoState();
-  const open = openQuestions(state);
-  const answered = answeredQuestions(state);
+  const { inbox, answered } = useProductData();
+  const open = attentionQueue(inbox);
+  const statusOf = (invoiceId: string) => inbox?.invoices.find((i) => i.id === invoiceId)?.status;
   const n = open.length;
 
   return (
@@ -29,14 +29,22 @@ export function Questions() {
             <li key={inv.id}>
               <a href={hrefFor({ name: 'invoice', id: inv.id })} className={styles.row}>
                 <span className={styles.who}>
-                  <span className={styles.supplier}>{inv.supplier.name}</span>
-                  <span className={styles.number}>Invoice {inv.number}</span>
+                  <span className={styles.supplier}>{inv.supplierName ?? inv.filename}</span>
+                  <span className={styles.number}>
+                    {inv.number ? `Invoice ${inv.number}` : inv.source}
+                  </span>
                 </span>
                 <span className={styles.what}>
-                  <span className={styles.summary}>{inv.question?.summary}</span>
-                  <span className={styles.evidence}>{inv.question?.evidence}</span>
+                  <span className={styles.summary}>
+                    {inv.question?.summary ?? 'Couldn’t finish'}
+                  </span>
+                  <span className={styles.evidence}>
+                    {inv.question?.evidence ?? inv.failure?.reason}
+                  </span>
                 </span>
-                <span className={styles.amount}>{inr(inv.totalPaise)}</span>
+                <span className={styles.amount}>
+                  {inv.totalPaise === null ? '' : inr(inv.totalPaise)}
+                </span>
                 <span className={styles.review}>
                   Review
                   <Icon name="chevronRight" size={14} />
@@ -53,24 +61,29 @@ export function Questions() {
             Recently decided
           </h2>
           <ul>
-            {answered.map(({ invoice, decision }) => (
-              <li key={invoice.id}>
-                <a
-                  href={hrefFor({ name: 'invoice', id: invoice.id })}
-                  className={styles.historyRow}
-                >
-                  <span className={styles.historyMain}>
-                    <Struck struck>{invoice.question?.summary}</Struck>
-                    <span className={styles.historyWho}>
-                      {invoice.supplier.name} · You chose “{decision.label}”
+            {answered.map((q) => {
+              const status = statusOf(q.invoiceId);
+              return (
+                <li key={q.id}>
+                  <a
+                    href={hrefFor({ name: 'invoice', id: q.invoiceId })}
+                    className={styles.historyRow}
+                  >
+                    <span className={styles.historyMain}>
+                      <Struck struck>{q.summary}</Struck>
+                      <span className={styles.historyWho}>
+                        {q.invoice.supplierName} · You chose “{q.answer?.label}”
+                      </span>
                     </span>
-                  </span>
-                  <span className={styles.status} data-status={decision.outcome}>
-                    {STATUS_LABEL[decision.outcome]}
-                  </span>
-                </a>
-              </li>
-            ))}
+                    {status && (
+                      <span className={styles.status} data-status={status}>
+                        {STATUS_LABEL[status]}
+                      </span>
+                    )}
+                  </a>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}

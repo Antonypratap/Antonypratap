@@ -1,6 +1,9 @@
 /**
- * @veyra/api: Veyra REST API: workflow, matching, resolution, validation, questions, commit.
- *
- * Phase 0 scaffold only. Implementation lands in Phases 3–10 (see docs/ARCHITECTURE.md §11).
+ * @veyra/api: Veyra REST API and workflow core: extraction, matching, resolution, validation,
+ * questions and commit (ARCHITECTURE §1).
  */
 export const PACKAGE_NAME = '@veyra/api';
+
+export { createApp, type AppConfig } from './app';
+export { buildServer } from './http/server';
+export { Veyra } from './workflow/veyra';

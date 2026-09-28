@@ -1,56 +1,70 @@
 import { useState } from 'react';
 import { Icon, Struck } from '../../design-system';
-import { INVOICES } from '../data/invoices';
+import { UploadButton } from '../components/UploadButton';
 import { greetingFor, inr } from '../format';
 import { hrefFor } from '../router';
-import { useDemoDispatch, useDemoState } from '../state/DemoStore';
-import { answeredQuestions, openQuestions, weekSummary, STATUS_LABEL } from '../state/demo';
+import { attentionQueue, useProductData } from '../state/data';
+import { STATUS_LABEL } from '../state/status';
 import styles from './Inbox.module.css';
 
 const INITIAL_VISIBLE = 5;
 
 export function Inbox() {
-  const state = useDemoState();
-  const dispatch = useDemoDispatch();
+  const { inbox, error } = useProductData();
   const [showAll, setShowAll] = useState(false);
-  const open = openQuestions(state);
-  const answered = answeredQuestions(state);
-  const week = weekSummary(state);
+  const open = attentionQueue(inbox);
+  const invoices = inbox?.invoices ?? [];
+  const counts = inbox?.counts;
+  const needsYou = counts?.needsYou ?? 0;
+  const handledByVeyra = counts?.handled ?? 0;
+  const decidedByYou = counts?.decidedByYou ?? 0;
   const visible = showAll ? open : open.slice(0, INITIAL_VISIBLE);
-  const handled = INVOICES.filter((i) => i.initialStatus === 'handled');
+  const processing = invoices.filter((i) => i.status === 'processing');
+  const decided = invoices
+    .filter((i) => i.decision && i.status !== 'attention')
+    .sort((a, b) => (b.decision?.at ?? '').localeCompare(a.decision?.at ?? ''));
+  const handled = invoices.filter((i) => i.status === 'handled').slice(0, 5);
 
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <h1 className={styles.greeting}>{greetingFor(new Date().getHours())}</h1>
-        <p className={styles.sub}>
-          {week.needsYou > 0 ? 'Here’s what needs your attention.' : 'Nothing needs you right now.'}
-        </p>
+      <header className={styles.headerRow}>
+        <div className={styles.header}>
+          <h1 className={styles.greeting}>{greetingFor(new Date().getHours())}</h1>
+          <p className={styles.sub}>
+            {error
+              ? error
+              : needsYou > 0
+                ? 'Here’s what needs your attention.'
+                : invoices.length === 0
+                  ? 'Upload an invoice and Veyra takes it from there.'
+                  : 'Nothing needs you right now.'}
+          </p>
+        </div>
+        <UploadButton />
       </header>
 
-      <section className={styles.week} aria-label="This week">
-        <div className={styles.needs} data-zero={week.needsYou === 0}>
-          <span className={styles.needsNumber}>{week.needsYou}</span>
-          <span className={styles.needsLabel}>
-            {week.needsYou === 1 ? 'needs you' : 'need you'}
-          </span>
+      <section className={styles.week} aria-label="Invoices">
+        <div className={styles.needs} data-zero={needsYou === 0}>
+          <span className={styles.needsNumber}>{needsYou}</span>
+          <span className={styles.needsLabel}>{needsYou === 1 ? 'needs you' : 'need you'}</span>
         </div>
         <div className={styles.rest}>
           <p className={styles.restLine}>
-            <span className={styles.handledNumber}>{week.handled}</span> handled by Veyra
-            {week.decidedByYou > 0 && (
-              <span className={styles.decidedByYou}> · {week.decidedByYou} decided by you</span>
+            <span className={styles.handledNumber}>{handledByVeyra}</span> handled by Veyra
+            {decidedByYou > 0 && (
+              <span className={styles.decidedByYou}> · {decidedByYou} decided by you</span>
             )}
-            <span className={styles.of}> · {week.received} invoices this week</span>
+            <span className={styles.of}>
+              {' '}
+              · {counts?.received ?? 0} invoice{counts?.received === 1 ? '' : 's'} received
+            </span>
           </p>
           <div className={styles.bar} aria-hidden="true">
-            <span className={styles.barHandled} style={{ flexGrow: week.handled }} />
-            {week.decidedByYou > 0 && (
-              <span className={styles.barDecided} style={{ flexGrow: week.decidedByYou }} />
+            <span className={styles.barHandled} style={{ flexGrow: handledByVeyra }} />
+            {decidedByYou > 0 && (
+              <span className={styles.barDecided} style={{ flexGrow: decidedByYou }} />
             )}
-            {week.needsYou > 0 && (
-              <span className={styles.barNeeds} style={{ flexGrow: week.needsYou }} />
-            )}
+            {needsYou > 0 && <span className={styles.barNeeds} style={{ flexGrow: needsYou }} />}
           </div>
         </div>
       </section>
@@ -79,14 +93,22 @@ export function Inbox() {
               <li key={inv.id}>
                 <a href={hrefFor({ name: 'invoice', id: inv.id })} className={styles.item}>
                   <span className={styles.issue}>
-                    <span className={styles.issueTitle}>{inv.question?.summary}</span>
-                    <span className={styles.evidence}>{inv.question?.evidence}</span>
+                    <span className={styles.issueTitle}>
+                      {inv.question?.summary ?? 'Couldn’t finish'}
+                    </span>
+                    <span className={styles.evidence}>
+                      {inv.question?.evidence ?? inv.failure?.reason}
+                    </span>
                   </span>
                   <span className={styles.who}>
-                    <span className={styles.supplier}>{inv.supplier.name}</span>
-                    <span className={styles.number}>Invoice {inv.number}</span>
+                    <span className={styles.supplier}>{inv.supplierName ?? inv.filename}</span>
+                    <span className={styles.number}>
+                      {inv.number ? `Invoice ${inv.number}` : inv.source}
+                    </span>
                   </span>
-                  <span className={styles.amount}>{inr(inv.totalPaise)}</span>
+                  <span className={styles.amount}>
+                    {inv.totalPaise === null ? '' : inr(inv.totalPaise)}
+                  </span>
                   <span className={styles.review}>
                     Review
                     <Icon name="chevronRight" size={14} />
@@ -104,60 +126,85 @@ export function Inbox() {
         )}
       </section>
 
-      {answered.length > 0 && (
-        <section className={styles.decided} aria-labelledby="decided-title">
-          <h2 id="decided-title" className={styles.sectionLabel}>
-            Decided just now
+      {processing.length > 0 && (
+        <section className={styles.decided} aria-labelledby="processing-title">
+          <h2 id="processing-title" className={styles.sectionLabel}>
+            Veyra is working on
           </h2>
           <ul className={styles.quietList}>
-            {answered.map(({ invoice, decision }) => (
-              <li key={invoice.id} className={styles.quietRow}>
-                <a href={hrefFor({ name: 'invoice', id: invoice.id })} className={styles.quietMain}>
-                  <Struck struck>{invoice.question?.summary}</Struck>
+            {processing.map((inv) => (
+              <li key={inv.id} className={styles.quietRow}>
+                <a href={hrefFor({ name: 'invoice', id: inv.id })} className={styles.quietMain}>
+                  <span className={styles.quietNumber}>
+                    {inv.number ? `Invoice ${inv.number}` : inv.filename}
+                  </span>
                   <span className={styles.quietSupplier}>
-                    {invoice.supplier.name} · {decision.result}
+                    {inv.supplierName ?? (inv.source === 'Photo' ? 'Phone photo' : 'PDF')}
                   </span>
                 </a>
-                <span className={styles.quietStatus} data-outcome={decision.outcome}>
-                  {STATUS_LABEL[decision.outcome]}
+                <span className={styles.quietStatus} data-outcome="processing">
+                  {STATUS_LABEL.processing}
                 </span>
-                <button
-                  type="button"
-                  className={styles.undo}
-                  onClick={() => dispatch({ type: 'undo', invoiceId: invoice.id })}
-                >
-                  Undo
-                </button>
               </li>
             ))}
           </ul>
         </section>
       )}
 
-      <section className={styles.handled} aria-labelledby="handled-title">
-        <h2 id="handled-title" className={styles.sectionLabel}>
-          Recently handled
-        </h2>
-        <ul className={styles.quietList}>
-          {handled.map((inv) => (
-            <li key={inv.id} className={styles.quietRow}>
-              <a href={hrefFor({ name: 'invoice', id: inv.id })} className={styles.quietMain}>
-                <span className={styles.quietNumber}>Invoice {inv.number}</span>
-                <span className={styles.quietSupplier}>
-                  {inv.supplier.name} · {inv.handledNote}
+      {decided.length > 0 && (
+        <section className={styles.decided} aria-labelledby="decided-title">
+          <h2 id="decided-title" className={styles.sectionLabel}>
+            Decided by you
+          </h2>
+          <ul className={styles.quietList}>
+            {decided.map((inv) => (
+              <li key={inv.id} className={styles.quietRow}>
+                <a href={hrefFor({ name: 'invoice', id: inv.id })} className={styles.quietMain}>
+                  <Struck struck>{inv.decision?.summary}</Struck>
+                  <span className={styles.quietSupplier}>
+                    {inv.supplierName} ·{' '}
+                    {inv.status === 'processing'
+                      ? inv.decision?.result
+                      : (inv.note ?? inv.decision?.result)}
+                  </span>
+                </a>
+                <span className={styles.quietStatus} data-outcome={inv.status}>
+                  {STATUS_LABEL[inv.status]}
                 </span>
-              </a>
-              <span className={styles.quietAmount}>{inr(inv.totalPaise)}</span>
-              <span className={styles.quietStatus} data-outcome="handled">
-                <Icon name="check" size={13} /> Handled
-              </span>
-            </li>
-          ))}
-        </ul>
-        <a className={styles.allLink} href={hrefFor({ name: 'invoices', filter: 'handled' })}>
-          See handled invoices
-        </a>
-      </section>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {handled.length > 0 && (
+        <section className={styles.handled} aria-labelledby="handled-title">
+          <h2 id="handled-title" className={styles.sectionLabel}>
+            Recently handled
+          </h2>
+          <ul className={styles.quietList}>
+            {handled.map((inv) => (
+              <li key={inv.id} className={styles.quietRow}>
+                <a href={hrefFor({ name: 'invoice', id: inv.id })} className={styles.quietMain}>
+                  <span className={styles.quietNumber}>Invoice {inv.number}</span>
+                  <span className={styles.quietSupplier}>
+                    {inv.supplierName} · {inv.note}
+                  </span>
+                </a>
+                <span className={styles.quietAmount}>
+                  {inv.totalPaise === null ? '' : inr(inv.totalPaise)}
+                </span>
+                <span className={styles.quietStatus} data-outcome="handled">
+                  <Icon name="check" size={13} /> Handled
+                </span>
+              </li>
+            ))}
+          </ul>
+          <a className={styles.allLink} href={hrefFor({ name: 'invoices', filter: 'handled' })}>
+            See handled invoices
+          </a>
+        </section>
+      )}
     </div>
   );
 }

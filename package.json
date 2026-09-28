@@ -22,7 +22,11 @@
     "health": "tsx scripts/health.ts",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run db:verify && npm run health",
     "erp:reset": "npm run reset -w @veyra/fake-erp --",
-    "db:verify": "npm run db:verify -w @veyra/fake-erp"
+    "db:verify": "npm run db:verify -w @veyra/fake-erp && npm run db:verify -w @veyra/api",
+    "fixtures:generate": "npm run fixtures -w @veyra/extractor",
+    "dev:api": "npm run dev -w @veyra/api",
+    "dev:web": "npm run dev -w @veyra/web",
+    "demo": "tsx scripts/demo.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

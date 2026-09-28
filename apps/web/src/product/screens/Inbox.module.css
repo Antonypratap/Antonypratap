@@ -4,6 +4,13 @@
   max-width: 60rem;
 }
 
+.headerRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
 .header {
   display: grid;
   gap: var(--space-1);

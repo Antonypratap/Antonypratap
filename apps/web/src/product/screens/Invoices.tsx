@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { Icon, StatusPill } from '../../design-system';
 import { PageHeader } from '../components/PageHeader';
-import { INVOICES, WEEK } from '../data/invoices';
 import { formatDate, inr } from '../format';
 import { INVOICE_FILTERS, hrefFor, type InvoiceFilter } from '../router';
-import { useDemoState } from '../state/DemoStore';
-import { STATUS_LABEL, STATUS_TONE, statusOf } from '../state/demo';
+import { useProductData } from '../state/data';
+import { STATUS_LABEL, STATUS_TONE } from '../state/status';
 import styles from './Invoices.module.css';
 
 const FILTER_LABEL: Record<InvoiceFilter, string> = {
@@ -15,10 +14,11 @@ const FILTER_LABEL: Record<InvoiceFilter, string> = {
 };
 
 export function Invoices({ filter }: { filter: InvoiceFilter }) {
-  const state = useDemoState();
+  const { inbox } = useProductData();
   const [query, setQuery] = useState('');
   const q = query.trim().toLowerCase();
-  const rows = INVOICES.map((inv) => ({ inv, status: statusOf(inv, state) }))
+  const rows = (inbox?.invoices ?? [])
+    .map((inv) => ({ inv, status: inv.status }))
     .filter(({ status }) =>
       filter === 'all'
         ? true
@@ -28,12 +28,15 @@ export function Invoices({ filter }: { filter: InvoiceFilter }) {
     )
     .filter(
       ({ inv }) =>
-        !q || inv.number.toLowerCase().includes(q) || inv.supplier.name.toLowerCase().includes(q),
+        !q ||
+        (inv.number ?? '').toLowerCase().includes(q) ||
+        (inv.supplierName ?? '').toLowerCase().includes(q) ||
+        inv.filename.toLowerCase().includes(q),
     );
 
   return (
     <div className={styles.page}>
-      <PageHeader title="Invoices" sub="Every invoice from this week, with where it stands." />
+      <PageHeader title="Invoices" sub="Every invoice received, with where it stands." />
       <div className={styles.tools}>
         <div className={styles.filters} role="tablist" aria-label="Filter invoices">
           {INVOICE_FILTERS.map((f) => (
@@ -79,28 +82,30 @@ export function Invoices({ filter }: { filter: InvoiceFilter }) {
             data-status={status}
           >
             <span role="cell" className={styles.number}>
-              {inv.number}
+              {inv.number ?? inv.filename}
             </span>
             <span role="cell" className={styles.supplier}>
-              {inv.supplier.name}
+              {inv.supplierName ?? '—'}
             </span>
             <span role="cell" className={styles.date}>
-              {formatDate(inv.date)}
+              {inv.invoiceDate ? formatDate(inv.invoiceDate) : '—'}
             </span>
             <span role="cell" className={`${styles.right} ${styles.amount}`}>
-              {inr(inv.totalPaise)}
+              {inv.totalPaise === null ? '—' : inr(inv.totalPaise)}
             </span>
             <span role="cell">
               <StatusPill status={STATUS_TONE[status]}>{STATUS_LABEL[status]}</StatusPill>
             </span>
           </a>
         ))}
-        {rows.length === 0 && <p className={styles.empty}>No invoices match.</p>}
+        {rows.length === 0 && (
+          <p className={styles.empty}>
+            {inbox?.invoices.length
+              ? 'No invoices match.'
+              : 'No invoices yet. Upload one from the Inbox.'}
+          </p>
+        )}
       </div>
-      <p className={styles.note}>
-        This demo shows {INVOICES.length} of the week&rsquo;s {WEEK.received} invoices. The rest
-        were handled without anyone needing to look.
-      </p>
     </div>
   );
 }

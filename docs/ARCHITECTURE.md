@@ -1,6 +1,6 @@
 # Veyra — Architecture (V1)
 
-Status: **Approved (rev 3: decisions D1–D4 recorded)**. Phases 0–2 complete (scaffold; shared contracts, India tax, ERP connector contract; fake ERP + SQLite).
+Status: **Approved (rev 3: decisions D1–D4 recorded)**. Phases 0–2 complete (scaffold; shared contracts, India tax, ERP connector contract; fake ERP + SQLite). **Phase 3B complete**: the first real vertical slice (see §13).
 
 Veyra is an AI-assisted business transaction automation platform. The V1 use case:
 
@@ -562,3 +562,64 @@ Phases 1–10 are headless and API-first. The UI is built last on tested logic.
 | D2 | Round-off is accepted only when printed on the invoice and exactly equal to the amount needed to reach the nearest rupee. The UI shows *calculated total → round-off → invoice total*. A difference is never silently absorbed. | RULES §4.1, R10 |
 | D3 | Place of supply follows a deterministic hierarchy: printed → established from valid GST evidence on the document → ask. It is never inferred from the buyer GSTIN alone. | RULES §1.6 |
 | D4 | `COMMITTING` is automatic, restartable and idempotent. A crash never creates duplicate ERP records. | §4.3 |
+
+## 13. Phase 3B: the first real vertical slice
+
+Upload → extract → resolve → match → ask → validate → commit → `VERIFIED_PENDING_PAYMENT`, end to end, with the approved product UI reading the real API. This section records what was built and every choice made on the way. Each item is labelled:
+
+- **CLIENT REQUIREMENT**: fixed by the client (this document, RULES.md, DEMO.md or the Phase 3B brief).
+- **IMPLEMENTATION DECISION**: a choice made while building, within the requirements.
+- **TECHNICAL CONSTRAINT**: something the tools or the slice's scope impose.
+
+### 13.1 What runs
+
+| Part | Where | Notes |
+|---|---|---|
+| Extractor port + `FixtureExtractor` | `packages/extractor` | Demo/test only (below). |
+| Veyra database | `apps/api/src/db` | Drizzle schema + generated migration; `npm run db:verify` checks drift. |
+| Deterministic engine | `apps/api/src/engine` | `runEngine()` is FIND → USE → CREATE → VALIDATE in one pure pass; it only reads the ERP (through the port) and returns what to persist. |
+| Workflow | `apps/api/src/workflow` | State machine, persistence of each run, answers, rejection, commit, job runner. |
+| REST API | `apps/api/src/http` | Fastify + Zod; responses validated against `packages/shared/src/schemas/api.ts`. |
+| Composition root | `apps/api/src/app.ts` | The only module that knows the ERP is the fake ERP and the extractor is the fixture extractor (enforced by ESLint). |
+| Product UI | `apps/web/src/product` | Same screens and visual system; data from `/api/v1` only. |
+
+### 13.2 Client requirements implemented as specified
+
+- **CLIENT REQUIREMENT** State machine exactly as §5: UPLOADED → EXTRACTING → MATCHING → RESOLVING → VALIDATING → NEEDS_INPUT | COMMITTING → VERIFIED_PENDING_PAYMENT; FAILED from any system state; REJECTED only by the designated user. No other state was added. Every transition is checked (`workflow/state-machine.ts`), bumps `state_version`, and writes an audit row in the same transaction.
+- **CLIENT REQUIREMENT** Extraction output is untrusted: it is parsed with `ExtractionResultSchema` before anything reads it; failures move the invoice to FAILED (stage EXTRACTING). Extractors cannot reach the ERP.
+- **CLIENT REQUIREMENT** Never guess: only `found` matches are used; ambiguity and missing records become the fixed question codes of RULES §5 with typed effects. No question offers override, ignore or continue-anyway (tested).
+- **CLIENT REQUIREMENT** Question gating by stage (RULES §4); every rule has a result on every run; a failed or unevaluated rule with no question moves the invoice to FAILED (`INVARIANT_VIOLATION`), never to COMMITTING.
+- **CLIENT REQUIREMENT** Vendor V1–V6, items I1–I7, PO P1–P4 and the PO policy of RULES §3.4 (strictly below the threshold; equal asks). Auto-created POs are tagged `auto_created_from_invoice`; R21–R24 are `not_applicable` / `PO_DERIVED_FROM_INVOICE`, never `pass`. A cited PO number that is not in the ERP fails R17; no PO is created for it.
+- **CLIENT REQUIREMENT** GRNs only from the designated user's explicit date and quantities (`CA_GRN`). A confirmed GRN on a rejected invoice is discarded, kept in `creation_actions` and the audit trail, and never written to the ERP (D1).
+- **CLIENT REQUIREMENT** Three-way match with no tolerance (R21, R23, R26); round-off per D2; place of supply per D3 (the buyer GSTIN is never evidence).
+- **CLIENT REQUIREMENT** Staging and COMMITTING per §4.3 and D4: staged creations reach the ERP only when the whole invoice passes; commit re-checks the ERP before its first write, executes in dependency order with `veyra:<invoice>:<action>` keys, records each ERP id immediately, checks the invoice's natural key, then records the purchase invoice. A crash at any point resumes without duplicates (tested at four crash points). A natural-key conflict sends the invoice back to MATCHING.
+- **CLIENT REQUIREMENT** One designated user; questions never time out or escalate; no payment code path.
+
+### 13.3 Implementation decisions
+
+- **IMPLEMENTATION DECISION** Answers are stored as data on the answered question (`answer_json`, ordered by `answer_seq`) and re-applied on every run; field corrections are `human_corrected` / `human_confirmed` fields. A re-run is therefore a pure function of fields + answers + ERP state.
+- **IMPLEMENTATION DECISION** Staged actions carry a deterministic `signature` (entity, policy, approving question, payload). A re-run that stages the same thing reuses the same action id, so idempotency keys are stable across runs.
+- **IMPLEMENTATION DECISION** The commit plan is frozen as `invoices.commit_plan_json` when validation passes. COMMITTING executes that plan and never re-plans mid-way (re-planning after a partial commit would see its own new records and ask new questions).
+- **IMPLEMENTATION DECISION** Duplicate detection (R11) keys on vendor GSTIN + normalised invoice number + FY, across the ERP and other non-rejected Veyra invoices (`invoices.dup_*`). Invoice date and amount are shown in the question ("same amount") but are not part of the key: an invoice number reused with a different amount is still a conflict the user must see. A possible duplicate is asked (`VF_R11`), never auto-rejected.
+- **IMPLEMENTATION DECISION** Table naming follows the Phase 3B brief: `extracted_fields` (called `fields` in §4.2). Added columns: `documents.size_bytes`; `invoices.run_no`, `dup_vendor_gstin`, `dup_invoice_no`, `dup_fy`, `commit_plan_json`; `creation_actions.signature`; `questions.answer_seq`; `jobs.updated_at`. There is no `sessions` table (no authentication in this slice).
+- **IMPLEMENTATION DECISION** API naming follows the brief: `POST /api/v1/documents` uploads (it creates the document and its invoice; 409 on an identical file). The other routes are §8's, plus `GET /documents`, `GET /documents/:id/file`, `GET /erp/grns` and `POST /dev/reset` (not registered in production). Responses are presentation-ready (status, question wording, audit titles) so the browser derives nothing.
+- **IMPLEMENTATION DECISION** UI status is derived on the server: NEEDS_INPUT and FAILED → *Needs your attention*; system states → *Processing*; VERIFIED_PENDING_PAYMENT → *Handled* (no decision was needed) or *Ready* (the user decided something); REJECTED → *Rejected*. The Inbox count, the Questions count and the queue all come from this one status.
+- **IMPLEMENTATION DECISION** The ErpConnector gained read-only browsing operations for the ERP screen: `listVendors`, `listItems`, `listPurchaseOrders`, `listGrns`, `listPurchaseInvoices`. They are covered by the contract suite and are never used for matching.
+- **IMPLEMENTATION DECISION** A UOM synonym table (RULES §1.4) was added to `@veyra/shared` (`normalizeUom`); NOS and PCS stay distinct.
+- **IMPLEMENTATION DECISION** Upload type is decided by the file's bytes (PDF/PNG/JPEG signatures), not its name or the browser's claim; files are stored under the data directory; the ULID-named copy is served back with `nosniff`.
+- **IMPLEMENTATION DECISION** Jobs: one in-process loop over the `jobs` table. A restarted process re-queues jobs left `running`; every job is safe to repeat. ERP `UNAVAILABLE` is retried with a deterministic backoff (1 s × attempt, up to 5 attempts); any other error fails the invoice visibly.
+
+### 13.4 Technical constraints
+
+- **TECHNICAL CONSTRAINT** Extraction in this slice is the `FixtureExtractor` only: it recognises the demo documents in `fixtures/invoices/` by SHA-256 and returns what is printed on them (including deliberately weak reads). It refuses production (`NODE_ENV=production`) and runs only with `VEYRA_ALLOW_FIXTURE_EXTRACTOR=true`. Any other file fails visibly at EXTRACTING. LocalOcr/Ollama are later phases.
+- **TECHNICAL CONSTRAINT** The fixture documents are generated deterministically (`npm run fixtures:generate`, hand-written PDF and stored-deflate PNG writers) so their hashes never change; a test checks the committed files. Scenario data lives in `packages/extractor/src/fixture/scenarios.ts` instead of per-file `*.expected.json`.
+- **TECHNICAL CONSTRAINT** No authentication: the server acts as the single designated user (`settings.designated_user_id`) and binds to 127.0.0.1. Every actor reference is still a `user_id`.
+- **TECHNICAL CONSTRAINT** The web app polls (1 s while anything is processing, 4 s otherwise); there are no websockets (§8).
+
+### 13.5 Conflicts between the Phase 3B brief and the fixed requirements (not silently changed)
+
+| # | Brief asks for | Fixed requirement | What was built | Needs a client decision |
+|---|---|---|---|---|
+| C1 | UoM: apply a known conversion; otherwise ask for a factor and save the mapping | RULES R27: "Line UOM = item UOM (no conversion in V1)" | R27 as written: a mismatch raises `VF_R27` (correct a misread unit, re-check, or reject). No factor is asked for or stored. | Whether V2 adds approved UoM conversions (and where they live: ERP or Veyra). |
+| C2 | Items: allow "classify as non-stock expense" | RULES §2.3/§5 offer link, create or reject only; `recordPurchaseInvoice` requires an item and a PO line on every line | Not built. | Whether non-stock lines are in scope, and how they are recorded in the ERP. |
+| C3 | "Ask supplier" moves the invoice to a processing/follow-up state | §5 has no such state; RULES §5 has no such option | Not built. The invoice stays in NEEDS_INPUT (it waits indefinitely); the user can re-check once the supplier has answered, or reject. | Whether a follow-up state (and its exit conditions) should be added. |

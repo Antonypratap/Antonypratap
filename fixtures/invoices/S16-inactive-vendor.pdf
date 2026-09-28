@@ -1,0 +1,45 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Length 858 >>
+stream
+BT /F1 10 Tf 48 800 Td (TAX INVOICE) Tj ET
+BT /F1 10 Tf 48 784 Td (Bharat Packaging) Tj ET
+BT /F1 10 Tf 48 768 Td (Bommasandra, Bengaluru 560099) Tj ET
+BT /F1 10 Tf 48 752 Td (GSTIN: 29ABCPB2468Q1Z9) Tj ET
+BT /F1 10 Tf 48 736 Td (Invoice No: BP-118    Date: 25/09/2026) Tj ET
+BT /F1 10 Tf 48 720 Td (PO No: PO-2026-0107) Tj ET
+BT /F1 10 Tf 48 704 Td (Bill to: Veyra Demo Industries Pvt Ltd, GSTIN: 29AAACS1111A1Z6) Tj ET
+BT /F1 10 Tf 48 688 Td (Place of Supply: Karnataka \(29\)) Tj ET
+BT /F1 10 Tf 48 672 Td (#  Description  HSN  Qty  Rate  Taxable  GST) Tj ET
+BT /F1 10 Tf 48 656 Td (1  Corrugated Box 5 Ply  4819  500 NOS  24.00  12,000.00  12%) Tj ET
+BT /F1 10 Tf 48 640 Td (Taxable value: 12,000.00) Tj ET
+BT /F1 10 Tf 48 624 Td (CGST: 720.00) Tj ET
+BT /F1 10 Tf 48 608 Td (SGST: 720.00) Tj ET
+BT /F1 10 Tf 48 592 Td (Invoice total: Rs. 13,440.00) Tj ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000338 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1247
+%%EOF

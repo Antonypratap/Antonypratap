@@ -1,0 +1,537 @@
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import {
+  RULES,
+  formatQty,
+  milliQty,
+  type ApiAuditEntry,
+  type ApiInbox,
+  type ApiInputSpec,
+  type ApiInvoiceDetail,
+  type ApiInvoiceSummary,
+  type ApiQuestion,
+  type InvoiceState,
+  type RuleCode,
+  type UiStatus,
+} from '@veyra/shared';
+import { stateName, validateGstin } from '@veyra/india-tax';
+import * as t from '../db/schema';
+import { readField, type StoredField } from '../engine/fields';
+import { dateText, displayValue, fieldLabel, rupees } from '../engine/questions';
+import type { Veyra } from '../workflow/veyra';
+
+type InvoiceRow = typeof t.invoices.$inferSelect;
+type DocumentRow = typeof t.documents.$inferSelect;
+type QuestionRow = typeof t.questions.$inferSelect;
+
+interface QuestionContext {
+  summary: string;
+  evidence: string;
+  facts: { label: string; value: string; tone?: 'attention' }[];
+  why: string[];
+  paths: string[];
+  optionMeta: Record<string, { emphasis: 'primary' | 'secondary' | 'quiet'; result: string }>;
+}
+
+/** Status in business language (the approved product semantics). */
+export function uiStatus(state: InvoiceState, decidedByYou: boolean): UiStatus {
+  if (state === 'NEEDS_INPUT' || state === 'FAILED') return 'attention';
+  if (state === 'REJECTED') return 'rejected';
+  if (state === 'VERIFIED_PENDING_PAYMENT') return decidedByYou ? 'ready' : 'handled';
+  return 'processing';
+}
+
+export function questionDto(q: QuestionRow, invoice: ApiQuestion['invoice']): ApiQuestion {
+  const context = JSON.parse(q.contextJson) as QuestionContext;
+  const options = JSON.parse(q.optionsJson) as {
+    id: string;
+    label: string;
+    effect: { type: string };
+  }[];
+  const inputs = (q.inputSchemaJson ? JSON.parse(q.inputSchemaJson) : {}) as Record<
+    string,
+    ApiInputSpec
+  >;
+  const answer = q.answerJson ? (JSON.parse(q.answerJson) as { optionId: string }) : null;
+  const chosen = answer ? options.find((o) => o.id === answer.optionId) : undefined;
+  return {
+    id: q.id,
+    invoiceId: q.invoiceId,
+    code: q.code,
+    kind: q.kind as ApiQuestion['kind'],
+    status: q.status as ApiQuestion['status'],
+    summary: context.summary,
+    evidence: context.evidence,
+    headline: q.prompt,
+    facts: context.facts,
+    why: context.why,
+    paths: context.paths,
+    options: options.map((o) => ({
+      id: o.id,
+      label: o.label,
+      emphasis: context.optionMeta[o.id]?.emphasis ?? 'secondary',
+      result: context.optionMeta[o.id]?.result ?? '',
+      input: inputs[o.id] ?? null,
+      rejects: o.effect.type === 'REJECT_INVOICE',
+    })),
+    createdAt: q.createdAt,
+    answeredAt: q.answeredAt,
+    answer:
+      answer && chosen
+        ? {
+            optionId: chosen.id,
+            label: chosen.label,
+            result: context.optionMeta[chosen.id]?.result ?? '',
+          }
+        : null,
+    invoice,
+  };
+}
+
+export class Presenter {
+  constructor(readonly v: Veyra) {}
+
+  private fields(invoiceId: string): Map<string, StoredField> {
+    return this.v.loadFields(this.v.db, invoiceId);
+  }
+
+  private shown<T extends string | number>(f: Map<string, StoredField>, path: string): T | null {
+    // Display what is printed even when it is not (yet) usable; decisions never use this.
+    const r = readField<T>(f, path as never, 0);
+    return r.value;
+  }
+
+  private questionsOf(invoiceId: string): QuestionRow[] {
+    return this.v.db
+      .select()
+      .from(t.questions)
+      .where(eq(t.questions.invoiceId, invoiceId))
+      .orderBy(asc(sql`rowid`))
+      .all();
+  }
+
+  async poNumberOf(inv: InvoiceRow): Promise<string | null> {
+    if (!inv.poErpId) return null;
+    return (await this.v.erp.getPurchaseOrder(inv.poErpId as never))?.poNumber ?? null;
+  }
+
+  async summary(inv: InvoiceRow, doc: DocumentRow): Promise<ApiInvoiceSummary> {
+    const f = this.fields(inv.id);
+    const qs = this.questionsOf(inv.id);
+    const open = qs.find((q) => q.status === 'open');
+    const answered = qs
+      .filter((q) => q.status === 'answered')
+      .sort((a, b) => (b.answerSeq ?? 0) - (a.answerSeq ?? 0));
+    const lastDecision = answered[0];
+    const openCtx = open ? (JSON.parse(open.contextJson) as QuestionContext) : null;
+    let decision: ApiInvoiceSummary['decision'] = null;
+    if (lastDecision) {
+      const ctx = JSON.parse(lastDecision.contextJson) as QuestionContext;
+      const ans = JSON.parse(lastDecision.answerJson ?? '{}') as { optionId: string };
+      const option = (JSON.parse(lastDecision.optionsJson) as { id: string; label: string }[]).find(
+        (o) => o.id === ans.optionId,
+      );
+      decision = {
+        summary: ctx.summary,
+        label: option?.label ?? '',
+        result: ctx.optionMeta[ans.optionId]?.result ?? '',
+        at: lastDecision.answeredAt ?? '',
+      };
+    }
+    const state = inv.state as InvoiceState;
+    return {
+      id: inv.id,
+      documentId: doc.id,
+      state,
+      status: uiStatus(state, answered.length > 0),
+      number: this.shown<string>(f, 'header.invoiceNumber'),
+      supplierName: this.shown<string>(f, 'header.vendorName'),
+      invoiceDate: this.shown<string>(f, 'header.invoiceDate'),
+      // Only a total Veyra can use is shown as the amount; an unclear reading stays in the question.
+      totalPaise: readField<number>(f, 'header.totalPaise', this.v.settings().confidenceMinBp)
+        .value,
+      source: doc.mime === 'application/pdf' ? 'PDF' : 'Photo',
+      filename: doc.filename,
+      receivedAt: doc.uploadedAt,
+      updatedAt: inv.updatedAt,
+      question:
+        open && openCtx
+          ? { id: open.id, summary: openCtx.summary, evidence: openCtx.evidence }
+          : null,
+      decision,
+      note: await this.note(inv),
+      failure:
+        state === 'FAILED'
+          ? { stage: inv.failedStage ?? '', reason: plainFailure(inv.failureReason ?? '') }
+          : null,
+    };
+  }
+
+  private async note(inv: InvoiceRow): Promise<string | null> {
+    if (inv.state === 'REJECTED')
+      return inv.rejectedReason ? `Rejected: ${inv.rejectedReason}` : 'Rejected';
+    if (inv.state !== 'VERIFIED_PENDING_PAYMENT') return null;
+    const committed = this.v.db
+      .select()
+      .from(t.creationActions)
+      .where(
+        and(eq(t.creationActions.invoiceId, inv.id), eq(t.creationActions.status, 'committed')),
+      )
+      .all()
+      .map((a) => a.entity);
+    const parts: string[] = [];
+    if (committed.includes('vendor')) parts.push('New supplier added');
+    if (committed.includes('vendor_reactivation')) parts.push('Supplier reactivated');
+    if (committed.includes('item')) parts.push('New item added');
+    if (committed.includes('po')) parts.push('order created');
+    else {
+      const po = await this.poNumberOf(inv);
+      if (po) parts.push(`Matched to ${po}`);
+    }
+    if (committed.includes('grn')) parts.push('receipt recorded');
+    const text = parts.join(', ');
+    return text ? text[0]?.toUpperCase() + text.slice(1) : null;
+  }
+
+  async inbox(): Promise<ApiInbox> {
+    const rows = this.v.db
+      .select()
+      .from(t.invoices)
+      .innerJoin(t.documents, eq(t.documents.id, t.invoices.documentId))
+      .orderBy(desc(t.documents.uploadedAt), desc(t.invoices.id))
+      .all();
+    const invoices = await Promise.all(rows.map((r) => this.summary(r.invoices, r.documents)));
+    const count = (s: UiStatus) => invoices.filter((i) => i.status === s).length;
+    return {
+      counts: {
+        received: invoices.length,
+        needsYou: count('attention'),
+        processing: count('processing'),
+        handled: count('handled'),
+        ready: count('ready'),
+        rejected: count('rejected'),
+        decidedByYou: invoices.filter((i) => i.decision !== null).length,
+      },
+      invoices,
+    };
+  }
+
+  async detail(invoiceId: string): Promise<ApiInvoiceDetail> {
+    const inv = this.v.invoiceRow(this.v.db, invoiceId);
+    const doc = this.v.db
+      .select()
+      .from(t.documents)
+      .where(eq(t.documents.id, inv.documentId))
+      .get();
+    if (!doc) throw new Error('document missing');
+    const base = await this.summary(inv, doc);
+    const f = this.fields(invoiceId);
+    const min = this.v.settings().confidenceMinBp;
+    const str = (p: string) => this.shown<string>(f, p);
+    const num = (p: string) => this.shown<number>(f, p);
+    const lineNos = this.v.db
+      .select()
+      .from(t.invoiceLines)
+      .where(eq(t.invoiceLines.invoiceId, invoiceId))
+      .orderBy(asc(t.invoiceLines.lineNo))
+      .all();
+    const vendorGstin = (f.get('header.vendorGstin')?.value as string | null) ?? null;
+    const vendorState = vendorGstin ? validateGstin(vendorGstin) : null;
+    const pos = readField<string>(f, 'header.placeOfSupply', min).value;
+    const company = await this.v.erp.getCompany();
+    const taxable = num('header.taxablePaise');
+    const heads = ['header.cgstPaise', 'header.sgstPaise', 'header.igstPaise'].map(
+      (p) => num(p) ?? 0,
+    );
+    const roundOff = num('header.roundOffPaise');
+    const unclear = [...f.values()]
+      .filter((x) => {
+        const s = readField(f, x.path, min).state;
+        return s === 'low_confidence' || s === 'unparseable';
+      })
+      .map((x) => x.path);
+    const latestRun = inv.runNo;
+    const checks = this.v.db
+      .select()
+      .from(t.validationResults)
+      .where(
+        and(eq(t.validationResults.invoiceId, invoiceId), eq(t.validationResults.runNo, latestRun)),
+      )
+      .orderBy(asc(sql`rowid`))
+      .all()
+      .map((r) => ({
+        rule: r.ruleCode,
+        name: RULES[r.ruleCode as RuleCode].name,
+        lineNo: r.lineNo,
+        outcome: r.outcome as 'pass',
+        naReason: r.naReason,
+        message: r.message,
+      }));
+    const records = this.v.db
+      .select()
+      .from(t.auditEvents)
+      .where(
+        and(eq(t.auditEvents.invoiceId, invoiceId), eq(t.auditEvents.event, 'creation.committed')),
+      )
+      .all()
+      .map((e) => String((JSON.parse(e.detailJson) as { label?: string }).label ?? ''));
+    const vendor = inv.vendorErpId ? await this.v.erp.getVendor(inv.vendorErpId as never) : null;
+    const invoiceBrief = {
+      number: base.number,
+      supplierName: base.supplierName,
+      totalPaise: base.totalPaise,
+    };
+    return {
+      ...base,
+      supplier: {
+        name: str('header.vendorName'),
+        gstin: vendorGstin,
+        address: str('header.vendorAddress'),
+        state: vendorState?.ok ? (stateName(vendorState.value.stateCode) ?? null) : null,
+        stateCode: vendorState?.ok ? vendorState.value.stateCode : null,
+      },
+      buyer: {
+        name: company.name,
+        gstin: str('header.buyerGstin'),
+        address: null,
+        state: stateName(company.stateCode) ?? null,
+        stateCode: company.stateCode,
+      },
+      poNumber: str('header.poNumber') ?? (await this.poNumberOf(inv)),
+      placeOfSupply: pos
+        ? `${stateName(pos as never) ?? pos} (${pos})`
+        : ((f.get('header.placeOfSupply')?.value as string | null) ?? null),
+      supply:
+        vendorState?.ok && pos
+          ? vendorState.value.stateCode === pos
+            ? 'intra_state'
+            : 'inter_state'
+          : null,
+      lines: lineNos.map((l) => ({
+        lineNo: l.lineNo,
+        description: str(`lines[${l.lineNo}].description`),
+        hsnSac: str(`lines[${l.lineNo}].hsnSac`),
+        qtyMilli: num(`lines[${l.lineNo}].qtyMilli`),
+        uom: str(`lines[${l.lineNo}].uom`),
+        unitPricePaise: num(`lines[${l.lineNo}].unitPricePaise`),
+        taxablePaise: num(`lines[${l.lineNo}].taxablePaise`),
+        gstRateBp: num(`lines[${l.lineNo}].gstRateBp`),
+      })),
+      taxablePaise: taxable,
+      cgstPaise: num('header.cgstPaise'),
+      sgstPaise: num('header.sgstPaise'),
+      igstPaise: num('header.igstPaise'),
+      roundOffPaise: roundOff,
+      readTotalPaise: num('header.totalPaise'),
+      totals:
+        taxable === null
+          ? null
+          : {
+              calculatedPaise: taxable + heads.reduce((a, b) => a + b, 0),
+              roundOffPaise: roundOff,
+              invoicePaise: base.totalPaise,
+            },
+      unclearPaths: unclear,
+      questions: this.questionsOf(invoiceId)
+        .filter((q) => q.status !== 'superseded')
+        .map((q) => questionDto(q, invoiceBrief)),
+      checks,
+      erp: {
+        vendor: vendor ? `${vendor.name} (${vendor.code})` : null,
+        poNumber: await this.poNumberOf(inv),
+        purchaseInvoiceId: inv.erpPurchaseInvoiceId,
+        records,
+      },
+    };
+  }
+
+  async questions(status: 'open' | 'answered'): Promise<ApiQuestion[]> {
+    const rows = this.v.db
+      .select()
+      .from(t.questions)
+      .where(eq(t.questions.status, status))
+      .orderBy(status === 'open' ? asc(sql`rowid`) : desc(t.questions.answerSeq))
+      .all();
+    return rows.map((q) => {
+      const f = this.fields(q.invoiceId);
+      return questionDto(q, {
+        number: this.shown<string>(f, 'header.invoiceNumber'),
+        supplierName: this.shown<string>(f, 'header.vendorName'),
+        totalPaise: this.shown<number>(f, 'header.totalPaise'),
+      });
+    });
+  }
+
+  question(id: string): ApiQuestion | null {
+    const q = this.v.db.select().from(t.questions).where(eq(t.questions.id, id)).get();
+    if (!q) return null;
+    const f = this.fields(q.invoiceId);
+    return questionDto(q, {
+      number: this.shown<string>(f, 'header.invoiceNumber'),
+      supplierName: this.shown<string>(f, 'header.vendorName'),
+      totalPaise: this.shown<number>(f, 'header.totalPaise'),
+    });
+  }
+
+  audit(invoiceId: string | null): ApiAuditEntry[] {
+    const rows = this.v.db
+      .select()
+      .from(t.auditEvents)
+      .where(invoiceId ? eq(t.auditEvents.invoiceId, invoiceId) : undefined)
+      .orderBy(asc(sql`rowid`))
+      .all();
+    return rows.flatMap((e) => auditEntry(e));
+  }
+}
+
+const ENTITY: Record<string, string> = {
+  vendor: 'new supplier',
+  vendor_reactivation: 'supplier reactivation',
+  item: 'new item',
+  alias: "link for the supplier's item code",
+  po: 'purchase order from the invoice',
+  grn: 'goods receipt',
+};
+
+/** One audit row in plain language. State changes and bookkeeping rows are not shown. */
+function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
+  const d = JSON.parse(e.detailJson) as Record<string, unknown>;
+  const by = e.actorType === 'user' ? ('You' as const) : ('Veyra' as const);
+  const make = (
+    title: string,
+    detail: string,
+    tone: ApiAuditEntry['tone'] = 'neutral',
+  ): ApiAuditEntry[] => [
+    { id: e.id, invoiceId: e.invoiceId, at: e.createdAt, title, detail, by, tone },
+  ];
+  const s = (k: string) => String(d[k] ?? '');
+  switch (e.event) {
+    case 'invoice.uploaded':
+      return make(
+        'Invoice uploaded',
+        `${s('filename')} (${s('mime') === 'application/pdf' ? 'PDF' : 'photo'})`,
+      );
+    case 'extraction.completed': {
+      const unclear = (d.lowConfidence as string[] | undefined) ?? [];
+      return make(
+        'Invoice understood',
+        `${String(d.lines)} line${d.lines === 1 ? '' : 's'}, totals and tax${unclear.length ? `. Not clear: ${unclear.map(fieldLabel).join(', ')}` : ''}`,
+      );
+    }
+    case 'field.derived':
+      return make(
+        s('path') === 'header.placeOfSupply'
+          ? 'Place of supply established'
+          : 'GSTIN taken from the supplier you chose',
+        s('path') === 'header.placeOfSupply'
+          ? `From the ship-to details on the invoice: ${s('value')}`
+          : s('value'),
+      );
+    case 'match.recorded': {
+      const parts = [
+        d.vendor
+          ? `Supplier ${String(d.vendor).replace(/^new \(.*\)$/, 'is new')}`
+          : 'Supplier and order not settled yet',
+      ];
+      if (d.po)
+        parts.push(
+          `order ${String(d.po).replace(/^new \(.*\)$/, 'to be created from the invoice')}`,
+        );
+      return make('Records checked', parts.join(' · '));
+    }
+    case 'creation.staged':
+      return make(
+        'Prepared',
+        `A ${ENTITY[s('entity')] ?? s('entity')}, to be written with the invoice`,
+      );
+    case 'creation.approved':
+      return make('You approved', `A ${ENTITY[s('entity')] ?? s('entity')}`);
+    case 'validation.completed': {
+      const failed = (d.failed as string[] | undefined) ?? [];
+      const na = (d.notApplicable as string[] | undefined) ?? [];
+      return failed.length
+        ? make(
+            'Checks found an issue',
+            `${failed.length} check${failed.length === 1 ? '' : 's'} did not pass`,
+            'attention',
+          )
+        : make(
+            'Checks passed',
+            `${String(d.passed)} checks passed${na.some((x) => x.includes('PO_DERIVED_FROM_INVOICE')) ? '; order comparisons not applicable (order created from this invoice)' : ''}`,
+          );
+    }
+    case 'question.raised':
+      return make('Question sent to you', `${s('summary')}: ${s('evidence')}`, 'attention');
+    case 'question.answered':
+      return make('Decision recorded', `${s('summary')}: ${s('option')}`);
+    case 'field.corrected':
+      return make(
+        'Value corrected',
+        `${fieldLabel(s('path'))}: ${displayValue(kindOf(s('path')), d.to as never)}`,
+      );
+    case 'field.confirmed':
+      return make('Value confirmed', fieldLabel(s('path')));
+    case 'commit.started':
+      return make('Writing to your ERP', 'Everything checked; recording the transaction');
+    case 'creation.committed':
+      return make('Recorded in your ERP', s('label'));
+    case 'commit.conflict':
+      return make('Checking again', s('reason'), 'attention');
+    case 'commit.completed':
+      return [
+        ...make(
+          'Transaction committed',
+          `Purchase invoice ${s('purchaseInvoiceId')} recorded in your ERP`,
+          'handled',
+        ),
+        {
+          id: `${e.id}-ready`,
+          invoiceId: e.invoiceId,
+          at: e.createdAt,
+          title: 'Ready for payment',
+          detail: 'Verified. Paying stays with your team.',
+          by: 'Veyra',
+          tone: 'handled',
+        },
+      ];
+    case 'invoice.rejected':
+      return make('You rejected the invoice', s('reason'));
+    case 'creation.discarded':
+      return s('reason') === 'invoice rejected'
+        ? make(
+            'Not written to your ERP',
+            `The ${ENTITY[s('entity')] ?? s('entity')} stays here for the record`,
+          )
+        : [];
+    case 'invoice.failed':
+      return make("Veyra couldn't finish", plainFailure(s('reason')), 'attention');
+    default:
+      return [];
+  }
+}
+
+function kindOf(path: string) {
+  return (
+    path.endsWith('Paise')
+      ? 'money'
+      : path.endsWith('qtyMilli')
+        ? 'qty'
+        : path.endsWith('RateBp')
+          ? 'rate'
+          : path.endsWith('Date')
+            ? 'date'
+            : 'text'
+  ) as 'money';
+}
+
+function plainFailure(reason: string): string {
+  if (reason.startsWith('INVARIANT_VIOLATION'))
+    return 'A check did not pass and no question could resolve it.';
+  if (/sample invoices/.test(reason)) return 'This demo can only read the sample invoices.';
+  return reason;
+}
+
+export const fmt = {
+  rupees,
+  dateText,
+  qty: (m: number, uom: string) => `${formatQty(milliQty(m))} ${uom}`,
+};

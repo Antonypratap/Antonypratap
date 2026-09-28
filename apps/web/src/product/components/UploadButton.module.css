@@ -1,0 +1,31 @@
+.wrap {
+  display: grid;
+  justify-items: end;
+  gap: var(--space-2);
+}
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 2.25rem;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-ink);
+  color: var(--color-canvas);
+  font-size: var(--text-xsmall);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.message {
+  max-width: 28rem;
+  font-size: var(--text-xsmall);
+  line-height: 1.45;
+  text-align: right;
+  color: var(--color-attention);
+}

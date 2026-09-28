@@ -38,3 +38,37 @@ export function normalizeName(name: string): string {
 export function normalizeInvoiceNumber(invoiceNumber: string): string {
   return invoiceNumber.normalize('NFKC').toUpperCase().replace(/\s+/g, '');
 }
+
+/**
+ * Units of measure (RULES §1.4): a fixed synonym table onto canonical codes. Unknown units are
+ * unparseable (null), never guessed. NOS and PCS are distinct units.
+ */
+const UOM_SYNONYMS: Readonly<Record<string, string>> = {
+  KG: 'KGS',
+  KGS: 'KGS',
+  KILOGRAM: 'KGS',
+  KILOGRAMS: 'KGS',
+  NOS: 'NOS',
+  NO: 'NOS',
+  NUMBERS: 'NOS',
+  PCS: 'PCS',
+  PC: 'PCS',
+  PIECES: 'PCS',
+  REAM: 'REAM',
+  REAMS: 'REAM',
+  BOX: 'BOX',
+  BOXES: 'BOX',
+  MTR: 'MTR',
+  METRE: 'MTR',
+  METRES: 'MTR',
+  LTR: 'LTR',
+  LITRE: 'LTR',
+  LITRES: 'LTR',
+  SET: 'SET',
+  SETS: 'SET',
+};
+
+export function normalizeUom(uom: string): string | null {
+  const key = uom.normalize('NFKC').trim().toUpperCase().replace(/\.$/, '');
+  return UOM_SYNONYMS[key] ?? null;
+}

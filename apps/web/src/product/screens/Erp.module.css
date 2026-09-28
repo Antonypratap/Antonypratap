@@ -79,3 +79,6 @@
   color: var(--color-attention);
   font-weight: var(--weight-regular);
 }
+.origin {
+  color: var(--color-accent);
+}

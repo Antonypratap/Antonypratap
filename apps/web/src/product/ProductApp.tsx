@@ -1,4 +1,5 @@
 import { AppShell } from './shell/AppShell';
+import { ProductDataProvider } from './state/data';
 import type { Route } from './router';
 import { Audit } from './screens/Audit';
 import { Erp } from './screens/Erp';
@@ -24,11 +25,13 @@ function Screen({ route }: { route: Route }) {
   }
 }
 
-/** The Veyra product prototype: static demo data, local state only. */
+/** The Veyra product: every screen reads the Veyra API; the server is authoritative. */
 export function ProductApp({ route }: { route: Route }) {
   return (
-    <AppShell route={route}>
-      <Screen route={route} />
-    </AppShell>
+    <ProductDataProvider>
+      <AppShell route={route}>
+        <Screen route={route} />
+      </AppShell>
+    </ProductDataProvider>
   );
 }

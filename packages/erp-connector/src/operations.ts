@@ -14,6 +14,11 @@ export const ERP_READ_OPERATIONS = [
   'listGrnsForPo',
   'getInvoicedQtyByPoLine',
   'findPurchaseInvoice',
+  'listVendors',
+  'listItems',
+  'listPurchaseOrders',
+  'listGrns',
+  'listPurchaseInvoices',
 ] as const;
 export type ErpReadOperation = (typeof ERP_READ_OPERATIONS)[number];
 
