@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   RULES,
   formatQty,
@@ -17,7 +17,7 @@ import { stateName, validateGstin } from '@veyra/india-tax';
 import * as t from '../db/schema';
 import { readField, type StoredField } from '../engine/fields';
 import { dateText, displayValue, fieldLabel, rupees } from '../engine/questions';
-import type { Veyra } from '../workflow/veyra';
+import { storedField, type Veyra } from '../workflow/veyra';
 
 type InvoiceRow = typeof t.invoices.$inferSelect;
 type DocumentRow = typeof t.documents.$inferSelect;
@@ -96,6 +96,46 @@ export function questionDto(q: QuestionRow, invoice: ApiQuestion['invoice']): Ap
   };
 }
 
+/** The header fields list views (inbox, questions) show. */
+const LIST_PATHS = [
+  'header.invoiceNumber',
+  'header.vendorName',
+  'header.invoiceDate',
+  'header.totalPaise',
+];
+
+function groupBy<T>(rows: T[], key: (r: T) => string): Map<string, T[]> {
+  const out = new Map<string, T[]>();
+  for (const r of rows) {
+    const k = key(r);
+    const list = out.get(k);
+    if (list) list.push(r);
+    else out.set(k, [r]);
+  }
+  return out;
+}
+
+/** Whether the inbox note names the matched ERP order (a verified invoice that created none). */
+function needsPoNumber(inv: InvoiceRow, committed: string[]): boolean {
+  return inv.state === 'VERIFIED_PENDING_PAYMENT' && !committed.includes('po');
+}
+
+/** The inbox note: what Veyra did for a verified invoice, or why it was rejected. */
+function note(inv: InvoiceRow, committed: string[], poNumber: string | null): string | null {
+  if (inv.state === 'REJECTED')
+    return inv.rejectedReason ? `Rejected: ${inv.rejectedReason}` : 'Rejected';
+  if (inv.state !== 'VERIFIED_PENDING_PAYMENT') return null;
+  const parts: string[] = [];
+  if (committed.includes('vendor')) parts.push('New supplier added');
+  if (committed.includes('vendor_reactivation')) parts.push('Supplier reactivated');
+  if (committed.includes('item')) parts.push('New item added');
+  if (committed.includes('po')) parts.push('order created');
+  else if (poNumber) parts.push(`Matched to ${poNumber}`);
+  if (committed.includes('grn')) parts.push('receipt recorded');
+  const text = parts.join(', ');
+  return text ? text[0]?.toUpperCase() + text.slice(1) : null;
+}
+
 export class Presenter {
   constructor(readonly v: Veyra) {}
 
@@ -148,9 +188,115 @@ export class Presenter {
     return (await this.v.erp.getPurchaseOrder(inv.poErpId as never))?.poNumber ?? null;
   }
 
+  /** One invoice's summary, loading what it needs (the invoice detail uses this). */
   async summary(inv: InvoiceRow, doc: DocumentRow): Promise<ApiInvoiceSummary> {
-    const f = await this.fields(inv.id);
-    const qs = await this.questionsOf(inv.id);
+    const committed = await this.v.db
+      .select({ entity: t.creationActions.entity })
+      .from(t.creationActions)
+      .where(
+        and(eq(t.creationActions.invoiceId, inv.id), eq(t.creationActions.status, 'committed')),
+      )
+      .orderBy(asc(t.creationActions.seq));
+    return this.buildSummary(inv, doc, {
+      fields: await this.fields(inv.id),
+      questions: await this.questionsOf(inv.id),
+      minConfidenceBp: (await this.v.settings()).confidenceMinBp,
+      committed: committed.map((a) => a.entity),
+      poNumber: needsPoNumber(
+        inv,
+        committed.map((a) => a.entity),
+      )
+        ? await this.poNumberOf(inv)
+        : null,
+    });
+  }
+
+  /**
+   * Many invoices' summaries with a fixed number of queries (Phase 7): the list fields,
+   * questions and committed creations of all of them at once, settings once, and each distinct
+   * ERP order looked up once. Same result as `summary` for each invoice (tested).
+   */
+  async summaries(rows: { invoices: InvoiceRow; documents: DocumentRow }[]) {
+    if (rows.length === 0) return [];
+    const ids = rows.map((r) => r.invoices.id);
+    const [fields, questions, committed, settings] = await Promise.all([
+      this.listFields(ids),
+      this.v.db
+        .select()
+        .from(t.questions)
+        .where(inArray(t.questions.invoiceId, ids))
+        .orderBy(asc(t.questions.seq)),
+      this.v.db
+        .select({ invoiceId: t.creationActions.invoiceId, entity: t.creationActions.entity })
+        .from(t.creationActions)
+        .where(
+          and(inArray(t.creationActions.invoiceId, ids), eq(t.creationActions.status, 'committed')),
+        )
+        .orderBy(asc(t.creationActions.seq)),
+      this.v.settings(),
+    ]);
+    const questionsBy = groupBy(questions, (q) => q.invoiceId);
+    const committedBy = groupBy(committed, (a) => a.invoiceId);
+    const entitiesOf = (id: string) => (committedBy.get(id) ?? []).map((a) => a.entity);
+    // Each distinct ERP order once (the same order can be matched by many invoices).
+    const poIds = [
+      ...new Set(
+        rows
+          .filter((r) => needsPoNumber(r.invoices, entitiesOf(r.invoices.id)))
+          .map((r) => r.invoices.poErpId)
+          .filter((x): x is string => x !== null),
+      ),
+    ];
+    const poNumbers = new Map<string, string | null>();
+    for (const id of poIds)
+      poNumbers.set(id, (await this.v.erp.getPurchaseOrder(id as never))?.poNumber ?? null);
+    return rows.map(({ invoices: inv, documents: doc }) =>
+      this.buildSummary(inv, doc, {
+        fields: fields.get(inv.id) ?? new Map(),
+        questions: questionsBy.get(inv.id) ?? [],
+        minConfidenceBp: settings.confidenceMinBp,
+        committed: entitiesOf(inv.id),
+        poNumber:
+          needsPoNumber(inv, entitiesOf(inv.id)) && inv.poErpId
+            ? (poNumbers.get(inv.poErpId) ?? null)
+            : null,
+      }),
+    );
+  }
+
+  /** The fields list views show, for many invoices in one query. */
+  private async listFields(invoiceIds: string[]): Promise<Map<string, Map<string, StoredField>>> {
+    const rows = await this.v.db
+      .select()
+      .from(t.extractedFields)
+      .where(
+        and(
+          inArray(t.extractedFields.invoiceId, invoiceIds),
+          inArray(t.extractedFields.path, LIST_PATHS),
+        ),
+      );
+    const out = new Map<string, Map<string, StoredField>>();
+    for (const r of rows) {
+      const m = out.get(r.invoiceId) ?? new Map<string, StoredField>();
+      m.set(r.path, storedField(r));
+      out.set(r.invoiceId, m);
+    }
+    return out;
+  }
+
+  private buildSummary(
+    inv: InvoiceRow,
+    doc: DocumentRow,
+    x: {
+      fields: Map<string, StoredField>;
+      questions: QuestionRow[];
+      minConfidenceBp: number;
+      committed: string[];
+      poNumber: string | null;
+    },
+  ): ApiInvoiceSummary {
+    const f = x.fields;
+    const qs = x.questions;
     const open = qs.find((q) => q.status === 'open');
     const answered = qs
       .filter((q) => q.status === 'answered')
@@ -181,11 +327,7 @@ export class Presenter {
       supplierName: this.shown<string>(f, 'header.vendorName'),
       invoiceDate: this.shown<string>(f, 'header.invoiceDate'),
       // Only a total Veyra can use is shown as the amount; an unclear reading stays in the question.
-      totalPaise: readField<number>(
-        f,
-        'header.totalPaise',
-        (await this.v.settings()).confidenceMinBp,
-      ).value,
+      totalPaise: readField<number>(f, 'header.totalPaise', x.minConfidenceBp).value,
       source: doc.mime === 'application/pdf' ? 'PDF' : 'Photo',
       filename: doc.filename,
       receivedAt: doc.uploadedAt,
@@ -201,39 +343,12 @@ export class Presenter {
             }
           : null,
       decision,
-      note: await this.note(inv),
+      note: note(inv, x.committed, x.poNumber),
       failure:
         state === 'FAILED'
           ? { stage: inv.failedStage ?? '', reason: plainFailure(inv.failureReason ?? '') }
           : null,
     };
-  }
-
-  private async note(inv: InvoiceRow): Promise<string | null> {
-    if (inv.state === 'REJECTED')
-      return inv.rejectedReason ? `Rejected: ${inv.rejectedReason}` : 'Rejected';
-    if (inv.state !== 'VERIFIED_PENDING_PAYMENT') return null;
-    const committed = (
-      await this.v.db
-        .select()
-        .from(t.creationActions)
-        .where(
-          and(eq(t.creationActions.invoiceId, inv.id), eq(t.creationActions.status, 'committed')),
-        )
-        .orderBy(asc(t.creationActions.seq))
-    ).map((a) => a.entity);
-    const parts: string[] = [];
-    if (committed.includes('vendor')) parts.push('New supplier added');
-    if (committed.includes('vendor_reactivation')) parts.push('Supplier reactivated');
-    if (committed.includes('item')) parts.push('New item added');
-    if (committed.includes('po')) parts.push('order created');
-    else {
-      const po = await this.poNumberOf(inv);
-      if (po) parts.push(`Matched to ${po}`);
-    }
-    if (committed.includes('grn')) parts.push('receipt recorded');
-    const text = parts.join(', ');
-    return text ? text[0]?.toUpperCase() + text.slice(1) : null;
   }
 
   async inbox(): Promise<ApiInbox> {
@@ -242,7 +357,7 @@ export class Presenter {
       .from(t.invoices)
       .innerJoin(t.documents, eq(t.documents.id, t.invoices.documentId))
       .orderBy(desc(t.documents.uploadedAt), desc(t.invoices.seq));
-    const invoices = await Promise.all(rows.map((r) => this.summary(r.invoices, r.documents)));
+    const invoices = await this.summaries(rows);
     const count = (s: UiStatus) => invoices.filter((i) => i.status === s).length;
     return {
       counts: {
@@ -399,16 +514,18 @@ export class Presenter {
       .from(t.questions)
       .where(eq(t.questions.status, status))
       .orderBy(status === 'open' ? asc(t.questions.seq) : desc(t.questions.answerSeq));
-    return Promise.all(
-      rows.map(async (q) => {
-        const f = await this.fields(q.invoiceId);
-        return questionDto(q, {
-          number: this.shown<string>(f, 'header.invoiceNumber'),
-          supplierName: this.shown<string>(f, 'header.vendorName'),
-          totalPaise: this.shown<number>(f, 'header.totalPaise'),
-        });
-      }),
-    );
+    // The invoices' list fields in one query (Phase 7), not one full field load per question.
+    const fields = rows.length
+      ? await this.listFields([...new Set(rows.map((q) => q.invoiceId))])
+      : new Map();
+    return rows.map((q) => {
+      const f = fields.get(q.invoiceId) ?? new Map<string, StoredField>();
+      return questionDto(q, {
+        number: this.shown<string>(f, 'header.invoiceNumber'),
+        supplierName: this.shown<string>(f, 'header.vendorName'),
+        totalPaise: this.shown<number>(f, 'header.totalPaise'),
+      });
+    });
   }
 
   async question(id: string): Promise<ApiQuestion | null> {

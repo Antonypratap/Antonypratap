@@ -9,6 +9,7 @@ import {
   FixtureExtractor,
   LocalDocumentExtractor,
   OllamaAssist,
+  TesseractOcr,
   type Extractor,
 } from '@veyra/extractor';
 import { configureDocumentLimits, type ConfigurableDocumentLimits } from '@veyra/extractor';
@@ -21,6 +22,7 @@ import { buildServer } from './http/server';
 import { sessionCookieName } from './http/access';
 import { LocalDocumentStorage, type DocumentStorage } from './storage';
 import { SessionStore } from './auth/sessions';
+import { timedErp, timedOcr } from './perf/timing';
 import { Users } from './auth/users';
 import type { Secret } from './secret';
 import { JobRunner } from './workflow/runner';
@@ -83,22 +85,30 @@ const DEV_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173'];
 function makeExtractor(
   mode: string,
   config: AppConfig,
-): Extractor & { close?: () => Promise<void> } {
-  const real =
-    config.documentExtractor ??
-    new LocalDocumentExtractor({
-      ollama: config.ollama ? new OllamaAssist(config.ollama) : null,
-    });
+): { extractor: Extractor & { close?: () => Promise<void> }; warmUp: () => Promise<void> } {
+  const local = config.documentExtractor
+    ? null
+    : new LocalDocumentExtractor({
+        ollama: config.ollama ? new OllamaAssist(config.ollama) : null,
+        // OCR is timed on its own (docs/PERFORMANCE.md); the engine is unchanged.
+        ocr: timedOcr(new TesseractOcr()),
+      });
+  const warmUp = () => (local ? local.warmUp({ ocr: true }) : Promise.resolve());
+  const real: Extractor & { close?: () => Promise<void> } =
+    config.documentExtractor ?? (local as LocalDocumentExtractor);
   const environment = environmentOf(config);
   const demo = (mode === 'demo' || mode === 'fixture') && environment !== 'production';
-  if (!demo || !config.allowFixtureExtractor) return real;
+  if (!demo || !config.allowFixtureExtractor) return { extractor: real, warmUp };
   const fixture = new FixtureExtractor({
     allow: config.allowFixtureExtractor,
     nodeEnv: environment,
   });
-  return Object.assign(new DemoRoutedExtractor(fixture, real), {
-    close: () => real.close?.() ?? Promise.resolve(),
-  });
+  return {
+    extractor: Object.assign(new DemoRoutedExtractor(fixture, real), {
+      close: () => real.close?.() ?? Promise.resolve(),
+    }),
+    warmUp,
+  };
 }
 
 /**
@@ -133,10 +143,14 @@ export async function createApp(config: AppConfig) {
   });
   const initialSettings = demoMode ? DEMO_SETTINGS : DEFAULT_SETTINGS;
   const storage = config.storage ?? new LocalDocumentStorage(join(config.dataDir, 'uploads'));
-  const extractor = makeExtractor(initialSettings.extractorMode, config);
+  const { extractor, warmUp: warmUpExtractor } = makeExtractor(
+    initialSettings.extractorMode,
+    config,
+  );
   // The workflow sees only the ErpConnector port, behind the capability guard: an operation the
   // connector does not declare is UNSUPPORTED, never a silent fallback (ARCHITECTURE §17).
-  const connector = guardCapabilities(config.wrapErp ? config.wrapErp(erp) : erp);
+  // Every connector call is timed (ERP_LOOKUP / ERP_WRITE) without changing the contract.
+  const connector = guardCapabilities(timedErp(config.wrapErp ? config.wrapErp(erp) : erp));
   const veyra = new Veyra({
     db,
     erp: connector,
@@ -226,6 +240,7 @@ export async function createApp(config: AppConfig) {
       storage,
       runner,
       pingDatabase: database.ping,
+      poolStats: database.poolStats,
       environment,
       expectWorker: true,
     }),
@@ -242,6 +257,11 @@ export async function createApp(config: AppConfig) {
     cookieName: sessionCookieName(cookieSecure),
     environment,
     database,
+    /**
+     * Loads the PDF reader and starts the OCR engine now (Phase 7), so the first invoice after a
+     * start is not slower than the rest. The server calls it before taking traffic; tests do not.
+     */
+    warmUp: warmUpExtractor,
     /**
      * Graceful shutdown: stop taking requests (in-flight ones finish), let the current job finish
      * or put it back in the queue, then close the database, the ERP and the document readers.

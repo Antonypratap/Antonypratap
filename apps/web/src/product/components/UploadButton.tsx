@@ -3,6 +3,7 @@ import { Icon } from '../../design-system';
 import { api, ApiError } from '../api/client';
 import { useProductData } from '../state/data';
 import styles from './UploadButton.module.css';
+import { notify } from '../../feedback/toasts';
 
 /**
  * Upload one or more invoices (PDF, JPEG or PNG). The server checks the file and reads it (PDF text,
@@ -19,9 +20,11 @@ export function UploadButton({ label = 'Upload invoice' }: { label?: string }) {
     setBusy(true);
     setMessage(null);
     const problems: string[] = [];
+    let uploaded = 0;
     for (const file of Array.from(files)) {
       try {
         await api.upload(file);
+        uploaded++;
       } catch (e) {
         problems.push(
           `${file.name}: ${e instanceof ApiError ? e.message : 'could not be uploaded.'}`,
@@ -29,7 +32,9 @@ export function UploadButton({ label = 'Upload invoice' }: { label?: string }) {
       }
     }
     setBusy(false);
+    // A refused file is a validation failure: it stays on the page. Accepted ones get a toast.
     setMessage(problems.length ? problems.join(' ') : null);
+    if (uploaded > 0) notify.uploaded(uploaded);
     if (input.current) input.current.value = '';
     await refresh();
   };

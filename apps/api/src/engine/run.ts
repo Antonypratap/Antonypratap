@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { stage as timingStage } from '../perf/timing';
 import {
   RULE_CODES,
   milliQty,
@@ -244,11 +245,17 @@ class Run {
   // ── run ──────────────────────────────────────────────────────────────────
 
   async execute(): Promise<EngineOutput> {
-    const company = await this.input.erp.getCompany();
-    await this.stage1(company.gstin);
-    if (!this.hasQuestions()) await this.stage2();
-    if (!this.hasQuestions()) await this.stage3();
-    if (!this.hasQuestions()) await this.stage4();
+    // Timing only (Phase 7): stage 1 checks the invoice on its own (VALIDATION); stages 2–4 find
+    // the vendor, order, items and receipts (MATCHING). ERP time is measured separately.
+    await timingStage('VALIDATION', async () => {
+      const company = await this.input.erp.getCompany();
+      await this.stage1(company.gstin);
+    });
+    await timingStage('MATCHING', async () => {
+      if (!this.hasQuestions()) await this.stage2();
+      if (!this.hasQuestions()) await this.stage3();
+      if (!this.hasQuestions()) await this.stage4();
+    });
 
     // Every rule has a result on every run.
     for (const code of RULE_CODES) {

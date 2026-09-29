@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { ApiSessionSchema, CSRF_HEADER, type ApiSession, type Permission } from '@veyra/shared';
+import { notify } from '../feedback/toasts';
 
 /**
  * The browser's view of the sign-in (Phase 6C). The server decides everything: the session lives
@@ -108,15 +109,19 @@ const post = (body: unknown): RequestInit => ({
 
 export async function signIn(email: string, password: string): Promise<void> {
   apply(await call('/login', post({ email, password })));
+  notify.signedIn();
 }
 
 /** Demo environments only: the demo PIN, checked by the server. */
 export async function demoSignIn(pin: string): Promise<void> {
   apply(await call('/demo', post({ pin })));
+  notify.signedIn();
 }
 
 export async function signOut(): Promise<void> {
   const demo = state.status === 'signedIn' && state.session.demoSignIn;
   await fetch(`${BASE}/logout`, { ...post({}), credentials: 'same-origin' }).catch(() => null);
-  set({ status: 'signedOut', demoSignIn: demo, notice: 'You have signed out.' });
+  // A completed action: a toast. (An ended session is consequential: that notice stays on the page.)
+  set({ status: 'signedOut', demoSignIn: demo, notice: null });
+  notify.signedOut();
 }

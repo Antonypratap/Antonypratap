@@ -116,7 +116,7 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
                       'Reset the demo? This clears every invoice and restores the sample ERP.',
                     )
                   )
-                    void api.resetDemo().then(refresh);
+                    void api.resetDemo().then(() => refresh());
                 }}
               >
                 Reset demo

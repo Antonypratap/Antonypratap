@@ -23,6 +23,8 @@ export interface OcrEngine {
   readonly version: string;
   recognize(png: Uint8Array): Promise<OcrLine[]>;
   close(): Promise<void>;
+  /** Starts the engine ahead of the first document (optional). */
+  warmUp?(): Promise<void>;
 }
 
 interface TesseractWorker {
@@ -100,6 +102,11 @@ export class TesseractOcr implements OcrEngine {
       );
     });
     return this.#worker;
+  }
+
+  /** Starts the Tesseract worker now instead of on the first image (Phase 7). */
+  async warmUp(): Promise<void> {
+    await this.#get();
   }
 
   async recognize(png: Uint8Array): Promise<OcrLine[]> {

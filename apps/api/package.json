@@ -16,10 +16,13 @@
     "db:migrate": "tsx src/cli/migrate.ts",
     "fixtures": "tsx src/cli/generate-import-fixtures.ts",
     "db:migrate-from-sqlite": "tsx src/cli/migrate-from-sqlite.ts",
-    "users": "tsx src/cli/users.ts"
+    "users": "tsx src/cli/users.ts",
+    "bench": "tsx bench/run.ts",
+    "bench:load": "tsx bench/load.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@fastify/compress": "^9.2.0",
     "@fastify/cookie": "^11.1.2",
     "@fastify/cors": "^11.3.0",
     "@fastify/helmet": "^13.1.1",

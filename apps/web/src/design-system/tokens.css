@@ -33,6 +33,11 @@
   --color-attention-soft: #fbf2e4;
   --color-attention-line: #efd8b4;
 
+  /* Colour: error (something did not work) */
+  --color-error: #a3261d;
+  --color-error-soft: #fcefed;
+  --color-error-line: #f0cdc8;
+
   /* Colour: inverse (dark) surfaces */
   --color-inverse: #0c0e11;
   --color-inverse-2: #16191e;

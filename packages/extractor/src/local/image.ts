@@ -147,18 +147,19 @@ export function removeRules(img: Gray): Gray {
   return { width: W, height: H, data: out };
 }
 
-/** Greyscale PNG, the format handed to the OCR engine. */
+/**
+ * Greyscale PNG, the format handed to the OCR engine. Lossless: the engine gets exactly these
+ * pixels. Written straight from the greyscale bytes with no row filter (Phase 7): about ten
+ * times faster than the adaptive filters, for the same pixels (the PNG is a little larger, and
+ * never leaves the process).
+ */
 export function encodePng(img: Gray): Uint8Array {
-  const rgba = Buffer.alloc(img.width * img.height * 4);
-  for (let i = 0; i < img.width * img.height; i++) {
-    const v = img.data[i] ?? 255;
-    rgba[i * 4] = v;
-    rgba[i * 4 + 1] = v;
-    rgba[i * 4 + 2] = v;
-    rgba[i * 4 + 3] = 255;
-  }
-  return PNG.sync.write({ width: img.width, height: img.height, data: rgba } as PNG, {
-    colorType: 0,
-    inputColorType: 6,
-  });
+  return PNG.sync.write(
+    {
+      width: img.width,
+      height: img.height,
+      data: Buffer.from(img.data.buffer, img.data.byteOffset, img.data.byteLength),
+    } as PNG,
+    { colorType: 0, inputColorType: 0, filterType: 0 },
+  );
 }

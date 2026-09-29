@@ -21,6 +21,7 @@ import { can, type Permission } from '@veyra/shared';
 import { checkImageSize, imageSize, sniffDocument, type Extractor } from '@veyra/extractor';
 import type { VeyraDb, VeyraTx } from '../db/open';
 import * as t from '../db/schema';
+import { leaf, stage } from '../perf/timing';
 import { ulid } from '../ids';
 import type { DocumentStorage } from '../storage';
 import { INTERNAL_FAILURE_REASON, isInternalError, isRetryable } from './retry';
@@ -45,6 +46,18 @@ export const DEMO_USER = {
   name: 'Demo Approver',
   email: 'approver@veyra.local',
 } as const;
+
+/** A stored extracted field as the engine reads it. */
+export function storedField(r: typeof t.extractedFields.$inferSelect): StoredField {
+  return {
+    path: r.path as FieldPath,
+    value: JSON.parse(r.valueJson) as JsonValue,
+    confidenceBp: r.confidenceBp,
+    source: r.source as FieldSource,
+    evidence: r.evidenceJson ? JSON.parse(r.evidenceJson) : null,
+    evidenceDetail: r.evidenceDetailJson ? JSON.parse(r.evidenceDetailJson) : null,
+  };
+}
 
 /** The one organization this deployment serves (Phase 6C; see db/schema.ts `organizations`). */
 export const ORGANIZATION_ID = '00000000000000000000000001';
@@ -248,6 +261,17 @@ export class Veyra {
     detail: Record<string, JsonValue>,
     states: { from: InvoiceState; to: InvoiceState } | null = null,
   ): Promise<void> {
+    await leaf('AUDIT', () => this.writeAudit(db, invoiceId, actor, event, detail, states));
+  }
+
+  private async writeAudit(
+    db: Db,
+    invoiceId: string | null,
+    actor: Actor,
+    event: (typeof t.auditEvents.$inferInsert)['event'],
+    detail: Record<string, JsonValue>,
+    states: { from: InvoiceState; to: InvoiceState } | null,
+  ): Promise<void> {
     await db.insert(t.auditEvents).values({
       id: ulid(),
       invoiceId,
@@ -336,6 +360,13 @@ export class Veyra {
     },
     /** Who uploads (recorded and authorized); absent: the designated user (demo, tests). */
     actorId?: string,
+  ): Promise<{ documentId: string; invoiceId: string }> {
+    return stage('UPLOAD', () => this.store(file, actorId));
+  }
+
+  private async store(
+    file: { filename: string; bytes: Uint8Array },
+    actorId: string | undefined,
   ): Promise<{ documentId: string; invoiceId: string }> {
     const { bytes } = file;
     if (actorId) await this.requireActor(actorId, 'documents.upload');
@@ -504,7 +535,11 @@ export class Veyra {
   }
 
   /** READ. The extractor's output is untrusted: it is validated in full before anything uses it. */
-  private async extract(invoiceId: string): Promise<boolean> {
+  private extract(invoiceId: string): Promise<boolean> {
+    return stage('EXTRACTION', () => this.read(invoiceId));
+  }
+
+  private async read(invoiceId: string): Promise<boolean> {
     const doc = (
       await this.db
         .select()
@@ -564,53 +599,62 @@ export class Veyra {
             )
         ).map((r) => r.path),
       );
-      const write = async (
+      // Every field in ONE upsert and every line in ONE insert (Phase 7; previously one round
+      // trip per field). Same rows, values and order: a path written twice keeps its first
+      // position and its last value, exactly as the row-by-row upserts did.
+      const fields = new Map<string, typeof t.extractedFields.$inferInsert>();
+      const write = (
         path: FieldPath,
         f: { value: unknown; confidenceBp: number; evidence: unknown; source: string },
       ) => {
         if (human.has(path)) return; // human values are never overwritten by re-extraction
+        fields.set(path, {
+          id: fields.get(path)?.id ?? ulid(),
+          invoiceId,
+          path,
+          valueJson: JSON.stringify(f.value),
+          confidenceBp: f.confidenceBp,
+          evidenceJson: f.evidence ? JSON.stringify(f.evidence) : null,
+          evidenceDetailJson: null,
+          source: 'extracted',
+          method: f.source,
+          extractionId,
+          updatedByUserId: null,
+          updatedAt: now,
+        });
+      };
+      const lineNos = new Set<number>();
+      for (const [key, f] of Object.entries(result.header))
+        write(headerPath(key as HeaderFieldKey), f);
+      for (const line of result.lines) {
+        for (const [key, f] of Object.entries(line)) {
+          if (key !== 'lineNo') write(linePath(line.lineNo, key as LineFieldKey), f as never);
+        }
+        lineNos.add(line.lineNo);
+      }
+      if (fields.size > 0)
         await tx
           .insert(t.extractedFields)
-          .values({
-            id: ulid(),
-            invoiceId,
-            path,
-            valueJson: JSON.stringify(f.value),
-            confidenceBp: f.confidenceBp,
-            evidenceJson: f.evidence ? JSON.stringify(f.evidence) : null,
-            evidenceDetailJson: null,
-            source: 'extracted',
-            method: f.source,
-            extractionId,
-            updatedByUserId: null,
-            updatedAt: now,
-          })
+          .values([...fields.values()])
           .onConflictDoUpdate({
             target: [t.extractedFields.invoiceId, t.extractedFields.path],
             set: {
-              valueJson: JSON.stringify(f.value),
-              confidenceBp: f.confidenceBp,
-              evidenceJson: f.evidence ? JSON.stringify(f.evidence) : null,
+              valueJson: sql`excluded.value_json`,
+              confidenceBp: sql`excluded.confidence_bp`,
+              evidenceJson: sql`excluded.evidence_json`,
               evidenceDetailJson: null,
               source: 'extracted',
-              method: f.source,
+              method: sql`excluded.method`,
               extractionId,
               updatedByUserId: null,
               updatedAt: now,
             },
           });
-      };
-      for (const [key, f] of Object.entries(result.header))
-        await write(headerPath(key as HeaderFieldKey), f);
-      for (const line of result.lines) {
-        for (const [key, f] of Object.entries(line)) {
-          if (key !== 'lineNo') await write(linePath(line.lineNo, key as LineFieldKey), f as never);
-        }
+      if (lineNos.size > 0)
         await tx
           .insert(t.invoiceLines)
-          .values({ id: ulid(), invoiceId, lineNo: line.lineNo })
+          .values([...lineNos].map((lineNo) => ({ id: ulid(), invoiceId, lineNo })))
           .onConflictDoNothing();
-      }
       const { confidenceMinBp } = await this.settings(tx);
       const lowConfidence = [
         ...Object.entries(result.header)
@@ -643,19 +687,7 @@ export class Veyra {
       .where(eq(t.extractedFields.invoiceId, invoiceId))
       // By path in byte order: the order SQLite returned them in (its (invoice_id, path) index).
       .orderBy(sql`${t.extractedFields.path} collate "C"`);
-    return new Map(
-      rows.map((r) => [
-        r.path,
-        {
-          path: r.path as FieldPath,
-          value: JSON.parse(r.valueJson) as JsonValue,
-          confidenceBp: r.confidenceBp,
-          source: r.source as FieldSource,
-          evidence: r.evidenceJson ? JSON.parse(r.evidenceJson) : null,
-          evidenceDetail: r.evidenceDetailJson ? JSON.parse(r.evidenceDetailJson) : null,
-        },
-      ]),
-    );
+    return new Map(rows.map((r) => [r.path, storedField(r)]));
   }
 
   async answers(db: Db, invoiceId: string): Promise<AnsweredDecision[]> {
@@ -739,7 +771,12 @@ export class Veyra {
   }
 
   /** MATCHING → RESOLVING → VALIDATING → NEEDS_INPUT | COMMITTING | FAILED, persisted atomically. */
-  private async evaluate(invoiceId: string): Promise<void> {
+  /** The engine's own stages (VALIDATION, MATCHING) are timed inside; the rest is PERSIST. */
+  private evaluate(invoiceId: string): Promise<void> {
+    return stage('PERSIST', () => this.evaluateAndPersist(invoiceId));
+  }
+
+  private async evaluateAndPersist(invoiceId: string): Promise<void> {
     const out = await this.engine(invoiceId);
     const now = this.now();
     let queuedCommit = false;
@@ -750,20 +787,21 @@ export class Veyra {
       const runNo = inv.runNo + 1;
       const sys: Actor = { type: 'system' };
 
-      // FIND
-      for (const m of out.matches) {
-        await tx.insert(t.matchResults).values({
-          id: ulid(),
-          invoiceId,
-          runNo,
-          entity: m.entity,
-          lineNo: m.lineNo,
-          outcome: m.outcome,
-          method: m.method,
-          candidatesJson: JSON.stringify(m.candidates),
-          chosenErpId: m.chosenErpId,
-        });
-      }
+      // FIND (one insert for all matches, in order; Phase 7)
+      if (out.matches.length > 0)
+        await tx.insert(t.matchResults).values(
+          out.matches.map((m) => ({
+            id: ulid(),
+            invoiceId,
+            runNo,
+            entity: m.entity,
+            lineNo: m.lineNo,
+            outcome: m.outcome,
+            method: m.method,
+            candidatesJson: JSON.stringify(m.candidates),
+            chosenErpId: m.chosenErpId,
+          })),
+        );
       for (const f of out.derivedFields) {
         await tx
           .insert(t.extractedFields)
@@ -875,22 +913,23 @@ export class Veyra {
       }
       await this.transition(tx, invoiceId, 'RESOLVING', 'VALIDATING', sys);
 
-      // VALIDATE
-      for (const r of out.validations) {
-        await tx.insert(t.validationResults).values({
-          id: ulid(),
-          invoiceId,
-          runNo,
-          ruleCode: r.ruleCode,
-          lineNo: r.lineNo,
-          outcome: r.outcome,
-          naReason: r.naReason,
-          expectedJson: JSON.stringify(r.expected),
-          actualJson: JSON.stringify(r.actual),
-          message: r.message,
-          createdAt: now,
-        });
-      }
+      // VALIDATE (one insert for every rule result, in order; Phase 7)
+      if (out.validations.length > 0)
+        await tx.insert(t.validationResults).values(
+          out.validations.map((r) => ({
+            id: ulid(),
+            invoiceId,
+            runNo,
+            ruleCode: r.ruleCode,
+            lineNo: r.lineNo,
+            outcome: r.outcome,
+            naReason: r.naReason,
+            expectedJson: JSON.stringify(r.expected),
+            actualJson: JSON.stringify(r.actual),
+            message: r.message,
+            createdAt: now,
+          })),
+        );
       const failed = out.validations
         .filter((r) => r.outcome === 'fail')
         .map((r) => (r.lineNo ? `${r.ruleCode}:line:${r.lineNo}` : r.ruleCode));
@@ -1022,6 +1061,14 @@ export class Veyra {
    * MATCHING (or is rejected). The client decides nothing.
    */
   async answer(
+    questionId: string,
+    body: { optionId: string; input: unknown },
+    userId: string,
+  ): Promise<void> {
+    return stage('QUESTION', () => this.recordAnswer(questionId, body, userId));
+  }
+
+  private async recordAnswer(
     questionId: string,
     body: { optionId: string; input: unknown },
     userId: string,
@@ -1235,9 +1282,11 @@ export class Veyra {
 
   /** COMMITTING (decision D4): automatic, restartable, idempotent. See ./commit.ts. */
   async runCommit(invoiceId: string): Promise<void> {
-    const inv = await this.invoiceRow(this.db, invoiceId);
-    if (inv.state !== 'COMMITTING') return;
-    await executeCommit(this, invoiceId, JSON.parse(inv.commitPlanJson ?? 'null') as CommitPlan);
+    await stage('COMMIT', async () => {
+      const inv = await this.invoiceRow(this.db, invoiceId);
+      if (inv.state !== 'COMMITTING') return;
+      await executeCommit(this, invoiceId, JSON.parse(inv.commitPlanJson ?? 'null') as CommitPlan);
+    });
   }
 
   // ── Jobs ─────────────────────────────────────────────────────────────────
@@ -1319,6 +1368,7 @@ export class Veyra {
     invoiceId: string;
     type: 'pipeline' | 'commit';
     attempts: number;
+    readyAt: string;
   } | null> {
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(${CLAIM_LOCK}::bigint)`);
@@ -1357,6 +1407,8 @@ export class Veyra {
         invoiceId: job.invoiceId,
         type: job.type as 'pipeline' | 'commit',
         attempts: job.attempts + 1,
+        // When it became ready to run: queue wait is measured from here.
+        readyAt: job.runAfter > job.createdAt ? job.runAfter : job.createdAt,
       };
     });
   }

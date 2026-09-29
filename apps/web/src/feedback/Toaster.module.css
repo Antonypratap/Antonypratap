@@ -1,0 +1,126 @@
+.region {
+  position: fixed;
+  z-index: 60;
+  right: var(--space-6);
+  bottom: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(24rem, calc(100vw - 2 * var(--space-6)));
+  pointer-events: none;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.toast {
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow:
+    inset 0 0 0 1px var(--color-line-strong),
+    var(--shadow-panel);
+  color: var(--color-ink);
+  font-size: var(--text-small);
+  line-height: 1.45;
+  animation: enter var(--duration-base) var(--ease-out);
+}
+
+.toast[data-kind='success'] {
+  box-shadow:
+    inset 0 0 0 1px var(--color-accent-line),
+    var(--shadow-panel);
+}
+.toast[data-kind='success'] .icon {
+  color: var(--color-accent);
+}
+.toast[data-kind='info'] .icon {
+  color: var(--color-ink-3);
+}
+.toast[data-kind='attention'] {
+  background: var(--color-attention-soft);
+  box-shadow:
+    inset 0 0 0 1px var(--color-attention-line),
+    var(--shadow-panel);
+}
+.toast[data-kind='attention'] .icon {
+  color: var(--color-attention);
+}
+.toast[data-kind='error'] {
+  background: var(--color-error-soft);
+  box-shadow:
+    inset 0 0 0 1px var(--color-error-line),
+    var(--shadow-panel);
+}
+.toast[data-kind='error'] .icon {
+  color: var(--color-error);
+}
+
+.icon {
+  display: inline-flex;
+  margin-top: 1px;
+}
+
+.message {
+  max-width: none;
+  margin: 0;
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin: -0.125rem -0.125rem 0 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-ink-3);
+  cursor: pointer;
+}
+
+.close:hover {
+  color: var(--color-ink);
+  background: rgb(0 0 0 / 0.05);
+}
+
+.close:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Phones: full width at the bottom, above the tab bar and the home indicator. */
+@media (max-width: 640px) {
+  .region {
+    right: var(--space-3);
+    left: var(--space-3);
+    bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+    width: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}

@@ -1,0 +1,138 @@
+{
+  "label": "baseline",
+  "at": "2026-09-29T03:45:11.612Z",
+  "bundle": [
+    {
+      "file": "index-CerND50B.js",
+      "kb": 430,
+      "gzipKb": 127
+    },
+    {
+      "file": "index-Lpqkr0rT.css",
+      "kb": 89,
+      "gzipKb": 15
+    }
+  ],
+  "homepage": {
+    "msToContent": 241,
+    "assetsKb": 519,
+    "assets": ["/assets/index-Lpqkr0rT.css", "/assets/index-CerND50B.js"]
+  },
+  "screens": [
+    {
+      "name": "inbox",
+      "msToContent": 20,
+      "apiRequests": 6,
+      "duplicateRequests": 2,
+      "requests": [
+        "GET /api/v1/health",
+        "GET /api/v1/invoices",
+        "GET /api/v1/questions?status=answered",
+        "GET /api/v1/dev/scenarios",
+        "GET /api/v1/health",
+        "GET /api/v1/dev/scenarios"
+      ]
+    },
+    {
+      "name": "invoices",
+      "msToContent": 202,
+      "apiRequests": 6,
+      "duplicateRequests": 2,
+      "requests": [
+        "GET /api/v1/health",
+        "GET /api/v1/invoices",
+        "GET /api/v1/questions?status=answered",
+        "GET /api/v1/dev/scenarios",
+        "GET /api/v1/health",
+        "GET /api/v1/dev/scenarios"
+      ]
+    },
+    {
+      "name": "invoice detail",
+      "msToContent": 192,
+      "apiRequests": 8,
+      "duplicateRequests": 3,
+      "requests": [
+        "GET /api/v1/invoices/01M3NM4TPZ5NX9Y922753BCK25",
+        "GET /api/v1/health",
+        "GET /api/v1/invoices",
+        "GET /api/v1/questions?status=answered",
+        "GET /api/v1/dev/scenarios",
+        "GET /api/v1/invoices/01M3NM4TPZ5NX9Y922753BCK25",
+        "GET /api/v1/health",
+        "GET /api/v1/dev/scenarios"
+      ]
+    },
+    {
+      "name": "questions",
+      "msToContent": 11,
+      "apiRequests": 6,
+      "duplicateRequests": 2,
+      "requests": [
+        "GET /api/v1/health",
+        "GET /api/v1/invoices",
+        "GET /api/v1/questions?status=answered",
+        "GET /api/v1/dev/scenarios",
+        "GET /api/v1/health",
+        "GET /api/v1/dev/scenarios"
+      ]
+    },
+    {
+      "name": "audit",
+      "msToContent": 21,
+      "apiRequests": 9,
+      "duplicateRequests": 3,
+      "requests": [
+        "GET /api/v1/audit?scope=records",
+        "GET /api/v1/health",
+        "GET /api/v1/invoices",
+        "GET /api/v1/questions?status=answered",
+        "GET /api/v1/dev/scenarios",
+        "GET /api/v1/audit?invoiceId=01M3NM4TPZ5NX9Y922753BCK25",
+        "GET /api/v1/audit?scope=records",
+        "GET /api/v1/health",
+        "GET /api/v1/dev/scenarios"
+      ]
+    },
+    {
+      "name": "erp vendors",
+      "msToContent": 35,
+      "apiRequests": 10,
+      "duplicateRequests": 4,
+      "requests": [
+        "GET /api/v1/erp/vendors",
+        "GET /api/v1/erp/connection",
+        "GET /api/v1/health",
+        "GET /api/v1/invoices",
+        "GET /api/v1/questions?status=answered",
+        "GET /api/v1/dev/scenarios",
+        "GET /api/v1/erp/vendors",
+        "GET /api/v1/erp/connection",
+        "GET /api/v1/health",
+        "GET /api/v1/dev/scenarios"
+      ]
+    }
+  ],
+  "idle": {
+    "seconds": 20,
+    "apiRequests": 20,
+    "perMinute": 60,
+    "byUrl": {
+      "/api/v1/invoices": 5,
+      "/api/v1/questions?status=answered": 5,
+      "/api/v1/health": 5,
+      "/api/v1/dev/scenarios": 5
+    }
+  },
+  "idleDetail": {
+    "seconds": 20,
+    "apiRequests": 25,
+    "byUrl": {
+      "/api/v1/invoices": 5,
+      "/api/v1/questions?status=answered": 5,
+      "/api/v1/invoices/01M3NM4TPZ5NX9Y922753BCK25": 5,
+      "/api/v1/health": 5,
+      "/api/v1/dev/scenarios": 5
+    }
+  }
+}

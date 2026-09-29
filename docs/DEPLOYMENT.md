@@ -125,6 +125,11 @@ The Veyra application database is **PostgreSQL**. Migrations are the versioned S
   no DELETE or DDL, and the two audit trails append-only. Its header shows how to create the two
   roles once (SECURITY.md §13).
 
+  Migration `0002_perf_indexes` (Phase 7) adds four indexes with plain `CREATE INDEX`, which
+  blocks writes to `questions`, `extractions` and `jobs` while it builds. That is well under a
+  second at today's sizes (about 1 MB per index at 19,000 invoices). On a very large database,
+  run it in a quiet window.
+
   If this step is skipped, the API refuses to start and names the pending migrations. Nothing in
   Veyra resets or deletes production data (`/dev/reset` does not exist in production).
 
@@ -174,6 +179,10 @@ npm run start -w @veyra/api
   - **But** documents are on local disk (section 8), so every process must see the *same*
     documents folder: one host, or a shared filesystem. Across separate hosts, wait for the
     object-storage adapter.
+- **Document readers are loaded before the process listens** (Phase 7): pdf.js and the
+  Tesseract OCR engine are started, and a tiny generated PDF is read once. It takes about 1–2 s
+  at startup (the log says `document readers loaded`) and saves that much on the first invoice.
+  A failure here is logged and does not stop startup.
 - **Frontend:** serve `apps/web/dist/` as static files and route `/api/` to the API on the same
   origin. Send the web security headers from `apps/web/src/security-headers.ts` with the static
   files (the Caddy example below has them); the API sets its own.
@@ -236,6 +245,10 @@ veyra.example.com {
 | `GET /api/v1/health/live` | `200 {"status":"ok"}` whenever the process is up. Checks nothing else, not even the database. | Liveness probe (restart when it fails) |
 | `GET /api/v1/health/ready` | `200 ready` or `503 not_ready`. Checks that PostgreSQL answers, document storage and the worker loop, and reports ERP status and job counts. | Readiness probe, uptime monitor |
 | `GET /api/v1/health` | Kept for compatibility: environment, whether the demo is on, ERP and extractor identity. | Diagnostics |
+
+The readiness report also shows the database connection pool (`pool`: open, idle, waiting and
+the maximum, `VEYRA_DB_POOL_MAX`, default 10). A `waiting` count that stays above zero while the
+host has idle CPU is the evidence for a larger pool (docs/PERFORMANCE.md §8).
 
 The ERP does not make the instance unready: while it is unavailable, work waits and retries, and
 the UI keeps working. Responses hold only statuses, codes and counts, never URLs, paths or errors.

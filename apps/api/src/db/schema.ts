@@ -234,17 +234,22 @@ export const invoices = pgTable(
   ],
 );
 
-export const extractions = pgTable('extractions', {
-  seq: seq(),
-  id: text('id').primaryKey(),
-  invoiceId: text('invoice_id')
-    .notNull()
-    .references(() => invoices.id),
-  extractorId: text('extractor_id').notNull(),
-  extractorVersion: text('extractor_version').notNull(),
-  rawJson: text('raw_json').notNull(),
-  createdAt: isoTimestamp('created_at').notNull(),
-});
+export const extractions = pgTable(
+  'extractions',
+  {
+    seq: seq(),
+    id: text('id').primaryKey(),
+    invoiceId: text('invoice_id')
+      .notNull()
+      .references(() => invoices.id),
+    extractorId: text('extractor_id').notNull(),
+    extractorVersion: text('extractor_version').notNull(),
+    rawJson: text('raw_json').notNull(),
+    createdAt: isoTimestamp('created_at').notNull(),
+  },
+  // Phase 7: an invoice's latest reading (the invoice detail).
+  (t) => [index('extractions_invoice').on(t.invoiceId, t.createdAt)],
+);
 
 export const extractedFields = pgTable(
   'extracted_fields',
@@ -429,6 +434,12 @@ export const questions = pgTable(
     uniqueIndex('questions_open_subject')
       .on(t.invoiceId, t.code, t.subjectKey)
       .where(sql`${t.status} = 'open'`),
+    // Phase 7 (docs/PERFORMANCE.md "Database"): an invoice's questions (detail, list views,
+    // every engine run), and the open-question queue, without scanning every question ever asked.
+    index('questions_invoice').on(t.invoiceId, t.seq),
+    index('questions_open')
+      .on(t.seq)
+      .where(sql`${t.status} = 'open'`),
   ],
 );
 
@@ -504,6 +515,8 @@ export const jobs = pgTable(
     check('jobs_type', inList(t.type, JOB_TYPES)),
     check('jobs_status', inList(t.status, JOB_STATUSES)),
     index('jobs_queue').on(t.status, t.runAfter),
+    // Phase 7: an invoice's jobs (processing status in the detail and readiness).
+    index('jobs_invoice').on(t.invoiceId, t.createdAt),
   ],
 );
 

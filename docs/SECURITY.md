@@ -207,6 +207,12 @@ requires `https://`.
     runs against it with no CSP violations. Zod runs in its `jitless` mode in the browser
     (`apps/web/src/csp.ts`), so it never tries `eval`.
   - The reverse proxy must send the same headers in production (DEPLOYMENT.md §5).
+- **Response compression** (Phase 7, `@fastify/compress`, brotli or gzip above 1 KB): only
+  JSON and CSV responses. Never documents, images or spreadsheets (already compressed, and the
+  document downloads keep their exact bytes). Never the sign-in responses (`/auth/login`,
+  `/auth/demo`, `/auth/session`): they carry the CSRF token, and a compressed secret next to
+  attacker-influenced text is what BREACH-style attacks measure. Other responses carry no secret.
+  Compression never removes a security header (tested in `http/performance.test.ts`).
 
 ## 9. Documents (implemented)
 

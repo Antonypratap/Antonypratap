@@ -35,7 +35,8 @@ interface PdfJs {
 }
 
 let pdfjs: Promise<PdfJs> | null = null;
-const loadPdfJs = (): Promise<PdfJs> =>
+/** Loads pdf.js once per process (about a second on first use; see warmUp). */
+export const loadPdfJs = (): Promise<PdfJs> =>
   (pdfjs ??= import('pdfjs-dist/legacy/build/pdf.mjs') as unknown as Promise<PdfJs>);
 
 /**

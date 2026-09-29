@@ -11,6 +11,7 @@ import { AFTER_DECISION, ASK_LABEL, completionEvidence, erpStatusText } from '..
 import { STATUS_LABEL, STATUS_TONE } from '../state/status';
 import styles from './InvoiceReview.module.css';
 import { allowed } from '../../access/session';
+import { notify } from '../../feedback/toasts';
 
 export function InvoiceReview({ id }: { id: string }) {
   const { data, error } = useResource(() => api.invoice(id), `invoice:${id}`);
@@ -101,6 +102,7 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
       const entered = enteredText(input);
       setLocal({ question, option, ...(entered ? { entered } : {}) });
       setPending(null);
+      notify.answered();
       await refresh();
     } catch (e) {
       setProblem(e instanceof ApiError ? e.message : 'Your answer could not be recorded.');
@@ -114,11 +116,12 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
     else void submit(option, null);
   };
 
-  const act = async (action: () => Promise<unknown>) => {
+  const act = async (action: () => Promise<unknown>, done: () => void) => {
     setBusy(true);
     setProblem(null);
     try {
       await action();
+      done();
       await refresh();
     } catch (e) {
       setProblem(e instanceof ApiError ? e.message : 'That did not work.');
@@ -288,7 +291,7 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
                     className={styles.option}
                     data-emphasis="primary"
                     disabled={busy || !allowed('invoices.reprocess')}
-                    onClick={() => void act(() => api.reprocess(invoice.id))}
+                    onClick={() => void act(() => api.reprocess(invoice.id), notify.reprocessing)}
                   >
                     Try again
                   </button>
@@ -298,7 +301,10 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
                     data-emphasis="quiet"
                     disabled={busy || !allowed('invoices.reject')}
                     onClick={() =>
-                      void act(() => api.reject(invoice.id, 'Rejected after it could not be read'))
+                      void act(
+                        () => api.reject(invoice.id, 'Rejected after it could not be read'),
+                        notify.rejected,
+                      )
                     }
                   >
                     Reject this invoice

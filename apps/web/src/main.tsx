@@ -1,12 +1,17 @@
 import './csp';
-import { StrictMode, useEffect } from 'react';
+import { StrictMode, Suspense, lazy, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import './design-system/base.css';
-import { SignIn } from './access/SignIn';
 import { loadSession, useSession } from './access/session';
 import { HomePage } from './marketing/HomePage';
-import { ProductApp } from './product/ProductApp';
 import { parseHash, useHash } from './product/router';
+import { Toaster } from './feedback/Toaster';
+
+// The workspace and sign-in load on demand: the public homepage does not download them.
+const ProductApp = lazy(() =>
+  import('./product/ProductApp').then((m) => ({ default: m.ProductApp })),
+);
+const SignIn = lazy(() => import('./access/SignIn').then((m) => ({ default: m.SignIn })));
 
 function Root() {
   const route = parseHash(useHash());
@@ -23,9 +28,15 @@ function Root() {
   }, [inProduct, screenKey]);
   if (!inProduct) return <HomePage />;
   if (session.status === 'loading') return null;
-  if (session.status === 'signedOut')
-    return <SignIn demo={session.demoSignIn} notice={session.notice} />;
-  return <ProductApp route={route} />;
+  return (
+    <Suspense fallback={null}>
+      {session.status === 'signedOut' ? (
+        <SignIn demo={session.demoSignIn} notice={session.notice} />
+      ) : (
+        <ProductApp route={route} />
+      )}
+    </Suspense>
+  );
 }
 
 const root = document.getElementById('root');
@@ -34,5 +45,6 @@ if (!root) throw new Error('missing #root');
 createRoot(root).render(
   <StrictMode>
     <Root />
+    <Toaster />
   </StrictMode>,
 );

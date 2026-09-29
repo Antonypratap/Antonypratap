@@ -335,3 +335,40 @@ describe('optional Ollama assist: grounded, capped, never decisive', () => {
     expect(down.warnings.join(' ')).toMatch(/not available/);
   });
 });
+
+describe('warm-up (Phase 7)', () => {
+  it('loads the readers ahead of time and changes nothing about what is read', async () => {
+    const bytes = new Uint8Array(
+      readFileSync(new URL('../../../../fixtures/documents/D01-clean-text.pdf', import.meta.url)),
+    );
+    const cold = new LocalDocumentExtractor();
+    const warm = new LocalDocumentExtractor();
+    try {
+      await warm.warmUp({ ocr: false });
+      expect(await warm.extractBytes(bytes, 'application/pdf')).toEqual(
+        await cold.extractBytes(bytes, 'application/pdf'),
+      );
+    } finally {
+      await cold.close();
+      await warm.close();
+    }
+  });
+});
+
+describe('OCR image encoding (Phase 7)', () => {
+  it('the PNG handed to the OCR engine holds exactly the greyscale pixels', async () => {
+    const { decodeImage, encodePng, removeRules } = await import('./image');
+    const { PNG } = await import('pngjs');
+    for (const f of ['D03-photo.jpg', 'D04-photo.png', 'D05-blurry.jpg']) {
+      const bytes = new Uint8Array(
+        readFileSync(new URL(`../../../../fixtures/documents/${f}`, import.meta.url)),
+      );
+      const gray = removeRules(decodeImage(bytes, f.endsWith('.png') ? 'image/png' : 'image/jpeg'));
+      const back = PNG.sync.read(Buffer.from(encodePng(gray)));
+      expect([back.width, back.height]).toEqual([gray.width, gray.height]);
+      const pixels = new Uint8Array(gray.width * gray.height);
+      for (let i = 0; i < pixels.length; i++) pixels[i] = back.data[i * 4] ?? 0;
+      expect(Buffer.compare(Buffer.from(pixels), Buffer.from(gray.data))).toBe(0);
+    }
+  });
+});

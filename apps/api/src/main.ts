@@ -69,6 +69,18 @@ try {
   process.exit(1);
 }
 
+// The document readers are loaded before the instance takes traffic (Phase 7): otherwise the first
+// invoice after a start would wait about a second for them.
+const warm = Date.now();
+await app.warmUp().then(
+  () => log.info({ durationMs: Date.now() - warm }, 'document readers loaded'),
+  (error: unknown) =>
+    log.warn(
+      { errorCode: (error as { code?: string }).code ?? 'WARMUP_FAILED' },
+      'document readers not preloaded',
+    ),
+);
+
 app.runner.start();
 await app.server.listen({ host: config.host, port: config.port });
 log.info({ ...describeConfig(config), port: config.port }, 'Veyra API started');

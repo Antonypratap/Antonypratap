@@ -43,6 +43,9 @@ const ErrorBody = z.object({
   }),
 });
 
+const UNREACHABLE = 'Veyra could not be reached. Check your connection; it will keep trying.';
+const GATEWAY = new Set([502, 503, 504]);
+
 async function request<S extends z.ZodType>(
   schema: S,
   path: string,
@@ -61,16 +64,16 @@ async function request<S extends z.ZodType>(
       },
     });
   } catch {
-    throw new ApiError(
-      0,
-      'OFFLINE',
-      'Veyra could not be reached. Is the API running (npm run dev:api)?',
-    );
+    throw new ApiError(0, 'OFFLINE', UNREACHABLE);
   }
   const body: unknown = await res.json().catch(() => null);
   if (res.status === 401) sessionEnded();
   if (!res.ok) {
     const parsed = ErrorBody.safeParse(body);
+    // A gateway answering for an API that is down (502/503/504 without a Veyra error body): the
+    // same as no connection at all.
+    if (!parsed.success && GATEWAY.has(res.status))
+      throw new ApiError(res.status, 'OFFLINE', UNREACHABLE);
     throw parsed.success
       ? new ApiError(
           res.status,

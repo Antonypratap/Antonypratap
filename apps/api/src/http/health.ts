@@ -28,6 +28,8 @@ export interface ReadinessReport {
     failedLast24h: number;
     oldestQueuedAgeMs: number | null;
   } | null;
+  /** Connection pool counts (null with the embedded development database). */
+  pool: { total: number; idle: number; waiting: number; max: number } | null;
 }
 
 /** A worker loop that has not ticked for this long is considered stuck. */
@@ -39,6 +41,8 @@ export function readinessCheck(deps: {
   runner: JobRunner;
   /** A round trip to PostgreSQL (no connection details are ever reported). */
   pingDatabase: () => Promise<void>;
+  /** Connection pool counts, when there is a pool (Phase 7). */
+  poolStats?: () => { total: number; idle: number; waiting: number; max: number } | null;
   environment: Environment;
   /** Whether this process runs the worker (false for an API-only instance). */
   expectWorker: boolean;
@@ -86,6 +90,8 @@ export function readinessCheck(deps: {
         erp,
       },
       jobs,
+      // Counts only (Phase 7): connections open, idle, and requests waiting for one.
+      pool: deps.poolStats?.() ?? null,
     };
   };
 }

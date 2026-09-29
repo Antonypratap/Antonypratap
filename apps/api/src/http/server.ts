@@ -7,6 +7,7 @@ import Fastify, {
   type FastifyRequest,
 } from 'fastify';
 import multipart from '@fastify/multipart';
+import compress from '@fastify/compress';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
@@ -67,6 +68,7 @@ import { ulid } from '../ids';
 import { pino, type Logger } from 'pino';
 import { RateLimiter, bucketOf, type RateBucket } from './rate-limit';
 import type { ReadinessReport } from './health';
+import { timedScope } from '../perf/timing';
 import {
   auditTable,
   businessRecordsXlsx,
@@ -181,6 +183,11 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     frameguard: { action: 'deny' },
     hsts: options.auth.cookieSecure ? { maxAge: 31_536_000, includeSubDomains: false } : false,
   });
+  // Response compression (Phase 7): JSON and CSV lists shrink several times over the network.
+  // Only compressible types (never PDFs, images or XLSX, which are compressed already), only above
+  // 1 KB, and never the sign-in responses, which carry the session's CSRF token (compressing a
+  // secret next to attacker-influenced data is what BREACH-style attacks exploit).
+  await app.register(compress, { global: true, threshold: 1024, encodings: ['br', 'gzip'] });
   // CORS only for explicitly configured other origins (never "*"); same-origin needs none.
   if (corsOrigins.length > 0)
     await app.register(cors, {
@@ -328,6 +335,9 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
 
   const PUBLIC = { config: { access: 'public' } } as const;
   const SESSION = { config: { access: 'session' } } as const;
+  /** Sign-in routes: responses carry the CSRF token, so they are never compressed. */
+  const AUTH_PUBLIC = { ...PUBLIC, compress: false } as const;
+  const AUTH_SESSION = { ...SESSION, compress: false } as const;
   const may = (access: Permission) => ({ config: { access } });
 
   // ── Sign-in and sessions (Phase 6C) ──────────────────────────────────────
@@ -367,14 +377,14 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     return auth;
   };
 
-  app.get('/api/v1/auth/session', PUBLIC, async (req) =>
+  app.get('/api/v1/auth/session', AUTH_PUBLIC, async (req) =>
     send(
       ApiSessionSchema,
       req.auth ? sessionView(req.auth) : { authenticated: false, demoSignIn: demoPin !== null },
     ),
   );
 
-  app.post('/api/v1/auth/login', PUBLIC, async (req, reply) => {
+  app.post('/api/v1/auth/login', AUTH_PUBLIC, async (req, reply) => {
     const body = ApiLoginBodySchema.parse(req.body ?? {});
     // Per account as well as per address: guessing one account's password from many addresses.
     const retryAfter = limiter.hit('login', `account:${normalizeEmail(body.email)}`);
@@ -403,7 +413,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
 
   // Demo only (never production): the demo PIN opens a session as the demo's designated user.
   if (demoPin) {
-    app.post('/api/v1/auth/demo', PUBLIC, async (req, reply) => {
+    app.post('/api/v1/auth/demo', AUTH_PUBLIC, async (req, reply) => {
       const { pin } = z.object({ pin: z.string().max(32) }).parse(req.body ?? {});
       if (!safeEqual(pin, demoPin.reveal())) {
         await users.record(
@@ -425,7 +435,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     });
   }
 
-  app.post('/api/v1/auth/logout', SESSION, async (req, reply) => {
+  app.post('/api/v1/auth/logout', AUTH_SESSION, async (req, reply) => {
     const auth = req.auth;
     if (auth) {
       await sessions.revokeHash(auth.tokenHash);
@@ -435,7 +445,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     return { ok: true };
   });
 
-  app.post('/api/v1/auth/password', SESSION, async (req, reply) => {
+  app.post('/api/v1/auth/password', AUTH_SESSION, async (req, reply) => {
     const { currentPassword, newPassword } = z
       .object({ currentPassword: z.string().max(1024), newPassword: z.string().max(1024) })
       .parse(req.body ?? {});
@@ -535,9 +545,11 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     const file = await req.file();
     if (!file) throw new VeyraError('INVALID_INPUT', 'Attach the invoice file.');
     const bytes = await file.toBuffer();
-    const created = await veyra.upload({ filename: file.filename, bytes }, actorOf(req));
+    const { result: created, stages } = await timedScope(() =>
+      veyra.upload({ filename: file.filename, bytes }, actorOf(req)),
+    );
     req.log.info(
-      { documentId: created.documentId, invoiceId: created.invoiceId },
+      { documentId: created.documentId, invoiceId: created.invoiceId, stages },
       'document stored',
     );
     return reply.status(201).send(created);
@@ -684,7 +696,10 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   app.post('/api/v1/questions/:id/answer', may('questions.answer'), async (req) => {
     const { id } = Id.parse(req.params);
     const body = ApiAnswerBodySchema.parse(req.body ?? {});
-    await veyra.answer(id, { optionId: body.optionId, input: body.input ?? null }, actorOf(req));
+    const { stages } = await timedScope(() =>
+      veyra.answer(id, { optionId: body.optionId, input: body.input ?? null }, actorOf(req)),
+    );
+    req.log.info({ questionId: id, stages }, 'question answered');
     const q = await present.question(id);
     return {
       questionId: id,

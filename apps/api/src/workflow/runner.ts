@@ -2,6 +2,7 @@ import { isErpConnectorError } from '@veyra/erp-connector';
 import { CrashSignal } from './commit';
 import { isInternalError, isRetryable, safeErrorCode } from './retry';
 import type { Veyra } from './veyra';
+import { withScope, type StageSummary } from '../perf/timing';
 
 const MAX_ATTEMPTS = 5;
 /** How often an unresolved ERP write is reconciled after the first attempts (not aggressive). */
@@ -72,23 +73,35 @@ export class JobRunner {
       invoiceId: job.invoiceId,
       type: job.type,
       attempt: job.attempts,
+      queueWaitMs: Math.max(0, this.veyra.clock().getTime() - Date.parse(job.readyAt)),
     };
+    let stages: StageSummary = {};
     const heartbeat = setInterval(
       () => void this.veyra.touchJob(job.id).catch(() => undefined),
       Math.max(1000, Math.floor(this.leaseMs / 3)),
     );
-    const work = (async () => {
-      if (job.type === 'pipeline') await this.veyra.runPipeline(job.invoiceId);
-      else await this.veyra.runCommit(job.invoiceId);
-    })();
+    // One timing scope per job: the stages are logged with the outcome (ids and durations only).
+    const work = withScope(
+      async () => {
+        if (job.type === 'pipeline') await this.veyra.runPipeline(job.invoiceId);
+        else await this.veyra.runCommit(job.invoiceId);
+      },
+      (s) => {
+        stages = s;
+      },
+    );
     this.#current = { jobId: job.id, done: work.catch(() => undefined) };
     try {
       await work;
       await this.veyra.finishJob(job.id, { status: 'succeeded' });
-      this.#log.info({ ...context, durationMs: Date.now() - started }, 'job succeeded');
+      this.#log.info({ ...context, durationMs: Date.now() - started, stages }, 'job succeeded');
     } catch (error) {
       if (error instanceof CrashSignal) throw error; // the "process" died: leave the job running
-      await this.#handleFailure(job, error, context);
+      await this.#handleFailure(job, error, {
+        ...context,
+        durationMs: Date.now() - started,
+        stages,
+      });
     } finally {
       clearInterval(heartbeat);
       this.#current = null;

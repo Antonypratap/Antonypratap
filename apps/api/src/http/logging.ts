@@ -35,7 +35,7 @@ export const REDACT_PATHS = [
  * people or money (bank details, PAN, GSTIN, OCR/document text).
  */
 const SENSITIVE_KEY =
-  /pass(word)?|secret|token|csrf|cookie|authori[sz]ation|api[-_]?key|credential|session|database_?url|connection_?string|dsn|pin$|^pan$|gstin|bank|ifsc|account_?(no|number)|iban|ocr|raw_?text|^text$|content|document_?bytes|body$/i;
+  /pass(word)?|secret|token|csrf|cookie|authori[sz]ation|api[-_]?key|credential|session|database_?url|connection_?string|dsn|pin$|^pan$|gstin|bank|ifsc|account_?(no|number)|iban|ocr_?(text|lines|words|output|result)|raw_?text|^text$|content|document_?bytes|body$/i;
 
 /** Values that look like secrets even under an innocent key. */
 const SENSITIVE_VALUE = [

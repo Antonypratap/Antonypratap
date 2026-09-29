@@ -1,0 +1,1420 @@
+{
+  "label": "after",
+  "at": "2026-09-29T04:00:00.439Z",
+  "node": "v22.22.2",
+  "db": {
+    "select 1 (pool round trip)": {
+      "n": 1000,
+      "errors": 0,
+      "min": 0.06,
+      "p50": 0.1,
+      "p95": 0.21,
+      "p99": 0.42,
+      "max": 4.08,
+      "mean": 0.11
+    },
+    "invoice by id": {
+      "n": 1000,
+      "errors": 0,
+      "min": 0.22,
+      "p50": 0.31,
+      "p95": 0.67,
+      "p99": 1.12,
+      "max": 4.2,
+      "mean": 0.37
+    },
+    "settings (all rows)": {
+      "n": 1000,
+      "errors": 0,
+      "min": 0.11,
+      "p50": 0.15,
+      "p95": 0.36,
+      "p99": 0.5,
+      "max": 3.72,
+      "mean": 0.19
+    },
+    "session resolve (auth)": {
+      "n": 1000,
+      "errors": 0,
+      "min": 0.32,
+      "p50": 0.57,
+      "p95": 0.9,
+      "p99": 1.18,
+      "max": 4.47,
+      "mean": 0.6
+    },
+    "user by id (requireActor)": {
+      "n": 1000,
+      "errors": 0,
+      "min": 0.16,
+      "p50": 0.19,
+      "p95": 0.39,
+      "p99": 0.66,
+      "max": 3.44,
+      "mean": 0.23
+    }
+  },
+  "api": {
+    "invoices40": {
+      "states": {
+        "VERIFIED_PENDING_PAYMENT": 2,
+        "NEEDS_INPUT": 38
+      },
+      "seedMs": 6116,
+      "endpoints": {
+        "GET /auth/session": {
+          "n": 100,
+          "errors": 0,
+          "min": 1.58,
+          "p50": 2.01,
+          "p95": 3.04,
+          "p99": 4.43,
+          "max": 5.34,
+          "mean": 2.15,
+          "bytes": 563
+        },
+        "GET /invoices (inbox)": {
+          "n": 100,
+          "errors": 0,
+          "min": 7.7,
+          "p50": 10.88,
+          "p95": 18.74,
+          "p99": 24.62,
+          "max": 28.32,
+          "mean": 11.81,
+          "bytes": 24222
+        },
+        "GET /invoices/:id (detail)": {
+          "n": 100,
+          "errors": 0,
+          "min": 9.34,
+          "p50": 13.64,
+          "p95": 21.32,
+          "p99": 24.66,
+          "max": 25.71,
+          "mean": 14.47,
+          "bytes": 4913
+        },
+        "GET /questions (open)": {
+          "n": 100,
+          "errors": 0,
+          "min": 6,
+          "p50": 8.09,
+          "p95": 14.18,
+          "p99": 17.44,
+          "max": 20.36,
+          "mean": 8.73,
+          "bytes": 55515
+        },
+        "GET /questions?status=answered": {
+          "n": 100,
+          "errors": 0,
+          "min": 2.14,
+          "p50": 2.71,
+          "p95": 7.93,
+          "p99": 9.14,
+          "max": 10.48,
+          "mean": 3.5,
+          "bytes": 2
+        },
+        "GET /audit?invoiceId": {
+          "n": 100,
+          "errors": 0,
+          "min": 2.78,
+          "p50": 3.19,
+          "p95": 8.6,
+          "p99": 10.26,
+          "max": 11.52,
+          "mean": 4.11,
+          "bytes": 2218
+        },
+        "GET /audit (all)": {
+          "n": 100,
+          "errors": 0,
+          "min": 6.07,
+          "p50": 7.87,
+          "p95": 12.58,
+          "p99": 17.66,
+          "max": 18.82,
+          "mean": 8.71,
+          "bytes": 54311
+        },
+        "GET /documents": {
+          "n": 100,
+          "errors": 0,
+          "min": 3.64,
+          "p50": 4.73,
+          "p95": 10.07,
+          "p99": 11.56,
+          "max": 15.02,
+          "mean": 5.57,
+          "bytes": 11387
+        },
+        "GET /documents/:id": {
+          "n": 100,
+          "errors": 0,
+          "min": 2.73,
+          "p50": 3.27,
+          "p95": 6.16,
+          "p99": 8.59,
+          "max": 9.98,
+          "mean": 3.69,
+          "bytes": 469
+        },
+        "GET /documents/:id/file": {
+          "n": 100,
+          "errors": 0,
+          "min": 3.59,
+          "p50": 5.06,
+          "p95": 10.24,
+          "p99": 14.31,
+          "max": 16.4,
+          "mean": 6.07,
+          "bytes": 66359
+        },
+        "GET /erp/connection": {
+          "n": 100,
+          "errors": 0,
+          "min": 2.03,
+          "p50": 2.31,
+          "p95": 5.62,
+          "p99": 7.93,
+          "max": 12.08,
+          "mean": 2.79,
+          "bytes": 1315
+        },
+        "GET /erp/vendors": {
+          "n": 100,
+          "errors": 0,
+          "min": 1.88,
+          "p50": 2.29,
+          "p95": 6.05,
+          "p99": 7.34,
+          "max": 9.44,
+          "mean": 3.01,
+          "bytes": 915
+        },
+        "GET /erp/purchase-orders": {
+          "n": 100,
+          "errors": 0,
+          "min": 4.41,
+          "p50": 5.37,
+          "p95": 9.41,
+          "p99": 11.83,
+          "max": 11.91,
+          "mean": 5.9,
+          "bytes": 2291
+        },
+        "GET /erp/grns": {
+          "n": 100,
+          "errors": 0,
+          "min": 5.79,
+          "p50": 7.1,
+          "p95": 11.07,
+          "p99": 12.05,
+          "max": 14.35,
+          "mean": 7.87,
+          "bytes": 1401
+        },
+        "GET /imports": {
+          "n": 100,
+          "errors": 0,
+          "min": 1.75,
+          "p50": 2.29,
+          "p95": 3.9,
+          "p99": 4.79,
+          "max": 22.35,
+          "mean": 2.67,
+          "bytes": 2
+        },
+        "GET /health/ready": {
+          "n": 100,
+          "errors": 0,
+          "min": 1.51,
+          "p50": 2.3,
+          "p95": 3.05,
+          "p99": 4.79,
+          "max": 6.52,
+          "mean": 2.32,
+          "bytes": 271
+        }
+      },
+      "inboxConcurrent10": {
+        "n": 300,
+        "errors": 0,
+        "min": 25.8,
+        "p50": 68.91,
+        "p95": 99.62,
+        "p99": 136.16,
+        "max": 188.8,
+        "mean": 71.55,
+        "throughput": 138.06
+      }
+    },
+    "invoices200": {
+      "states": {
+        "NEEDS_INPUT": 198,
+        "VERIFIED_PENDING_PAYMENT": 2
+      },
+      "seedMs": 32986,
+      "endpoints": {
+        "GET /auth/session": {
+          "n": 100,
+          "errors": 0,
+          "min": 1.3,
+          "p50": 1.54,
+          "p95": 1.96,
+          "p99": 3.68,
+          "max": 3.85,
+          "mean": 1.62,
+          "bytes": 563
+        },
+        "GET /invoices (inbox)": {
+          "n": 100,
+          "errors": 0,
+          "min": 17.01,
+          "p50": 22.32,
+          "p95": 41.19,
+          "p99": 62.96,
+          "max": 65.41,
+          "mean": 24.63,
+          "bytes": 121868
+        },
+        "GET /invoices/:id (detail)": {
+          "n": 100,
+          "errors": 0,
+          "min": 8.18,
+          "p50": 10.66,
+          "p95": 16.11,
+          "p99": 20.47,
+          "max": 34.15,
+          "mean": 11.6,
+          "bytes": 4913
+        },
+        "GET /questions (open)": {
+          "n": 100,
+          "errors": 0,
+          "min": 17.02,
+          "p50": 20.15,
+          "p95": 27.04,
+          "p99": 29.4,
+          "max": 31.55,
+          "mean": 21.2,
+          "bytes": 289161
+        },
+        "GET /questions?status=answered": {
+          "n": 100,
+          "errors": 0,
+          "min": 1.89,
+          "p50": 2.38,
+          "p95": 3.29,
+          "p99": 4.41,
+          "max": 4.99,
+          "mean": 2.53,
+          "bytes": 2
+        },
+        "GET /audit?invoiceId": {
+          "n": 100,
+          "errors": 0,
+          "min": 2.35,
+          "p50": 2.89,
+          "p95": 3.96,
+          "p99": 6.37,
+          "max": 6.88,
+          "mean": 3.08,
+          "bytes": 2218
+        },
+        "GET /audit (all)": {
+          "n": 100,
+          "errors": 0,
+          "min": 18.34,
+          "p50": 23.03,
+          "p95": 29.47,
+          "p99": 32.32,
+          "max": 33.66,
+          "mean": 23.65,
+          "bytes": 255416
+        },
+        "GET /documents": {
+          "n": 100,
+          "errors": 0,
+          "min": 6,
+          "p50": 7.04,
+          "p95": 10.24,
+          "p99": 11.33,
+          "max": 14.08,
+          "mean": 7.47,
+          "bytes": 56827
+        },
+        "GET /documents/:id": {
+          "n": 100,
+          "errors": 0,
+          "min": 3.35,
+          "p50": 4.17,
+          "p95": 5.89,
+          "p99": 6.96,
+          "max": 7.32,
+          "mean": 4.34,
+          "bytes": 469
+        },
+        "GET /documents/:id/file": {
+          "n": 100,
+          "errors": 0,
+          "min": 3.23,
+          "p50": 3.86,
+          "p95": 5.81,
+          "p99": 7.11,
+          "max": 7.17,
+          "mean": 4.08,
+          "bytes": 66368
+        },
+        "GET /erp/connection": {
+          "n": 100,
+          "errors": 0,
+          "min": 1.8,
+          "p50": 2.08,
+          "p95": 2.65,
+          "p99": 4.61,
+          "max": 5.39,
+          "mean": 2.17,
+          "bytes": 1315
+        },
+        "GET /erp/vendors": {
+          "n": 100,
+          "errors": 0,
+          "min": 1.58,
+          "p50": 1.94,
+          "p95": 2.8,
+          "p99": 4.17,
+          "max": 5.66,
+          "mean": 2.11,
+          "bytes": 915
+        },
+        "GET /erp/purchase-orders": {
+          "n": 100,
+          "errors": 0,
+          "min": 3.99,
+          "p50": 4.59,
+          "p95": 7.85,
+          "p99": 12.5,
+          "max": 12.74,
+          "mean": 5.21,
+          "bytes": 2291
+        },
+        "GET /erp/grns": {
+          "n": 100,
+          "errors": 0,
+          "min": 5.51,
+          "p50": 6.9,
+          "p95": 10.65,
+          "p99": 13.9,
+          "max": 14.8,
+          "mean": 7.55,
+          "bytes": 1401
+        },
+        "GET /imports": {
+          "n": 100,
+          "errors": 0,
+          "min": 1.45,
+          "p50": 1.9,
+          "p95": 3.89,
+          "p99": 4.47,
+          "max": 4.47,
+          "mean": 2.09,
+          "bytes": 2
+        },
+        "GET /health/ready": {
+          "n": 100,
+          "errors": 0,
+          "min": 1.34,
+          "p50": 1.57,
+          "p95": 2.45,
+          "p99": 4.11,
+          "max": 4.29,
+          "mean": 1.7,
+          "bytes": 271
+        }
+      },
+      "inboxConcurrent10": {
+        "n": 300,
+        "errors": 0,
+        "min": 69.58,
+        "p50": 194.49,
+        "p95": 254.07,
+        "p99": 293.51,
+        "max": 315.5,
+        "mean": 199.02,
+        "throughput": 49.91
+      }
+    }
+  },
+  "erp": {
+    "getCompany": {
+      "n": 500,
+      "errors": 0,
+      "min": 0.04,
+      "p50": 0.04,
+      "p95": 0.09,
+      "p99": 0.14,
+      "max": 5.17,
+      "mean": 0.06
+    },
+    "findVendorByGstin": {
+      "n": 500,
+      "errors": 0,
+      "min": 0.07,
+      "p50": 0.09,
+      "p95": 0.16,
+      "p99": 0.23,
+      "max": 3.53,
+      "mean": 0.11
+    },
+    "getVendor": {
+      "n": 500,
+      "errors": 0,
+      "min": 0.07,
+      "p50": 0.09,
+      "p95": 0.17,
+      "p99": 0.21,
+      "max": 1.87,
+      "mean": 0.11
+    },
+    "findVendorsByNormalizedName": {
+      "n": 500,
+      "errors": 0,
+      "min": 0.08,
+      "p50": 0.09,
+      "p95": 0.16,
+      "p99": 0.29,
+      "max": 1.84,
+      "mean": 0.11
+    },
+    "getPurchaseOrderByNumber": {
+      "n": 500,
+      "errors": 0,
+      "min": 0.14,
+      "p50": 0.17,
+      "p95": 0.28,
+      "p99": 0.39,
+      "max": 2.31,
+      "mean": 0.2
+    },
+    "listOpenPurchaseOrders": {
+      "n": 500,
+      "errors": 0,
+      "min": 0.73,
+      "p50": 0.92,
+      "p95": 1.7,
+      "p99": 2.98,
+      "max": 3.47,
+      "mean": 1.05
+    },
+    "listGrnsForPo": {
+      "n": 500,
+      "errors": 0,
+      "min": 0.17,
+      "p50": 0.21,
+      "p95": 0.36,
+      "p99": 0.55,
+      "max": 2.2,
+      "mean": 0.25
+    },
+    "getInvoicedQtyByPoLine": {
+      "n": 500,
+      "errors": 0,
+      "min": 0.06,
+      "p50": 0.07,
+      "p95": 0.11,
+      "p99": 0.16,
+      "max": 1.95,
+      "mean": 0.08
+    },
+    "listVendors (browser)": {
+      "n": 500,
+      "errors": 0,
+      "min": 0.1,
+      "p50": 0.13,
+      "p95": 0.27,
+      "p99": 0.35,
+      "max": 1.99,
+      "mean": 0.16
+    },
+    "listPurchaseOrders (browser)": {
+      "n": 500,
+      "errors": 0,
+      "min": 1.63,
+      "p50": 1.98,
+      "p95": 3.89,
+      "p99": 4.54,
+      "max": 8.17,
+      "mean": 2.16
+    }
+  },
+  "flows": {
+    "digital": {
+      "rows": {
+        "POST /documents (upload API)": {
+          "n": 40,
+          "errors": 0,
+          "min": 5.98,
+          "p50": 7.01,
+          "p95": 10.86,
+          "p99": 11.76,
+          "max": 11.76,
+          "mean": 7.65
+        },
+        "upload → settled (end to end)": {
+          "n": 40,
+          "errors": 0,
+          "min": 37.35,
+          "p50": 52.04,
+          "p95": 64.86,
+          "p99": 92.45,
+          "max": 92.45,
+          "mean": 55.64
+        },
+        "extraction (whole extractor)": {
+          "n": 40,
+          "errors": 0,
+          "min": 8.21,
+          "p50": 10.74,
+          "p95": 16.3,
+          "p99": 19.35,
+          "max": 19.35,
+          "mean": 11.31
+        },
+        "queueWaitMs": {
+          "n": 43,
+          "errors": 0,
+          "min": 3,
+          "p50": 4,
+          "p95": 6,
+          "p99": 7,
+          "max": 7,
+          "mean": 4.07
+        },
+        "execPipelineMs": {
+          "n": 40,
+          "errors": 0,
+          "min": 28.73,
+          "p50": 39.53,
+          "p95": 48.29,
+          "p99": 52.48,
+          "max": 52.48,
+          "mean": 40.2
+        },
+        "execCommitMs": {
+          "n": 1,
+          "errors": 0,
+          "min": 17.51,
+          "p50": 17.51,
+          "p95": 17.51,
+          "p99": 17.51,
+          "max": 17.51,
+          "mean": 17.51
+        }
+      },
+      "states": {
+        "NEEDS_INPUT": 39,
+        "VERIFIED_PENDING_PAYMENT": 1
+      },
+      "erp": {
+        "capabilities": {
+          "n": 270,
+          "errors": 0,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "max": 0.01,
+          "mean": 0,
+          "totalMs": 0.11
+        },
+        "findItemByVendorAlias": {
+          "n": 5,
+          "errors": 0,
+          "min": 0.21,
+          "p50": 0.24,
+          "p95": 0.29,
+          "p99": 0.29,
+          "max": 0.29,
+          "mean": 0.25,
+          "totalMs": 1.23
+        },
+        "findPurchaseInvoice": {
+          "n": 36,
+          "errors": 0,
+          "min": 0.08,
+          "p50": 0.09,
+          "p95": 0.21,
+          "p99": 0.21,
+          "max": 0.21,
+          "mean": 0.11,
+          "totalMs": 4.02
+        },
+        "findVendorByGstin": {
+          "n": 65,
+          "errors": 0,
+          "min": 0.19,
+          "p50": 0.25,
+          "p95": 0.37,
+          "p99": 2.08,
+          "max": 2.08,
+          "mean": 0.28,
+          "totalMs": 18.51
+        },
+        "findVendorsByNormalizedName": {
+          "n": 6,
+          "errors": 0,
+          "min": 0.25,
+          "p50": 0.28,
+          "p95": 0.38,
+          "p99": 0.38,
+          "max": 0.38,
+          "mean": 0.3,
+          "totalMs": 1.8
+        },
+        "getCompany": {
+          "n": 41,
+          "errors": 0,
+          "min": 0.15,
+          "p50": 0.21,
+          "p95": 0.31,
+          "p99": 0.43,
+          "max": 0.43,
+          "mean": 0.22,
+          "totalMs": 9.06
+        },
+        "getInvoicedQtyByPoLine": {
+          "n": 41,
+          "errors": 0,
+          "min": 0.08,
+          "p50": 0.13,
+          "p95": 0.2,
+          "p99": 0.31,
+          "max": 0.31,
+          "mean": 0.14,
+          "totalMs": 5.71
+        },
+        "getItem": {
+          "n": 37,
+          "errors": 0,
+          "min": 0.09,
+          "p50": 0.13,
+          "p95": 0.23,
+          "p99": 0.36,
+          "max": 0.36,
+          "mean": 0.15,
+          "totalMs": 5.6
+        },
+        "getPurchaseOrderByNumber": {
+          "n": 30,
+          "errors": 0,
+          "min": 0.28,
+          "p50": 0.34,
+          "p95": 0.62,
+          "p99": 0.91,
+          "max": 0.91,
+          "mean": 0.37,
+          "totalMs": 11.09
+        },
+        "listGrnsForPo": {
+          "n": 8,
+          "errors": 0,
+          "min": 0.11,
+          "p50": 0.14,
+          "p95": 0.39,
+          "p99": 0.39,
+          "max": 0.39,
+          "mean": 0.2,
+          "totalMs": 1.6
+        },
+        "recordPurchaseInvoice": {
+          "n": 1,
+          "errors": 0,
+          "min": 2.26,
+          "p50": 2.26,
+          "p95": 2.26,
+          "p99": 2.26,
+          "max": 2.26,
+          "mean": 2.26,
+          "totalMs": 2.26
+        }
+      },
+      "stages": {
+        "EXTRACTION": {
+          "n": 41,
+          "errors": 0,
+          "min": 15,
+          "p50": 19.3,
+          "p95": 25.5,
+          "p99": 33,
+          "max": 33,
+          "mean": 20.21
+        },
+        "VALIDATION": {
+          "n": 43,
+          "errors": 0,
+          "min": 0.2,
+          "p50": 0.8,
+          "p95": 1,
+          "p99": 3.1,
+          "max": 3.1,
+          "mean": 0.77
+        },
+        "MATCHING": {
+          "n": 43,
+          "errors": 0,
+          "min": 0,
+          "p50": 0.1,
+          "p95": 0.3,
+          "p99": 0.7,
+          "max": 0.7,
+          "mean": 0.13
+        },
+        "ERP_LOOKUP": {
+          "n": 43,
+          "errors": 0,
+          "min": 0.4,
+          "p50": 1.5,
+          "p95": 2.5,
+          "p99": 3.7,
+          "max": 3.7,
+          "mean": 1.49
+        },
+        "PERSIST": {
+          "n": 41,
+          "errors": 0,
+          "min": 7.7,
+          "p50": 11,
+          "p95": 13.9,
+          "p99": 15.1,
+          "max": 15.1,
+          "mean": 11
+        },
+        "AUDIT": {
+          "n": 43,
+          "errors": 0,
+          "min": 1.3,
+          "p50": 4,
+          "p95": 5.8,
+          "p99": 7.5,
+          "max": 7.5,
+          "mean": 4.13
+        },
+        "ERP_WRITE": {
+          "n": 2,
+          "errors": 0,
+          "min": 2.3,
+          "p50": 2.3,
+          "p95": 3.1,
+          "p99": 3.1,
+          "max": 3.1,
+          "mean": 2.7
+        },
+        "COMMIT": {
+          "n": 2,
+          "errors": 0,
+          "min": 10.5,
+          "p50": 10.5,
+          "p95": 15.8,
+          "p99": 15.8,
+          "max": 15.8,
+          "mean": 13.15
+        }
+      }
+    },
+    "photo": {
+      "rows": {
+        "POST /documents (upload API)": {
+          "n": 12,
+          "errors": 0,
+          "min": 8.18,
+          "p50": 9.85,
+          "p95": 13.04,
+          "p99": 13.04,
+          "max": 13.04,
+          "mean": 10.3
+        },
+        "upload → settled (end to end)": {
+          "n": 12,
+          "errors": 0,
+          "min": 996.16,
+          "p50": 1150.18,
+          "p95": 1435.97,
+          "p99": 1435.97,
+          "max": 1435.97,
+          "mean": 1189.17
+        },
+        "extraction (whole extractor)": {
+          "n": 12,
+          "errors": 0,
+          "min": 941.5,
+          "p50": 1100.18,
+          "p95": 1367.36,
+          "p99": 1367.36,
+          "max": 1367.36,
+          "mean": 1132.46
+        },
+        "OCR (Tesseract recognize)": {
+          "n": 12,
+          "errors": 0,
+          "min": 873.16,
+          "p50": 966.57,
+          "p95": 1248.52,
+          "p99": 1248.52,
+          "max": 1248.52,
+          "mean": 1020.29
+        },
+        "queueWaitMs": {
+          "n": 13,
+          "errors": 0,
+          "min": 4,
+          "p50": 5,
+          "p95": 7,
+          "p99": 7,
+          "max": 7,
+          "mean": 4.85
+        },
+        "execPipelineMs": {
+          "n": 12,
+          "errors": 0,
+          "min": 978.78,
+          "p50": 1129.93,
+          "p95": 1414.1,
+          "p99": 1414.1,
+          "max": 1414.1,
+          "mean": 1168.93
+        },
+        "execCommitMs": {
+          "n": 0,
+          "errors": 0,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "max": 0,
+          "mean": 0
+        }
+      },
+      "states": {
+        "NEEDS_INPUT": 12
+      },
+      "erp": {
+        "capabilities": {
+          "n": 21,
+          "errors": 0,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "max": 0,
+          "mean": 0,
+          "totalMs": 0.05
+        },
+        "findVendorsByNormalizedName": {
+          "n": 9,
+          "errors": 0,
+          "min": 0.27,
+          "p50": 0.34,
+          "p95": 0.46,
+          "p99": 0.46,
+          "max": 0.46,
+          "mean": 0.34,
+          "totalMs": 3.1
+        },
+        "getCompany": {
+          "n": 12,
+          "errors": 0,
+          "min": 0.26,
+          "p50": 0.3,
+          "p95": 0.47,
+          "p99": 0.47,
+          "max": 0.47,
+          "mean": 0.32,
+          "totalMs": 3.89
+        }
+      },
+      "stages": {
+        "EXTRACTION": {
+          "n": 13,
+          "errors": 0,
+          "min": 81.1,
+          "p50": 128,
+          "p95": 169,
+          "p99": 169,
+          "max": 169,
+          "mean": 123.48
+        },
+        "OCR": {
+          "n": 13,
+          "errors": 0,
+          "min": 873.1,
+          "p50": 973.6,
+          "p95": 1293.4,
+          "p99": 1293.4,
+          "max": 1293.4,
+          "mean": 1041.28
+        },
+        "VALIDATION": {
+          "n": 13,
+          "errors": 0,
+          "min": 0.2,
+          "p50": 0.3,
+          "p95": 0.5,
+          "p99": 0.5,
+          "max": 0.5,
+          "mean": 0.35
+        },
+        "MATCHING": {
+          "n": 13,
+          "errors": 0,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "ERP_LOOKUP": {
+          "n": 13,
+          "errors": 0,
+          "min": 0.3,
+          "p50": 0.6,
+          "p95": 0.9,
+          "p99": 0.9,
+          "max": 0.9,
+          "mean": 0.61
+        },
+        "PERSIST": {
+          "n": 13,
+          "errors": 0,
+          "min": 11.3,
+          "p50": 12.9,
+          "p95": 24.3,
+          "p99": 24.3,
+          "max": 24.3,
+          "mean": 15.2
+        },
+        "AUDIT": {
+          "n": 13,
+          "errors": 0,
+          "min": 5.1,
+          "p50": 6.9,
+          "p95": 12.2,
+          "p99": 12.2,
+          "max": 12.2,
+          "mean": 7.82
+        }
+      }
+    }
+  },
+  "answer": {
+    "rows": {
+      "POST /questions/:id/answer (API)": {
+        "n": 20,
+        "errors": 0,
+        "min": 7.46,
+        "p50": 9.12,
+        "p95": 13,
+        "p99": 13.34,
+        "max": 13.34,
+        "mean": 9.66
+      },
+      "answer → settled (incl. ERP commit)": {
+        "n": 20,
+        "errors": 0,
+        "min": 48.78,
+        "p50": 52.17,
+        "p95": 78.14,
+        "p99": 82.82,
+        "max": 82.82,
+        "mean": 55.87
+      },
+      "queueWaitMs": {
+        "n": 3,
+        "errors": 0,
+        "min": 3,
+        "p50": 4,
+        "p95": 5,
+        "p99": 5,
+        "max": 5,
+        "mean": 4
+      },
+      "execPipelineMs": {
+        "n": 42,
+        "errors": 0,
+        "min": 14.35,
+        "p50": 31.1,
+        "p95": 47.11,
+        "p99": 53.62,
+        "max": 53.62,
+        "mean": 29.02
+      },
+      "execCommitMs": {
+        "n": 21,
+        "errors": 0,
+        "min": 16.23,
+        "p50": 19,
+        "p95": 22.75,
+        "p99": 32.59,
+        "max": 32.59,
+        "mean": 19.65
+      }
+    },
+    "states": {
+      "VERIFIED_PENDING_PAYMENT": 21
+    },
+    "erpLastAnswer": {
+      "capabilities": {
+        "n": 21,
+        "errors": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0,
+        "mean": 0,
+        "totalMs": 0.01
+      },
+      "createGrn": {
+        "n": 1,
+        "errors": 0,
+        "min": 1.07,
+        "p50": 1.07,
+        "p95": 1.07,
+        "p99": 1.07,
+        "max": 1.07,
+        "mean": 1.07,
+        "totalMs": 1.07
+      },
+      "findPurchaseInvoice": {
+        "n": 3,
+        "errors": 0,
+        "min": 0.08,
+        "p50": 0.09,
+        "p95": 0.14,
+        "p99": 0.14,
+        "max": 0.14,
+        "mean": 0.1,
+        "totalMs": 0.31
+      },
+      "findVendorByGstin": {
+        "n": 4,
+        "errors": 0,
+        "min": 0.18,
+        "p50": 0.21,
+        "p95": 0.25,
+        "p99": 0.25,
+        "max": 0.25,
+        "mean": 0.22,
+        "totalMs": 0.88
+      },
+      "getCompany": {
+        "n": 2,
+        "errors": 0,
+        "min": 0.15,
+        "p50": 0.15,
+        "p95": 0.19,
+        "p99": 0.19,
+        "max": 0.19,
+        "mean": 0.17,
+        "totalMs": 0.34
+      },
+      "getInvoicedQtyByPoLine": {
+        "n": 4,
+        "errors": 0,
+        "min": 0.08,
+        "p50": 0.1,
+        "p95": 0.17,
+        "p99": 0.17,
+        "max": 0.17,
+        "mean": 0.12,
+        "totalMs": 0.46
+      },
+      "getItem": {
+        "n": 2,
+        "errors": 0,
+        "min": 0.1,
+        "p50": 0.1,
+        "p95": 0.11,
+        "p99": 0.11,
+        "max": 0.11,
+        "mean": 0.11,
+        "totalMs": 0.22
+      },
+      "getPurchaseOrderByNumber": {
+        "n": 2,
+        "errors": 0,
+        "min": 0.27,
+        "p50": 0.27,
+        "p95": 0.3,
+        "p99": 0.3,
+        "max": 0.3,
+        "mean": 0.28,
+        "totalMs": 0.57
+      },
+      "listGrnsForPo": {
+        "n": 2,
+        "errors": 0,
+        "min": 0.09,
+        "p50": 0.09,
+        "p95": 0.1,
+        "p99": 0.1,
+        "max": 0.1,
+        "mean": 0.1,
+        "totalMs": 0.19
+      },
+      "recordPurchaseInvoice": {
+        "n": 1,
+        "errors": 0,
+        "min": 1.49,
+        "p50": 1.49,
+        "p95": 1.49,
+        "p99": 1.49,
+        "max": 1.49,
+        "mean": 1.49,
+        "totalMs": 1.49
+      }
+    }
+  },
+  "reprocess": {
+    "POST /invoices/:id/reprocess (API)": {
+      "n": 30,
+      "errors": 0,
+      "min": 4.87,
+      "p50": 7.47,
+      "p95": 10.23,
+      "p99": 10.37,
+      "max": 10.37,
+      "mean": 7.33
+    },
+    "reprocess → settled (job + extraction)": {
+      "n": 30,
+      "errors": 0,
+      "min": 15.45,
+      "p50": 19.03,
+      "p95": 31.49,
+      "p99": 32.5,
+      "max": 32.5,
+      "mean": 20.76
+    }
+  },
+  "ocrColdStartMs": 1414,
+  "extraction": {
+    "D01-clean-text.pdf": {
+      "n": 3,
+      "errors": 0,
+      "min": 12.21,
+      "p50": 15.48,
+      "p95": 18.01,
+      "p99": 18.01,
+      "max": 18.01,
+      "mean": 15.23,
+      "ocrMedianMs": 0,
+      "kb": 39,
+      "pages": 1,
+      "outcome": "ok",
+      "rssDeltaMb": 0
+    },
+    "D02-scanned.pdf": {
+      "n": 3,
+      "errors": 0,
+      "min": 921.57,
+      "p50": 1009.98,
+      "p95": 1026.21,
+      "p99": 1026.21,
+      "max": 1026.21,
+      "mean": 985.92,
+      "ocrMedianMs": 934.3,
+      "kb": 109,
+      "pages": 1,
+      "outcome": "ok",
+      "rssDeltaMb": 23.04
+    },
+    "D03-photo.jpg": {
+      "n": 3,
+      "errors": 0,
+      "min": 1060.29,
+      "p50": 1063.29,
+      "p95": 1068.15,
+      "p99": 1068.15,
+      "max": 1068.15,
+      "mean": 1063.91,
+      "ocrMedianMs": 941.34,
+      "kb": 117,
+      "pages": 1,
+      "outcome": "ok",
+      "rssDeltaMb": 1.25
+    },
+    "D04-photo.png": {
+      "n": 3,
+      "errors": 0,
+      "min": 991.12,
+      "p50": 1034.56,
+      "p95": 1089.79,
+      "p99": 1089.79,
+      "max": 1089.79,
+      "mean": 1038.49,
+      "ocrMedianMs": 937.59,
+      "kb": 146,
+      "pages": 1,
+      "outcome": "ok",
+      "rssDeltaMb": 11.58
+    },
+    "D05-blurry.jpg": {
+      "n": 3,
+      "errors": 0,
+      "min": 1256.45,
+      "p50": 1369.41,
+      "p95": 1407.71,
+      "p99": 1407.71,
+      "max": 1407.71,
+      "mean": 1344.53,
+      "ocrMedianMs": 1237.84,
+      "kb": 35,
+      "pages": 1,
+      "outcome": "ok",
+      "rssDeltaMb": -5.31
+    },
+    "D06-unreadable-total.pdf": {
+      "n": 3,
+      "errors": 0,
+      "min": 10.4,
+      "p50": 10.96,
+      "p95": 16.17,
+      "p99": 16.17,
+      "max": 16.17,
+      "mean": 12.51,
+      "ocrMedianMs": 0,
+      "kb": 39,
+      "pages": 1,
+      "outcome": "ok",
+      "rssDeltaMb": -1.22
+    },
+    "D07-quantity-mismatch.pdf": {
+      "n": 3,
+      "errors": 0,
+      "min": 11.5,
+      "p50": 12.2,
+      "p95": 15.17,
+      "p99": 15.17,
+      "max": 15.17,
+      "mean": 12.96,
+      "ocrMedianMs": 0,
+      "kb": 39,
+      "pages": 1,
+      "outcome": "ok",
+      "rssDeltaMb": 0
+    },
+    "D08-rate-mismatch.pdf": {
+      "n": 3,
+      "errors": 0,
+      "min": 9.77,
+      "p50": 12.79,
+      "p95": 15.82,
+      "p99": 15.82,
+      "max": 15.82,
+      "mean": 12.79,
+      "ocrMedianMs": 0,
+      "kb": 38,
+      "pages": 1,
+      "outcome": "ok",
+      "rssDeltaMb": 0
+    },
+    "D09-ambiguous-vendor.pdf": {
+      "n": 3,
+      "errors": 0,
+      "min": 9.41,
+      "p50": 13.67,
+      "p95": 13.72,
+      "p99": 13.72,
+      "max": 13.72,
+      "mean": 12.27,
+      "ocrMedianMs": 0,
+      "kb": 37,
+      "pages": 1,
+      "outcome": "ok",
+      "rssDeltaMb": 0.13
+    },
+    "D10-multi-page.pdf": {
+      "n": 3,
+      "errors": 0,
+      "min": 11.34,
+      "p50": 11.65,
+      "p95": 13.93,
+      "p99": 13.93,
+      "max": 13.93,
+      "mean": 12.31,
+      "ocrMedianMs": 0,
+      "kb": 39,
+      "pages": 2,
+      "outcome": "ok",
+      "rssDeltaMb": 0
+    },
+    "D11-two-invoices.pdf": {
+      "n": 3,
+      "errors": 0,
+      "min": 10.42,
+      "p50": 11.01,
+      "p95": 12.22,
+      "p99": 12.22,
+      "max": 12.22,
+      "mean": 11.22,
+      "ocrMedianMs": 0,
+      "kb": 41,
+      "pages": null,
+      "outcome": "MULTIPLE_INVOICES",
+      "rssDeltaMb": 0
+    },
+    "D12-missing-receipt.pdf": {
+      "n": 3,
+      "errors": 0,
+      "min": 8.46,
+      "p50": 12.21,
+      "p95": 15.21,
+      "p99": 15.21,
+      "max": 15.21,
+      "mean": 11.96,
+      "ocrMedianMs": 0,
+      "kb": 38,
+      "pages": 1,
+      "outcome": "ok",
+      "rssDeltaMb": 0
+    },
+    "generated-photo-S01.png": {
+      "n": 3,
+      "errors": 0,
+      "min": 169.52,
+      "p50": 181.71,
+      "p95": 211.78,
+      "p99": 211.78,
+      "max": 211.78,
+      "mean": 187.67,
+      "ocrMedianMs": 171.08,
+      "kb": 56,
+      "pages": 1,
+      "outcome": "ok",
+      "rssDeltaMb": 0.38
+    },
+    "generated-photo-S17.png": {
+      "n": 3,
+      "errors": 0,
+      "min": 73.01,
+      "p50": 76.24,
+      "p95": 86.3,
+      "p99": 86.3,
+      "max": 86.3,
+      "mean": 78.52,
+      "ocrMedianMs": 71.78,
+      "kb": 56,
+      "pages": 1,
+      "outcome": "ok",
+      "rssDeltaMb": 0.25
+    }
+  },
+  "memory": {
+    "rssMb": 1021.94,
+    "heapUsedMb": 200.85
+  }
+}

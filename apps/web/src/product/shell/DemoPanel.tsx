@@ -5,6 +5,7 @@ import { api, ApiError } from '../api/client';
 import { navigate } from '../router';
 import { useProductData, useResource } from '../state/data';
 import styles from './DemoPanel.module.css';
+import { notify } from '../../feedback/toasts';
 
 /**
  * Demo scenarios and reset (Phase 3E). Demo only: the list comes from the API's demo routes, so
@@ -26,7 +27,9 @@ const EXPECT: Record<ApiDemoScenario['expect'], { text: string; tone: 'handled' 
 };
 
 export function DemoProvider({ children }: { children: React.ReactNode }) {
-  const { data: scenarios } = useResource(() => api.demo.scenarios(), 'demo-scenarios');
+  const { data: scenarios } = useResource(() => api.demo.scenarios(), 'demo-scenarios', {
+    static: true,
+  });
   const [isOpen, setOpen] = useState(false);
   const available = (scenarios?.length ?? 0) > 0;
   return (
@@ -95,6 +98,7 @@ function DemoPanel({
     setProblem(null);
     try {
       await api.resetDemo();
+      notify.demoReset();
       await refresh();
       onClose();
       navigate({ name: 'inbox' });

@@ -45,6 +45,8 @@ export interface VeyraDatabase {
   ping(): Promise<void>;
   /** Closes the pool (or the embedded engine). Idempotent. */
   close(): Promise<void>;
+  /** Connection pool counts (Phase 7): open, idle, and requests waiting for a connection. */
+  poolStats(): { total: number; idle: number; waiting: number; max: number } | null;
 }
 
 export class PendingMigrationsError extends Error {
@@ -110,6 +112,12 @@ export async function openVeyraDb(options: DatabaseOptions): Promise<VeyraDataba
         await db.execute(sql`select 1`);
       },
       close: () => (closed ??= pool.end()),
+      poolStats: () => ({
+        total: pool.totalCount,
+        idle: pool.idleCount,
+        waiting: pool.waitingCount,
+        max: options.pool?.max ?? 10,
+      }),
     };
     try {
       if (options.migrate !== false)
@@ -132,6 +140,7 @@ export async function openVeyraDb(options: DatabaseOptions): Promise<VeyraDataba
         await db.execute(sql`select 1`);
       },
       close: () => (closed ??= client.closed ? Promise.resolve() : client.close()),
+      poolStats: () => null,
     };
     if (options.migrate !== false)
       await migratePglite(db as never, { migrationsFolder: MIGRATIONS_FOLDER });

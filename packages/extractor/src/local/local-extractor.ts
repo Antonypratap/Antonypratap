@@ -60,6 +60,24 @@ export class LocalDocumentExtractor implements Extractor {
     return { ok: true };
   }
 
+  /**
+   * Loads the PDF reader (and, with `ocr`, starts the OCR engine) ahead of the first document,
+   * so the first invoice after a start is not a second slower (Phase 7, docs/PERFORMANCE.md).
+   * Reads nothing and changes nothing about how documents are read.
+   */
+  async warmUp(options: { ocr: boolean }): Promise<void> {
+    const [{ loadPdfJs }, { renderPdf }] = await Promise.all([
+      import('./pdf'),
+      import('../fixture/document'),
+    ]);
+    await Promise.all([loadPdfJs(), options.ocr ? this.#ocr.warmUp?.() : undefined]);
+    // One tiny generated text PDF (no document of anyone's): pdf.js sets up its worker and
+    // compiles its hot paths on the first document it reads. The result is discarded.
+    await this.extractBytes(renderPdf(['TAX INVOICE', 'Warm-up']), 'application/pdf').catch(
+      () => undefined,
+    );
+  }
+
   async extract(input: ExtractorInput): Promise<ExtractionResult> {
     const bytes = new Uint8Array(await readFile(input.filePath));
     const mime = sniffDocument(bytes);

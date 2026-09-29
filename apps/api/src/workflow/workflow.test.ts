@@ -167,6 +167,45 @@ describe('end to end: upload → … → VERIFIED_PENDING_PAYMENT', () => {
     });
   });
 
+  it('re-extraction (one batched write) keeps human values, row ids and order; refreshes the rest', async () => {
+    const harness = await createHarness();
+    h = harness;
+    const id = await harness.upload('S14');
+    await harness.answer(id, 'MD_FIELD', 'set:header.totalPaise', '16,048.00');
+    const snapshot = async () =>
+      (
+        await harness.veyra.db
+          .select()
+          .from(t.extractedFields)
+          .where(eq(t.extractedFields.invoiceId, id))
+          .orderBy(asc(t.extractedFields.seq))
+      ).filter((r) => r.extractionId !== null || r.source.startsWith('human'));
+    const before = await snapshot();
+    // Read the document again, as a reprocess does (state set back to EXTRACTING directly).
+    await h.veyra.db.update(t.invoices).set({ state: 'EXTRACTING' }).where(eq(t.invoices.id, id));
+    await (h.veyra as unknown as { read: (x: string) => Promise<boolean> }).read(id);
+    const after = await snapshot();
+    expect(after.map((r) => [r.id, r.seq, r.path])).toEqual(
+      before.map((r) => [r.id, r.seq, r.path]),
+    );
+    const total = (rows: typeof before) => rows.find((r) => r.path === 'header.totalPaise');
+    expect(total(after)).toEqual(total(before)); // the human value is untouched
+    for (const r of after.filter((x) => x.source === 'extracted')) {
+      const b = before.find((x) => x.path === r.path);
+      expect({ ...r, extractionId: null, updatedAt: null }).toEqual({
+        ...b,
+        extractionId: null,
+        updatedAt: null,
+      });
+      expect(r.extractionId).not.toBe(b?.extractionId); // written by the new reading
+    }
+    const lines = await h.veyra.db
+      .select()
+      .from(t.invoiceLines)
+      .where(eq(t.invoiceLines.invoiceId, id));
+    expect(new Set(lines.map((l) => l.lineNo)).size).toBe(lines.length);
+  });
+
   it('S14 confirming the misread total does not verify it: the totals still have to agree', async () => {
     h = await createHarness();
     const id = await h.upload('S14');

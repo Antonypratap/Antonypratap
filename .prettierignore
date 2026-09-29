@@ -4,3 +4,4 @@ coverage
 package-lock.json
 *.md
 packages/fake-erp/drizzle
+apps/api/bench/results/

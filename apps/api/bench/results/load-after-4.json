@@ -1,0 +1,426 @@
+{
+  "label": "load-after-4",
+  "at": "2026-09-29T07:41:03.956Z",
+  "workers1": {
+    "digital10": {
+      "uploadApiMs": {
+        "n": 30,
+        "errors": 0,
+        "min": 129.31,
+        "p50": 253.69,
+        "p95": 290.41,
+        "p99": 292.42,
+        "max": 292.42,
+        "mean": 242.81
+      },
+      "uploadToSettledMs": {
+        "n": 30,
+        "errors": 0,
+        "min": 362.47,
+        "p50": 1425.66,
+        "p95": 2358.25,
+        "p99": 2393.37,
+        "max": 2393.37,
+        "mean": 1421.28
+      },
+      "allSettledMs": 2393,
+      "invoicesPerMinute": 752.1,
+      "outcomes": {
+        "NEEDS_INPUT": 29,
+        "VERIFIED_PENDING_PAYMENT": 1
+      },
+      "resources": {
+        "apiProcessPeakRssMb": 589.23,
+        "apiProcessPeakHeapMb": 203.94,
+        "apiProcessCpuPercent": 105,
+        "peakDbConnections": 10,
+        "peakPoolWaiting": 3
+      },
+      "workerReports": [],
+      "checks": {
+        "jobs": {
+          "succeeded": 37
+        },
+        "invoices": {
+          "NEEDS_INPUT": 29,
+          "VERIFIED_PENDING_PAYMENT": 2
+        },
+        "erpWrites": {
+          "confirmed": 3
+        },
+        "erpPurchaseInvoices": 2,
+        "problems": []
+      }
+    },
+    "photo6": {
+      "uploadApiMs": {
+        "n": 6,
+        "errors": 0,
+        "min": 43.94,
+        "p50": 46.35,
+        "p95": 213.96,
+        "p99": 213.96,
+        "max": 213.96,
+        "mean": 129.28
+      },
+      "uploadToSettledMs": {
+        "n": 6,
+        "errors": 0,
+        "min": 1742.76,
+        "p50": 4328.48,
+        "p95": 8128.72,
+        "p99": 8128.72,
+        "max": 8128.72,
+        "mean": 4936.28
+      },
+      "allSettledMs": 8129,
+      "invoicesPerMinute": 44.3,
+      "outcomes": {
+        "NEEDS_INPUT": 6
+      },
+      "resources": {
+        "apiProcessPeakRssMb": 744.95,
+        "apiProcessPeakHeapMb": 198.59,
+        "apiProcessCpuPercent": 122,
+        "peakDbConnections": 6,
+        "peakPoolWaiting": 0
+      },
+      "workerReports": [],
+      "checks": {
+        "jobs": {
+          "succeeded": 7
+        },
+        "invoices": {
+          "NEEDS_INPUT": 7
+        },
+        "erpWrites": {},
+        "erpPurchaseInvoices": 0,
+        "problems": []
+      }
+    },
+    "answers10": {
+      "questionCodes": {
+        "CA_GRN": 12
+      },
+      "answerApiMs": {
+        "n": 10,
+        "errors": 0,
+        "min": 66.45,
+        "p50": 107.46,
+        "p95": 164.06,
+        "p99": 164.06,
+        "max": 164.06,
+        "mean": 116.09
+      },
+      "answerStatuses": {
+        "200": 10
+      },
+      "doubleAnswerStatuses": [
+        200,
+        409
+      ],
+      "outcomes": {
+        "NEEDS_INPUT": 11,
+        "VERIFIED_PENDING_PAYMENT": 1
+      },
+      "resources": {
+        "apiProcessPeakRssMb": 700.44,
+        "apiProcessPeakHeapMb": 198.95,
+        "apiProcessCpuPercent": 99,
+        "peakDbConnections": 10,
+        "peakPoolWaiting": 0
+      },
+      "workerReports": [],
+      "checks": {
+        "jobs": {
+          "succeeded": 32
+        },
+        "invoices": {
+          "NEEDS_INPUT": 11,
+          "VERIFIED_PENDING_PAYMENT": 1
+        },
+        "erpWrites": {
+          "confirmed": 2
+        },
+        "erpPurchaseInvoices": 1,
+        "problems": []
+      }
+    },
+    "inbox10": {
+      "inboxMs": {
+        "n": 200,
+        "errors": 0,
+        "min": 24.85,
+        "p50": 59.56,
+        "p95": 103.28,
+        "p99": 118.61,
+        "max": 131.13,
+        "mean": 64.75,
+        "throughput": 112.76
+      },
+      "resources": {
+        "apiProcessPeakRssMb": 703.44,
+        "apiProcessPeakHeapMb": 208.85,
+        "apiProcessCpuPercent": 126,
+        "peakDbConnections": 10,
+        "peakPoolWaiting": 12
+      },
+      "workerReports": [],
+      "checks": {
+        "jobs": {
+          "succeeded": 13
+        },
+        "invoices": {
+          "VERIFIED_PENDING_PAYMENT": 2,
+          "NEEDS_INPUT": 9
+        },
+        "erpWrites": {
+          "confirmed": 3
+        },
+        "erpPurchaseInvoices": 2,
+        "problems": []
+      }
+    }
+  },
+  "workers3": {
+    "digital10": {
+      "uploadApiMs": {
+        "n": 30,
+        "errors": 0,
+        "min": 112.82,
+        "p50": 219.45,
+        "p95": 245.44,
+        "p99": 245.44,
+        "max": 245.44,
+        "mean": 207.38
+      },
+      "uploadToSettledMs": {
+        "n": 30,
+        "errors": 0,
+        "min": 307.7,
+        "p50": 1166.63,
+        "p95": 1765.83,
+        "p99": 1937.97,
+        "max": 1937.97,
+        "mean": 1165.23
+      },
+      "allSettledMs": 1938,
+      "invoicesPerMinute": 928.8,
+      "outcomes": {
+        "NEEDS_INPUT": 29,
+        "VERIFIED_PENDING_PAYMENT": 1
+      },
+      "resources": {
+        "apiProcessPeakRssMb": 553.01,
+        "apiProcessPeakHeapMb": 217.78,
+        "apiProcessCpuPercent": 77,
+        "peakDbConnections": 14,
+        "peakPoolWaiting": 0
+      },
+      "workerReports": [
+        {
+          "pid": 25960,
+          "peakRssMb": 506,
+          "peakHeapMb": 132,
+          "cpuSeconds": 2.02,
+          "wallSeconds": 5.67
+        },
+        {
+          "pid": 25975,
+          "peakRssMb": 519,
+          "peakHeapMb": 151,
+          "cpuSeconds": 3.3,
+          "wallSeconds": 3.82
+        }
+      ],
+      "checks": {
+        "jobs": {
+          "succeeded": 41
+        },
+        "invoices": {
+          "VERIFIED_PENDING_PAYMENT": 2,
+          "NEEDS_INPUT": 31
+        },
+        "erpWrites": {
+          "confirmed": 3
+        },
+        "erpPurchaseInvoices": 2,
+        "problems": []
+      }
+    },
+    "photo6": {
+      "uploadApiMs": {
+        "n": 6,
+        "errors": 0,
+        "min": 44.02,
+        "p50": 48.91,
+        "p95": 61.18,
+        "p99": 61.18,
+        "max": 61.18,
+        "mean": 53.28
+      },
+      "uploadToSettledMs": {
+        "n": 6,
+        "errors": 0,
+        "min": 1387.22,
+        "p50": 2791.9,
+        "p95": 4126.5,
+        "p99": 4126.5,
+        "max": 4126.5,
+        "mean": 2766.81
+      },
+      "allSettledMs": 4127,
+      "invoicesPerMinute": 87.2,
+      "outcomes": {
+        "NEEDS_INPUT": 6
+      },
+      "resources": {
+        "apiProcessPeakRssMb": 613.78,
+        "apiProcessPeakHeapMb": 195.31,
+        "apiProcessCpuPercent": 118,
+        "peakDbConnections": 10,
+        "peakPoolWaiting": 0
+      },
+      "workerReports": [
+        {
+          "pid": 26088,
+          "peakRssMb": 587,
+          "peakHeapMb": 152,
+          "cpuSeconds": 5.64,
+          "wallSeconds": 9.24
+        },
+        {
+          "pid": 26103,
+          "peakRssMb": 356,
+          "peakHeapMb": 50,
+          "cpuSeconds": 5.68,
+          "wallSeconds": 7.47
+        }
+      ],
+      "checks": {
+        "jobs": {
+          "succeeded": 9
+        },
+        "invoices": {
+          "NEEDS_INPUT": 9
+        },
+        "erpWrites": {},
+        "erpPurchaseInvoices": 0,
+        "problems": []
+      }
+    },
+    "answers10": {
+      "questionCodes": {
+        "CA_GRN": 14
+      },
+      "answerApiMs": {
+        "n": 10,
+        "errors": 0,
+        "min": 49.99,
+        "p50": 89.02,
+        "p95": 142.44,
+        "p99": 142.44,
+        "max": 142.44,
+        "mean": 94.89
+      },
+      "answerStatuses": {
+        "200": 10
+      },
+      "doubleAnswerStatuses": [
+        200,
+        409
+      ],
+      "outcomes": {
+        "NEEDS_INPUT": 13,
+        "VERIFIED_PENDING_PAYMENT": 1
+      },
+      "resources": {
+        "apiProcessPeakRssMb": 569.06,
+        "apiProcessPeakHeapMb": 199.28,
+        "apiProcessCpuPercent": 41,
+        "peakDbConnections": 14,
+        "peakPoolWaiting": 0
+      },
+      "workerReports": [
+        {
+          "pid": 26191,
+          "peakRssMb": 512,
+          "peakHeapMb": 137,
+          "cpuSeconds": 2.38,
+          "wallSeconds": 5.67
+        },
+        {
+          "pid": 26206,
+          "peakRssMb": 516,
+          "peakHeapMb": 140,
+          "cpuSeconds": 2.55,
+          "wallSeconds": 3.8
+        }
+      ],
+      "checks": {
+        "jobs": {
+          "succeeded": 34
+        },
+        "invoices": {
+          "NEEDS_INPUT": 13,
+          "VERIFIED_PENDING_PAYMENT": 1
+        },
+        "erpWrites": {
+          "confirmed": 2
+        },
+        "erpPurchaseInvoices": 1,
+        "problems": []
+      }
+    },
+    "inbox10": {
+      "inboxMs": {
+        "n": 200,
+        "errors": 0,
+        "min": 14.63,
+        "p50": 105.89,
+        "p95": 179.28,
+        "p99": 190.12,
+        "max": 204.39,
+        "mean": 106.77,
+        "throughput": 92.41
+      },
+      "resources": {
+        "apiProcessPeakRssMb": 569.93,
+        "apiProcessPeakHeapMb": 203.41,
+        "apiProcessCpuPercent": 108,
+        "peakDbConnections": 14,
+        "peakPoolWaiting": 2
+      },
+      "workerReports": [
+        {
+          "pid": 26319,
+          "peakRssMb": 474,
+          "peakHeapMb": 136,
+          "cpuSeconds": 2.15,
+          "wallSeconds": 5.97
+        },
+        {
+          "pid": 26334,
+          "peakRssMb": 521,
+          "peakHeapMb": 147,
+          "cpuSeconds": 2.84,
+          "wallSeconds": 4.04
+        }
+      ],
+      "checks": {
+        "jobs": {
+          "succeeded": 17
+        },
+        "invoices": {
+          "VERIFIED_PENDING_PAYMENT": 2,
+          "NEEDS_INPUT": 11
+        },
+        "erpWrites": {
+          "confirmed": 3
+        },
+        "erpPurchaseInvoices": 2,
+        "problems": []
+      }
+    }
+  }
+}

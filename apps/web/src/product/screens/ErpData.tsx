@@ -6,6 +6,7 @@ import { formatDate } from '../format';
 import { hrefFor } from '../router';
 import { useProductData, useResource } from '../state/data';
 import styles from './ErpData.module.css';
+import { notify } from '../../feedback/toasts';
 
 /**
  * Import and export business records (Phase 3C): download a template, fill it in, upload, check
@@ -25,7 +26,9 @@ export function ErpData() {
     setBusy(true);
     setProblem(null);
     try {
-      setCurrent(await api.imports.check(Array.from(files)));
+      const checked = await api.imports.check(Array.from(files));
+      setCurrent(checked);
+      notify.importChecked(checked.status === 'ready');
     } catch (e) {
       setProblem(e instanceof ApiError ? e.message : 'The file could not be uploaded.');
     } finally {
@@ -41,6 +44,7 @@ export function ErpData() {
     setProblem(null);
     try {
       setCurrent(await api.imports.confirm(current.id));
+      notify.imported();
       await refresh();
     } catch (e) {
       const again = e instanceof ApiError ? (e.details.import as ApiImport | undefined) : undefined;

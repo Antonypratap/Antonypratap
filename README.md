@@ -43,6 +43,8 @@ npm run check        # format:check → lint → typecheck → test → db:verif
 | `npm run fixtures:generate` | Regenerate the deterministic demo invoice files in `fixtures/invoices/` and the import templates and demo files in `fixtures/imports/` |
 | `npm run db:migrate -w @veyra/api` | Apply pending PostgreSQL migrations to the Veyra database and exit (a deployment step in production; see [DEPLOYMENT](docs/DEPLOYMENT.md)) |
 | `npm run db:migrate-from-sqlite -w @veyra/api -- --from <veyra.db> [--dry-run]` | One-time, verified, non-destructive import of a pre-6A SQLite database into PostgreSQL |
+| `npm run bench -w @veyra/api -- <label> [suites]` | Performance benchmark on a disposable database from `TEST_DATABASE_URL` (suites `db,api,erp,flows,answer,reprocess,ocr`); writes `apps/api/bench/results/<label>.json`. Compare two runs with `cd apps/api && npx tsx bench/compare.ts a b`; query plans with `npx tsx bench/explain.ts` ([PERFORMANCE](docs/PERFORMANCE.md)) |
+| `npm run bench:load -w @veyra/api -- <label>` | Load test with 1 and 3 workers: concurrent uploads, photos (OCR), answers, inbox clients, plus invariant checks (no lost job, no duplicate ERP record) |
 | `npm run erp:reset [-- <path>]` | Recreate `data/fake_erp.db` with the DEMO.md seed (deterministic) |
 
 Workspaces: `packages/{shared,india-tax,erp-connector,fake-erp,extractor}`, `apps/{api,web}`.
