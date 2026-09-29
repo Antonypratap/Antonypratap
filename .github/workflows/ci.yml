@@ -34,3 +34,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      # Known vulnerabilities in the dependencies that ship (production). Dev-only tooling findings
+      # are reviewed separately (docs/SECURITY.md "Dependency and secret scanning").
+      - run: npm run audit:deps

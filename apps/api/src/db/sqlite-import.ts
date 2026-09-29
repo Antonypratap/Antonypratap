@@ -26,6 +26,8 @@ import * as t from './schema';
  * Nothing is transformed: ids, text, JSON (byte for byte), integers are copied as they are. The
  * only representation changes are the column types themselves: 0/1 → boolean, ISO-8601 text →
  * timestamptz (read back as the same ISO string), and SQLite's rowid → `seq` (insertion order).
+ * Columns that did not exist in SQLite (Phase 6C user columns) are filled exactly as migration
+ * 0001 fills them for existing PostgreSQL rows (`legacyValue`).
  */
 
 export const LEGACY_SQLITE_MIGRATIONS = fileURLToPath(
@@ -72,6 +74,33 @@ export class MigrationVerificationError extends Error {
 }
 
 type Row = Record<string, unknown>;
+
+/** The deployment's one organization (the same id migration 0001 creates). */
+const ORGANIZATION_ID = '00000000000000000000000001';
+
+/**
+ * Columns added after the last SQLite schema (Phase 6C), exactly as migration 0001 fills them for
+ * existing rows: every earlier user is the designated approver, an ADMIN of the one organization,
+ * without a password (it cannot sign in). The email is lower-cased like 0001 does.
+ */
+function legacyValue(table: string, column: string, row: Row): { value: unknown } | null {
+  if (table !== 'users') return null;
+  if (column === 'organization_id') return { value: ORGANIZATION_ID };
+  if (column === 'role') return { value: 'ADMIN' };
+  if (column === 'updated_at') return { value: row.created_at };
+  if (column === 'password_hash' || column === 'password_changed_at') return { value: null };
+  if (column === 'email' && typeof row.email === 'string')
+    return { value: row.email.toLowerCase() };
+  return null;
+}
+
+/** A source value for a target column: the SQLite value, or the documented fill for new columns. */
+function sourceValue(table: string, column: string, row: Row, bools: Set<string>): unknown {
+  const legacy = legacyValue(table, column, row);
+  if (legacy && (column === 'email' || !(column in row)))
+    return toPostgres(column, legacy.value, bools);
+  return toPostgres(column, row[column], bools);
+}
 
 const TIMESTAMP_COLUMNS = new Set([
   'created_at',
@@ -173,7 +202,7 @@ export async function importFromSqlite(options: {
               const out: Row = {};
               for (const [key, col] of Object.entries(columns)) {
                 if (key === 'seq') continue;
-                out[key] = toPostgres(col.name, r[col.name], bools);
+                out[key] = sourceValue(cfg.name, col.name, r, bools);
               }
               if (hasSeq) out.seq = Number(r.__rowid);
               return out;
@@ -248,7 +277,7 @@ export async function verify(
       }
       for (const [key, col] of Object.entries(columns)) {
         const expected =
-          key === 'seq' ? Number(s.__rowid) : toPostgres(col.name, s[col.name], bools);
+          key === 'seq' ? Number(s.__rowid) : sourceValue(cfg.name, col.name, s, bools);
         if (!Object.is(expected, d[key]) && JSON.stringify(expected) !== JSON.stringify(d[key]))
           problems.push(`${cfg.name}.${col.name} differs for ${String(s[pk])}`);
       }

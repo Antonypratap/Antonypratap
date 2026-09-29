@@ -100,7 +100,15 @@ async function asLegacySqlite(db: VeyraDb): Promise<string> {
   sqlite.pragma('foreign_keys = ON');
   for (const table of TABLE_ORDER) {
     const cfg = getTableConfig(table);
-    const columns = Object.entries(getTableColumns(table)).filter(([k]) => k !== 'seq');
+    // Only the columns the SQLite schema had (Phase 6C user columns did not exist there).
+    const legacy = new Set(
+      (sqlite.prepare(`pragma table_info("${cfg.name}")`).all() as { name: string }[]).map(
+        (c) => c.name,
+      ),
+    );
+    const columns = Object.entries(getTableColumns(table)).filter(
+      ([k, c]) => k !== 'seq' && legacy.has(c.name),
+    );
     const rows = (await ('seq' in getTableColumns(table)
       ? db
           .select()

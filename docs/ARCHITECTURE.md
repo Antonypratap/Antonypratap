@@ -875,3 +875,47 @@ A persistence-layer change only. The Veyra application database moved from SQLit
   - A test rebuilds the schema from the migrations and compares tables, columns, nullability, types, foreign keys, checks and indexes with the declared schema.
 - **CLIENT REQUIREMENT** Data migration: `db:migrate-from-sqlite` (`src/db/sqlite-import.ts`) is non-destructive (it reads a backup copy of the SQLite file) and copies into an empty, migrated database in one transaction, verified inside it (every value of every row, counts, order, states, relationships). Any difference rolls everything back. The retired SQLite migrations (`drizzle-sqlite/`) exist only for this tool.
 - **TECHNICAL CONSTRAINT** Tests run against real PostgreSQL (`TEST_DATABASE_URL`, one throwaway database per test cloned from a migrated template) and fail explicitly without it; CI provides a PostgreSQL service. Documents remain on local disk, so multi-host deployments wait for an object-storage adapter.
+
+## 20. Phase 6C: security and data protection foundation
+
+Authentication, authorization and data protection around the unchanged workflow. Invoice rules, 3-way matching, the state machine, questions, the ERP contract and the VEYRA/YOU audit trail are unchanged. The threat model, the controls, the deployment's responsibilities and the remaining risks are in [SECURITY.md](SECURITY.md). Labels as in §13.
+
+**Identity**
+- **CLIENT REQUIREMENT** Users sign in with email and password.
+  - Passwords are hashed with Argon2id (`@node-rs/argon2`, OWASP baseline parameters); no custom cryptography, no identity provider.
+  - Failures give one answer whatever the reason, with equal work.
+- **IMPLEMENTATION DECISION** Sessions are server-side (`sessions` table).
+  - The browser holds a 256-bit random token in an HttpOnly, SameSite=Strict cookie (`__Host-`, Secure outside development); the database keeps only its SHA-256.
+  - Idle and absolute expiry are configurable.
+  - Rotation at sign-in, revocation at sign-out; disabling a user or changing their password ends all of that user's sessions.
+  - Each session carries its own CSRF token.
+- **IMPLEMENTATION DECISION** Organization: `organizations` holds the one configured organization; every user belongs to it (migration `0001_identity` backfills existing rows).
+  - Authorization runs user → organization → resource.
+  - Resources carry no organization column while a deployment serves one organization. This is deliberately not multi-tenancy.
+- **IMPLEMENTATION DECISION** The designated approver (`DEMO_USER`) remains the user questions are assigned to. It has no password, so it cannot sign in except through the demo PIN in demo environments.
+
+**Authorization**
+- **CLIENT REQUIREMENT** Roles ADMIN, FINANCE, REVIEWER, with a small flat permission list (`packages/shared/src/auth.ts`); the table is in SECURITY.md §6.
+- **IMPLEMENTATION DECISION** One central layer (`apps/api/src/http/access.ts`):
+  - every route declares `config.access`, and a route without one fails server startup;
+  - authentication, the organization check, CSRF and the permission check run in `onRequest`, before bodies are parsed.
+- **IMPLEMENTATION DECISION** Defence in depth: `Veyra.requireActor` checks the acting user again in upload, answer, reject, reprocess and imports. It replaces the earlier "designated user only" rule.
+  - Answering with an option that rejects the invoice also needs `invoices.reject`.
+  - The acting user is always the session's user.
+- **CLIENT REQUIREMENT** The demo PIN exists only in demo mode, as a server-side sign-in; production has no demo sign-in and no dev routes. The earlier browser-only PIN gate is removed.
+
+**Protection**
+- **IMPLEMENTATION DECISION** CSRF protection has three layers: the SameSite=Strict cookie, an Origin/Fetch-Metadata check on every state-changing request (sign-in included), and a synchronizer token in `x-veyra-csrf`.
+  - CORS is off unless `VEYRA_CORS_ORIGINS` lists exact origins.
+  - `@fastify/helmet` sets API security headers, and the web build has its own CSP (`apps/web/src/security-headers.ts`, applied by `vite preview` and the reverse proxy).
+- **IMPLEMENTATION DECISION** Documents are downloaded only through an authorized route (`documents.view`). Each download is recorded as `document.accessed` and served inert: nosniff, a CSP allowing nothing active, a sandbox for images, `no-store`.
+- **IMPLEMENTATION DECISION** Security audit: sign-ins, sign-outs, user changes, password changes, denials and document access go to `security_events`. This is a separate table, so the business timeline is untouched.
+- **IMPLEMENTATION DECISION** Logs and secrets:
+  - a redaction helper runs on every log line, and database errors are logged without SQL or values;
+  - configuration secrets are `Secret` objects that print as `[secret]`;
+  - ERP configuration is a dedicated `ErpConnectorConfig`, given only to the connector factory.
+- **IMPLEMENTATION DECISION** Database: a least-privilege runtime role (`apps/api/sql/runtime-role.sql`) with rows only, no DELETE or DDL, and append-only audit tables, tested against the whole workflow.
+  - A separate migration credential (`DATABASE_MIGRATION_URL`).
+  - Production requires TLS to a remote database.
+- **IMPLEMENTATION DECISION** AI boundary: Ollama must be local or private unless an operator explicitly allows otherwise; no external AI provider exists.
+- **TECHNICAL CONSTRAINT** Rate limiting stays per process (sign-in added, per address and per account). A distributed limiter, MFA, retention automation and per-row organization ownership are future work (SECURITY.md §21).

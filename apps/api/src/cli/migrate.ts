@@ -14,7 +14,8 @@ try {
     dataDir: fileURLToPath(new URL('../../../../data/veyra', import.meta.url)),
   });
   const target = {
-    url: config.database.url,
+    // The migration credential when one is configured (may change the schema), else the runtime one.
+    url: (config.database.migrationUrl ?? config.database.url)?.reveal() ?? null,
     pgliteDir: join(config.dataDir, 'pgdata'),
     pool: { ...config.database.pool, max: 1 },
   };

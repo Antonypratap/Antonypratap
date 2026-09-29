@@ -7,6 +7,7 @@ import { hrefFor } from '../router';
 import { attentionQueue, useProductData } from '../state/data';
 import { STATUS_LABEL } from '../state/status';
 import styles from './Inbox.module.css';
+import { useAllowed } from '../../access/session';
 
 const INITIAL_VISIBLE = 5;
 
@@ -27,6 +28,7 @@ export function Inbox() {
     .sort((a, b) => (b.decision?.at ?? '').localeCompare(a.decision?.at ?? ''));
   const handled = invoices.filter((i) => i.status === 'handled').slice(0, 5);
 
+  const canUpload = useAllowed('documents.upload');
   return (
     <div className={styles.page}>
       <header className={styles.headerRow}>
@@ -42,7 +44,7 @@ export function Inbox() {
                   : 'Nothing needs you right now.'}
           </p>
         </div>
-        <UploadButton />
+        {canUpload && <UploadButton />}
       </header>
 
       <section className={styles.week} aria-label="Invoices">

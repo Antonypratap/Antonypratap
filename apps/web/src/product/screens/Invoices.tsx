@@ -7,6 +7,7 @@ import { INVOICE_FILTERS, hrefFor, type InvoiceFilter } from '../router';
 import { useProductData } from '../state/data';
 import { STATUS_LABEL, STATUS_TONE } from '../state/status';
 import styles from './Invoices.module.css';
+import { useAllowed } from '../../access/session';
 
 const FILTER_LABEL: Record<InvoiceFilter, string> = {
   all: 'All',
@@ -35,12 +36,13 @@ export function Invoices({ filter }: { filter: InvoiceFilter }) {
         inv.filename.toLowerCase().includes(q),
     );
 
+  const canExport = useAllowed('exports.download');
   return (
     <div className={styles.page}>
       <PageHeader
         title="Invoices"
         sub="Every invoice received, with where it stands."
-        aside={<ExportLink href={exportUrl('invoices.xlsx')} />}
+        aside={canExport ? <ExportLink href={exportUrl('invoices.xlsx')} /> : undefined}
       />
       <div className={styles.tools}>
         <div className={styles.filters} role="tablist" aria-label="Filter invoices">

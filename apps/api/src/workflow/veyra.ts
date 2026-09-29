@@ -17,6 +17,7 @@ import {
   type QuestionCode,
 } from '@veyra/shared';
 import { isErpConnectorError, type ErpConnector } from '@veyra/erp-connector';
+import { can, type Permission } from '@veyra/shared';
 import { checkImageSize, imageSize, sniffDocument, type Extractor } from '@veyra/extractor';
 import type { VeyraDb, VeyraTx } from '../db/open';
 import * as t from '../db/schema';
@@ -44,6 +45,9 @@ export const DEMO_USER = {
   name: 'Demo Approver',
   email: 'approver@veyra.local',
 } as const;
+
+/** The one organization this deployment serves (Phase 6C; see db/schema.ts `organizations`). */
+export const ORGANIZATION_ID = '00000000000000000000000001';
 
 export interface VeyraSettings extends EngineSettings {
   designatedUserId: string;
@@ -81,7 +85,8 @@ export class VeyraError extends Error {
       | 'INVALID_STATE'
       | 'INVALID_INPUT'
       | 'UNSUPPORTED_FILE'
-      | 'NOT_DESIGNATED_USER',
+      | 'FORBIDDEN'
+      | 'CONFLICT',
     message: string,
     readonly details: Record<string, unknown> = {},
   ) {
@@ -101,6 +106,8 @@ export interface VeyraOptions {
   clock?: () => Date;
   initialSettings?: Omit<VeyraSettings, 'designatedUserId'>;
   commitHooks?: CommitHooks;
+  /** The configured organization's name (Phase 6C). */
+  organizationName?: string;
 }
 
 type Actor = { type: 'system' | 'ai' } | { type: 'user'; userId: string };
@@ -132,7 +139,12 @@ export class Veyra {
     this.clock = options.clock ?? (() => new Date());
     this.commitHooks = options.commitHooks ?? {};
     this.#initial = options.initialSettings ?? DEFAULT_SETTINGS;
+    this.organizationName = options.organizationName ?? 'Toit';
   }
+
+  readonly organizationName: string;
+  /** Every user and resource of this deployment belongs to this organization (Phase 6C). */
+  readonly organizationId = ORGANIZATION_ID;
 
   readonly #initial: Omit<VeyraSettings, 'designatedUserId'>;
 
@@ -158,8 +170,22 @@ export class Veyra {
     // Idempotent under concurrency: several instances may start at once.
     await this.db.transaction(async (tx) => {
       await tx
+        .insert(t.organizations)
+        .values({ id: ORGANIZATION_ID, name: this.organizationName, createdAt: now })
+        .onConflictDoUpdate({ target: t.organizations.id, set: { name: this.organizationName } });
+      // The designated approver questions are assigned to. It has no password: it cannot sign in
+      // (outside production, the demo sign-in uses it).
+      await tx
         .insert(t.users)
-        .values({ ...DEMO_USER, active: true, createdAt: now })
+        .values({
+          ...DEMO_USER,
+          active: true,
+          organizationId: ORGANIZATION_ID,
+          role: 'ADMIN',
+          passwordHash: null,
+          createdAt: now,
+          updatedAt: now,
+        })
         .onConflictDoNothing();
       const values: VeyraSettings = { ...initial, designatedUserId: DEMO_USER.id };
       for (const [k, key] of Object.entries(SETTING_KEYS)) {
@@ -194,6 +220,22 @@ export class Veyra {
   /** V1 has exactly one designated user; every decision is theirs (no hierarchy, no roles). */
   async designatedUserId(): Promise<string> {
     return (await this.settings()).designatedUserId;
+  }
+
+  /**
+   * Authorization in the application core (Phase 6C), behind the HTTP layer's checks: the acting
+   * user exists, is active, belongs to this organization and has the permission. Replaces the
+   * earlier "designated user only" rule, which assumed a single user.
+   */
+  async requireActor(userId: string, permission: Permission): Promise<void> {
+    const user = (await this.db.select().from(t.users).where(eq(t.users.id, userId)).limit(1))[0];
+    if (
+      !user ||
+      !user.active ||
+      user.organizationId !== this.organizationId ||
+      !can(user.role, permission)
+    )
+      throw new VeyraError('FORBIDDEN', 'You do not have permission to do this.');
   }
 
   // ── Audit and transitions ────────────────────────────────────────────────
@@ -287,11 +329,16 @@ export class Veyra {
    * Stores an uploaded invoice document and queues it. The file is untrusted: its type is decided
    * by its bytes, not its name or the browser's claim. An identical file (same SHA-256) is refused.
    */
-  async upload(file: {
-    filename: string;
-    bytes: Uint8Array;
-  }): Promise<{ documentId: string; invoiceId: string }> {
+  async upload(
+    file: {
+      filename: string;
+      bytes: Uint8Array;
+    },
+    /** Who uploads (recorded and authorized); absent: the designated user (demo, tests). */
+    actorId?: string,
+  ): Promise<{ documentId: string; invoiceId: string }> {
     const { bytes } = file;
+    if (actorId) await this.requireActor(actorId, 'documents.upload');
     if (bytes.length === 0) throw new VeyraError('UNSUPPORTED_FILE', 'The file is empty.');
     if (bytes.length > this.maxUploadBytes)
       throw new VeyraError(
@@ -325,7 +372,7 @@ export class Veyra {
     const storageKey = `${documentId}.${ext}`;
     await this.storage.put(storageKey, bytes, { mime, sha256 });
     const filename = safeFilename(file.filename, ext);
-    const userId = await this.designatedUserId();
+    const userId = actorId ?? (await this.designatedUserId());
     const now = this.now();
     try {
       await this.db.transaction(async (tx) => {
@@ -979,8 +1026,7 @@ export class Veyra {
     body: { optionId: string; input: unknown },
     userId: string,
   ): Promise<void> {
-    if (userId !== (await this.designatedUserId()))
-      throw new VeyraError('NOT_DESIGNATED_USER', 'Only the designated user can answer questions.');
+    await this.requireActor(userId, 'questions.answer');
     const q = (
       await this.db.select().from(t.questions).where(eq(t.questions.id, questionId)).limit(1)
     )[0];
@@ -997,6 +1043,8 @@ export class Veyra {
     }[];
     const option = options.find((o) => o.id === body.optionId);
     if (!option) throw new VeyraError('INVALID_INPUT', 'That is not one of the options.');
+    // Rejecting an invoice through a question is still a rejection.
+    if (option.effect.type === 'REJECT_INVOICE') await this.requireActor(userId, 'invoices.reject');
     const specs = (q.inputSchemaJson ? JSON.parse(q.inputSchemaJson) : {}) as Record<
       string,
       InputSpec
@@ -1143,8 +1191,7 @@ export class Veyra {
 
   /** Explicit business rejection by the designated user (from NEEDS_INPUT or FAILED). */
   async reject(invoiceId: string, reason: string, userId: string): Promise<void> {
-    if (userId !== (await this.designatedUserId()))
-      throw new VeyraError('NOT_DESIGNATED_USER', 'Only the designated user can reject invoices.');
+    await this.requireActor(userId, 'invoices.reject');
     const inv = await this.invoiceRow(this.db, invoiceId);
     if (inv.state !== 'NEEDS_INPUT' && inv.state !== 'FAILED')
       throw new VeyraError('INVALID_STATE', 'Only invoices waiting for you can be rejected.');
@@ -1155,11 +1202,7 @@ export class Veyra {
 
   /** FAILED → EXTRACTING (extraction never finished) or MATCHING (re-run on the stored reading). */
   async reprocess(invoiceId: string, userId: string): Promise<void> {
-    if (userId !== (await this.designatedUserId()))
-      throw new VeyraError(
-        'NOT_DESIGNATED_USER',
-        'Only the designated user can reprocess invoices.',
-      );
+    await this.requireActor(userId, 'invoices.reprocess');
     const inv = await this.invoiceRow(this.db, invoiceId);
     if (inv.state !== 'FAILED')
       throw new VeyraError('INVALID_STATE', 'Only failed invoices can be processed again.');

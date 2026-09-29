@@ -10,6 +10,7 @@ import { attentionQueue, nextInQueue, useProductData, useResource } from '../sta
 import { AFTER_DECISION, ASK_LABEL, completionEvidence, erpStatusText } from '../state/decision';
 import { STATUS_LABEL, STATUS_TONE } from '../state/status';
 import styles from './InvoiceReview.module.css';
+import { allowed } from '../../access/session';
 
 export function InvoiceReview({ id }: { id: string }) {
   const { data, error } = useResource(() => api.invoice(id), `invoice:${id}`);
@@ -286,7 +287,7 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
                     type="button"
                     className={styles.option}
                     data-emphasis="primary"
-                    disabled={busy}
+                    disabled={busy || !allowed('invoices.reprocess')}
                     onClick={() => void act(() => api.reprocess(invoice.id))}
                   >
                     Try again
@@ -295,7 +296,7 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
                     type="button"
                     className={styles.option}
                     data-emphasis="quiet"
-                    disabled={busy}
+                    disabled={busy || !allowed('invoices.reject')}
                     onClick={() =>
                       void act(() => api.reject(invoice.id, 'Rejected after it could not be read'))
                     }

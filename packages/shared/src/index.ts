@@ -25,3 +25,5 @@ export * from './schemas/match';
 export * from './schemas/creation';
 export * from './schemas/audit';
 export * from './schemas/api';
+export * from './auth';
+export * from './schemas/auth';

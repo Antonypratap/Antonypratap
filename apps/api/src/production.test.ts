@@ -18,6 +18,7 @@ import * as t from './db/schema';
 import { createLogger } from './http/logging';
 import { LocalDocumentStorage, StorageUnavailableError, type DocumentStorage } from './storage';
 import { DEMO_NOW, createHarness, type Harness } from './test/harness';
+import { injectAs, testSession, type TestSession } from './test/auth';
 import { CrashSignal } from './workflow/commit';
 
 /**
@@ -38,6 +39,8 @@ afterEach(async () => {
   h = undefined;
 });
 
+const sessions = new Map<App, TestSession>();
+
 async function open(extra: Partial<AppConfig> = {}): Promise<App> {
   const dir = mkdtempSync(join(tmpdir(), 'veyra-prod-'));
   const database = await createTestDatabase();
@@ -51,6 +54,9 @@ async function open(extra: Partial<AppConfig> = {}): Promise<App> {
     ...extra,
   });
   opened.push({ app, dir, database });
+  const session = await testSession(app);
+  sessions.set(app, session);
+  injectAs(app, session);
   return app;
 }
 
@@ -456,7 +462,7 @@ describe('uploads and input safety', () => {
 
 describe('rate limits', () => {
   it('uploads over the limit get 429 with Retry-After and a safe body', async () => {
-    const app = await open({ rateLimits: { upload: 2, processing: 100, dev: 100 } });
+    const app = await open({ rateLimits: { upload: 2, processing: 100, dev: 100, login: 100 } });
     const codes: number[] = [];
     for (let i = 0; i < 3; i++)
       codes.push(
@@ -483,7 +489,7 @@ describe('rate limits', () => {
   });
 
   it('demo endpoints are limited too', async () => {
-    const app = await open({ rateLimits: { upload: 100, processing: 100, dev: 1 } });
+    const app = await open({ rateLimits: { upload: 100, processing: 100, dev: 1, login: 100 } });
     await app.server.inject({ method: 'GET', url: '/api/v1/dev/scenarios' });
     const res = await app.server.inject({ method: 'GET', url: '/api/v1/dev/scenarios' });
     expect(res.statusCode).toBe(429);
@@ -494,6 +500,8 @@ describe('structured logs', () => {
   it('one line per request with id, route, status and duration; no secrets or bodies', async () => {
     const { lines, log } = logCapture();
     const app = await open({ log });
+    const session = sessions.get(app);
+    if (!session) throw new Error('no session');
     const { file, bytes } = S01();
     const res = await app.server.inject({
       method: 'POST',
@@ -501,7 +509,8 @@ describe('structured logs', () => {
       headers: {
         ...multipart(file, bytes).headers,
         authorization: 'Bearer sk_live_secret_token',
-        cookie: 'session=abc123secret',
+        cookie: `${session.cookie}; other=abc123secret`,
+        'x-veyra-csrf': session.csrf,
       },
       payload: multipart(file, bytes).payload,
     });
@@ -525,6 +534,10 @@ describe('structured logs', () => {
     });
     const all = JSON.stringify(lines);
     expect(all).not.toMatch(/sk_live|abc123secret|Bearer|SSS\/26-27|%PDF/);
+    // Neither the session token nor the CSRF token ever reaches a log line.
+    expect(all).not.toContain(session.cookie.split('=')[1]);
+    expect(all).not.toContain(session.csrf);
+    expect(line).toMatchObject({ userId: session.userId }); // opaque id, not a name or email
   });
 
   it('the logger redacts credentials even if something tries to log them', () => {

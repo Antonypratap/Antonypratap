@@ -3,12 +3,15 @@
 How to run Veyra as a hosted application: prerequisites, configuration, build, database
 migrations, startup, health, shutdown, storage, logs, backups and rollback. What is **not**
 production-ready yet is in [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md); design background is
-in [ARCHITECTURE §18–19](ARCHITECTURE.md).
+in [ARCHITECTURE §18–20](ARCHITECTURE.md). The threat model, the security controls and what each
+deployment must provide are in [SECURITY.md](SECURITY.md); work through its **Before Production
+Customer** checklist before real customer data goes in.
 
-> **Read this first.** Veyra has **no user authentication**. The demo PIN is a curtain in the
-> browser for demos, not security: the API does not check it, and production does not depend on
-> it. Deploy Veyra only where the network already controls who reaches it (a VPN, a private
-> network, or a reverse proxy that authenticates users). Never expose it to the open internet.
+> **Read this first.** Every API request except the health probes and sign-in needs a signed-in
+> session; roles are enforced by the server (SECURITY.md §4–7). What Veyra does **not** provide
+> itself: TLS (the reverse proxy), keeping PostgreSQL off the internet, encrypted backups,
+> multi-factor authentication. The demo PIN exists only in demo environments and never in
+> production.
 
 ## 1. Prerequisites
 
@@ -37,10 +40,28 @@ All configuration comes from environment variables, read and validated once at s
 | `VEYRA_DEMO` | on | allowed | **refused** |
 | `VEYRA_ALLOW_FIXTURE_EXTRACTOR` | allowed | allowed | **refused** |
 | Migrations at startup | yes | yes | **no** (`VEYRA_MIGRATE_ON_START` defaults off) |
+| `VEYRA_ORGANIZATION_NAME` | `Toit` | **required** | **required** |
+| `VEYRA_PUBLIC_ORIGIN` | the Vite dev/preview origins | **required** | **required**, `https://` |
+| `VEYRA_COOKIE_SECURE` | off (plain http on localhost) | on | on, **cannot be turned off** |
+| `VEYRA_DEMO_PIN` | `8824` when the demo is on | **required** if the demo is on | ignored (no demo sign-in) |
+| `DATABASE_MIGRATION_URL` | optional | optional | recommended (schema owner, `db:migrate` only) |
 
-- **`DATABASE_URL`**: `postgres://user:password@host:5432/veyra?sslmode=require` (use TLS to a
-  managed database). It is a **secret**: keep it in the platform's secret store. Veyra never
-  prints, logs or returns it; a malformed URL is reported by name only.
+- **`DATABASE_URL`**: `postgres://veyra_app:password@host:5432/veyra?sslmode=verify-full`, the
+  least-privilege runtime role (SECURITY.md §13). It is a **secret**: keep it in the platform's
+  secret store. Veyra never prints, logs or returns it; a malformed URL is reported by name only.
+  In production a database on another host must use TLS (`sslmode=verify-full` or `require`);
+  startup refuses otherwise unless `VEYRA_DB_REQUIRE_TLS=false` is set explicitly (only on a
+  private network; a documented risk).
+- **`DATABASE_MIGRATION_URL`**: the schema owner's URL, used only by `db:migrate` (falls back to
+  `DATABASE_URL`). Keep it out of the running API's environment where practical.
+- **Sign-in:** `VEYRA_SESSION_IDLE_MINUTES` (default 30) and `VEYRA_SESSION_ABSOLUTE_HOURS`
+  (default 12) bound every session. `VEYRA_PUBLIC_ORIGIN` is the exact address users open (for
+  example `https://veyra.toit.example`): state-changing requests from any other origin are refused.
+  `VEYRA_CORS_ORIGINS` lists other origins allowed to call the API with credentials (normally
+  none: the web app and the API share one origin). `*` is refused.
+- **Local AI:** `VEYRA_OLLAMA_URL` must be on the same machine or a private network;
+  `VEYRA_OLLAMA_ALLOW_REMOTE=true` is required to send document text anywhere else
+  (SECURITY.md §12).
 - **Pool:**
   - `VEYRA_DB_POOL_MAX` (default 10) is the number of connections per API process.
   - `VEYRA_DB_CONNECT_TIMEOUT_MS` (default 5 s) bounds a connection attempt.
@@ -53,8 +74,8 @@ All configuration comes from environment variables, read and validated once at s
 
 If something is missing or invalid, the API prints what is wrong **by variable name** and exits
 with status 1. It never prints values and never starts half-configured. Secrets (today:
-`DATABASE_URL`; later ERP and storage credentials) go in the platform's secret store, never in
-Git, the image or the frontend. The web app is static files with no configuration; anything given
+`DATABASE_URL`, `DATABASE_MIGRATION_URL`, `VEYRA_DEMO_PIN`; later ERP credentials) go in the
+platform's secret store, never in Git, the image or the frontend (SECURITY.md §11). The web app is static files with no configuration; anything given
 to a frontend build is public.
 
 **Environment identity.** The environment name is in every log line (`env`), in
@@ -92,11 +113,17 @@ The Veyra application database is **PostgreSQL**. Migrations are the versioned S
   4. Commit both files. The API tests also rebuild the schema from the migrations and compare it
      with the declared one.
 - **Staging:** applied automatically at startup. Deploying to staging first is the rehearsal.
-- **Production:** never automatic. Take a backup (section 10), then:
+- **Production:** never automatic. Take a backup (section 10), then, with the schema owner's
+  credential:
 
   ```
-  DATABASE_URL=… npm run db:migrate -w @veyra/api   # "applied N migration(s): …" or "already up to date"
+  DATABASE_MIGRATION_URL=… npm run db:migrate -w @veyra/api   # "applied N migration(s): …" or "already up to date"
+  psql "$DATABASE_MIGRATION_URL" -v ON_ERROR_STOP=1 -f apps/api/sql/runtime-role.sql
   ```
+
+  The second command (re)grants the runtime role on every table, including new ones: rows only,
+  no DELETE or DDL, and the two audit trails append-only. Its header shows how to create the two
+  roles once (SECURITY.md §13).
 
   If this step is skipped, the API refuses to start and names the pending migrations. Nothing in
   Veyra resets or deletes production data (`/dev/reset` does not exist in production).
@@ -148,7 +175,18 @@ npm run start -w @veyra/api
     documents folder: one host, or a shared filesystem. Across separate hosts, wait for the
     object-storage adapter.
 - **Frontend:** serve `apps/web/dist/` as static files and route `/api/` to the API on the same
-  origin.
+  origin. Send the web security headers from `apps/web/src/security-headers.ts` with the static
+  files (the Caddy example below has them); the API sets its own.
+- **First administrator** (once per environment; the password is read from stdin, never from
+  arguments or the environment):
+
+  ```
+  read -rs P && printf '%s\n' "$P" | npm run users -w @veyra/api -- create \
+    --email you@toit.example --name "Your Name" --role ADMIN && unset P
+  ```
+
+  Other users are then created by an ADMIN in the product (`/api/v1/users`) or with the same
+  command. `npm run users -w @veyra/api` also lists, disables, resets passwords and ends sessions.
 - **Proxy:** set `VEYRA_TRUST_PROXY` to the number of proxies in front, so rate limits see the
   real client address and the proxy's `x-request-id` is kept. Allow request bodies of at least
   21 MB on `/api/v1/documents` and 45 MB on `/api/v1/imports`.
@@ -165,11 +203,11 @@ TimeoutStopSec=30
 User=veyra
 ```
 
-Example Caddy site (put authentication in front of everything):
+Example Caddy site (TLS is automatic; `VEYRA_PUBLIC_ORIGIN=https://veyra.example.com`,
+`VEYRA_TRUST_PROXY=1`):
 
 ```
 veyra.example.com {
-  # forward_auth / your SSO proxy here
   handle /api/* {
     reverse_proxy 127.0.0.1:8787
   }
@@ -177,6 +215,16 @@ veyra.example.com {
     root * /srv/veyra/apps/web/dist
     try_files {path} /index.html
     file_server
+    # Exactly the headers in apps/web/src/security-headers.ts (vite preview sends the same).
+    header {
+      Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+      X-Content-Type-Options nosniff
+      Referrer-Policy no-referrer
+      X-Frame-Options DENY
+      Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), interest-cohort=()"
+      Cross-Origin-Opener-Policy same-origin
+      Strict-Transport-Security "max-age=31536000"
+    }
   }
 }
 ```
@@ -250,9 +298,14 @@ JSON lines on stdout. Every line has `time`, `level`, `service`, `env` and `msg`
 - **Unexpected errors:** logged in full, server-side only. Clients get `INTERNAL` and the
   request id.
 
-Never logged: credentials, the database URL, authorization headers, cookies, request or response
-bodies, document contents, OCR text, ERP payloads. The business audit trail lives in the database
-(`audit_events`) and the product's Audit screen, not in logs.
+- **Signed-in requests:** also carry `userId` (an opaque id, never a name or email).
+
+Never logged: passwords, session and CSRF tokens, cookies, authorization headers, the database
+URL, request or response bodies, document contents, OCR text, bank details, PAN, GSTIN, ERP
+payloads. A redaction helper masks these on every line as a second line of defence, and database
+errors are logged without their SQL or values (SECURITY.md §10). The business audit trail lives in
+the database (`audit_events`) and the product's Audit screen; sign-ins, denials, user changes and
+document access are in `security_events` (SECURITY.md §15), not in logs.
 
 ## 10. Backups and recovery
 
@@ -280,7 +333,11 @@ rsync -a /var/lib/veyra/uploads/ backup-host:/backups/veyra-uploads/
 sqlite3 /var/lib/veyra/fake_erp.db ".backup '/backups/fake_erp-$(date -u +%Y%m%dT%H%M%SZ).db'"
 ```
 
-Copy backups off the server and encrypt them at rest. The dump file contains every invoice.
+Copy backups off the server. **Veyra does not encrypt backups; the operator must.** Write dumps
+and document copies to encrypted storage, or encrypt them before they leave the server (for
+example `age -r <recipient> -o dump.age dump`), and confirm the database provider's snapshots are
+encrypted. Only a backup role or account may read them, not the application's credentials. The
+dump file contains every invoice, answer and user account (SECURITY.md §14).
 
 **Verifying (weekly, automated).** Restore the latest dump into a scratch database and check it:
 
@@ -321,12 +378,15 @@ An invoice whose document is missing answers "not available" when opened; restor
 - **Imports:** up to 8 files of 5 MB.
 - **JSON bodies:** up to 1 MB.
 - **Rate limits, per client address per minute:** uploads 60, processing actions 120, demo endpoints
-  60. Over the limit: 429 with `Retry-After`. These limits are **per process**, not a distributed
+  60, sign-in 10 (also per account). Over the limit: 429 with `Retry-After`. These limits are **per process**, not a distributed
   limiter; with several processes each counts its own. Add edge limits at the proxy.
 - **Errors:** a stable `code`, a safe `message` and the `requestId`; never stack traces, SQL,
   paths, headers or credentials.
-- **Production:** no `/dev/*` endpoints (reset, demo scenarios), no demo seed and no fixture
-  extractor. These are enforced by the server.
+- **Production:** no `/dev/*` endpoints (reset, demo scenarios), no demo sign-in, no demo seed and
+  no fixture extractor. These are enforced by the server.
+- **Access:** every route but the health probes and sign-in needs a session; each role gets only
+  its permissions; state-changing requests need the session's CSRF token and one of Veyra's
+  origins (SECURITY.md §6–7).
 
 ## 13. Test database
 

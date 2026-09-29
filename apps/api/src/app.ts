@@ -18,7 +18,11 @@ import * as t from './db/schema';
 import { readinessCheck } from './http/health';
 import type { RateBucket } from './http/rate-limit';
 import { buildServer } from './http/server';
+import { sessionCookieName } from './http/access';
 import { LocalDocumentStorage, type DocumentStorage } from './storage';
+import { SessionStore } from './auth/sessions';
+import { Users } from './auth/users';
+import type { Secret } from './secret';
 import { JobRunner } from './workflow/runner';
 import { DEFAULT_SETTINGS, DEMO_SETTINGS, Veyra } from './workflow/veyra';
 
@@ -55,7 +59,22 @@ export interface AppConfig {
   rateLimits?: Record<RateBucket, number>;
   trustProxy?: number;
   jobs?: { leaseMs: number; shutdownGraceMs: number };
+  /** The organization this deployment serves (Phase 6C). */
+  organizationName?: string;
+  /**
+   * Sign-in (Phase 6C). Defaults suit development and tests only: 30 min idle, 12 h absolute,
+   * cookie not Secure (plain http on localhost), the Vite dev origins.
+   */
+  auth?: {
+    session?: { idleMs: number; absoluteMs: number };
+    cookieSecure?: boolean;
+    demoPin?: Secret | null;
+    publicOrigins?: readonly string[];
+    corsOrigins?: readonly string[];
+  };
 }
+
+const DEV_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173'];
 
 /**
  * The real, local document extractor reads every document. In the demo (never in production), the
@@ -126,8 +145,15 @@ export async function createApp(config: AppConfig) {
     ...(config.limits ? { maxUploadBytes: config.limits.maxUploadBytes } : {}),
     initialSettings,
     ...(config.clock ? { clock: config.clock } : {}),
+    ...(config.organizationName ? { organizationName: config.organizationName } : {}),
   });
   await veyra.init();
+  const sessions = new SessionStore(
+    db,
+    config.auth?.session ?? { idleMs: 30 * 60_000, absoluteMs: 12 * 3_600_000 },
+    config.clock,
+  );
+  const users = new Users(db, sessions, veyra.organizationId, config.clock);
   // A fresh ERP file gets the DEMO.md seed.
   if ((await erp.listVendors()).length === 0 && demoMode) erp.reset('demo');
   const runner = new JobRunner(veyra, {
@@ -177,6 +203,7 @@ export async function createApp(config: AppConfig) {
     runner.start();
   };
 
+  const cookieSecure = config.auth?.cookieSecure ?? environment !== 'development';
   const server = await buildServer({
     veyra,
     environment,
@@ -185,6 +212,15 @@ export async function createApp(config: AppConfig) {
     ...(config.limits ? { limits: config.limits } : {}),
     ...(config.rateLimits ? { rateLimits: config.rateLimits } : {}),
     ...(config.trustProxy !== undefined ? { trustProxy: config.trustProxy } : {}),
+    auth: {
+      sessions,
+      users,
+      cookieSecure,
+      // The demo sign-in exists only in demo mode, never in production.
+      demoPin: demoMode ? (config.auth?.demoPin ?? null) : null,
+      publicOrigins: config.auth?.publicOrigins ?? DEV_ORIGINS,
+      corsOrigins: config.auth?.corsOrigins ?? [],
+    },
     readiness: readinessCheck({
       veyra,
       storage,
@@ -200,6 +236,10 @@ export async function createApp(config: AppConfig) {
     runner,
     server,
     storage,
+    sessions,
+    users,
+    /** The session cookie's name (it depends on whether it is Secure). */
+    cookieName: sessionCookieName(cookieSecure),
     environment,
     database,
     /**

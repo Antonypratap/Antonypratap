@@ -14,6 +14,7 @@ import {
   type ApiInvoiceDetail,
   type ApiQuestion,
 } from '@veyra/shared';
+import { csrfHeaders, sessionEnded } from '../../access/session';
 
 /**
  * The only way the product talks to Veyra: the REST API under /api/v1. Every response is
@@ -48,8 +49,17 @@ async function request<S extends z.ZodType>(
   init?: RequestInit,
 ): Promise<z.output<S>> {
   let res: Response;
+  // State-changing requests echo the session's CSRF token (docs/SECURITY.md).
+  const unsafe = init?.method !== undefined && init.method !== 'GET';
   try {
-    res = await fetch(`${BASE}${path}`, init);
+    res = await fetch(`${BASE}${path}`, {
+      ...init,
+      credentials: 'same-origin',
+      headers: {
+        ...(init?.headers as Record<string, string> | undefined),
+        ...(unsafe ? csrfHeaders() : {}),
+      },
+    });
   } catch {
     throw new ApiError(
       0,
@@ -58,6 +68,7 @@ async function request<S extends z.ZodType>(
     );
   }
   const body: unknown = await res.json().catch(() => null);
+  if (res.status === 401) sessionEnded();
   if (!res.ok) {
     const parsed = ErrorBody.safeParse(body);
     throw parsed.success

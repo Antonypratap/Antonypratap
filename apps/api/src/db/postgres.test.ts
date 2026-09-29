@@ -56,7 +56,10 @@ const q = async <T>(c: VeyraDatabase, query: ReturnType<typeof sql>) =>
   rowsOf<T>(await c.db.execute(query));
 
 const TABLES: PgTable[] = [
+  t.organizations,
   t.users,
+  t.sessions,
+  t.securityEvents,
   t.settings,
   t.documents,
   t.invoices,

@@ -33,9 +33,21 @@ if (process.argv.includes('--empty')) {
       () => false,
     );
     if (up) {
-      await fetch(`${api}/dev/reset`, {
+      // The reset needs a signed-in session: the demo sign-in (development's demo PIN).
+      const signIn = await fetch(`${api}/auth/demo`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pin: process.env.VEYRA_DEMO_PIN ?? '8824' }),
+      });
+      const cookie = (signIn.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
+      const { csrfToken } = (await signIn.json()) as { csrfToken?: string };
+      await fetch(`${api}/dev/reset`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie,
+          'x-veyra-csrf': csrfToken ?? '',
+        },
         body: JSON.stringify({ erp: 'empty' }),
       });
       console.log('Started from an empty business: import records from fixtures/imports/.');

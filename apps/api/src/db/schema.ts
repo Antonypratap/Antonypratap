@@ -25,6 +25,7 @@ import {
   MATCH_OUTCOMES,
   QUESTION_KINDS,
   QUESTION_STATUSES,
+  SECURITY_EVENTS,
   VALIDATION_OUTCOMES,
 } from '@veyra/shared';
 
@@ -82,13 +83,92 @@ const isoTimestamp = customType<{ data: string; driverData: string | Date }>({
 /** Insertion order (SQLite's rowid). Assigned by the database. */
 const seq = () => bigint('seq', { mode: 'number' }).generatedByDefaultAsIdentity();
 
-export const users = pgTable('users', {
+/**
+ * The organization this deployment serves (Phase 6C). Exactly one today (the configured customer);
+ * every user belongs to it, and authorization runs user → organization → resource, so more than
+ * one organization later does not mean rewriting access checks. Not multi-tenancy.
+ */
+export const organizations = pgTable('organizations', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
-  email: text('email').notNull().unique(),
-  active: boolean('active').notNull(),
   createdAt: isoTimestamp('created_at').notNull(),
 });
+
+/** People who can sign in (Phase 6C adds role, password hash, organization). */
+export const USER_ROLES = ['ADMIN', 'FINANCE', 'REVIEWER'] as const;
+export type UserRole = (typeof USER_ROLES)[number];
+
+export const users = pgTable(
+  'users',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    /** Always lower case. */
+    email: text('email').notNull().unique(),
+    active: boolean('active').notNull(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    role: text('role').notNull(),
+    /** Argon2id (PHC string). Null: the account cannot sign in with a password. */
+    passwordHash: text('password_hash'),
+    passwordChangedAt: isoTimestamp('password_changed_at'),
+    createdAt: isoTimestamp('created_at').notNull(),
+    updatedAt: isoTimestamp('updated_at').notNull(),
+  },
+  (t) => [
+    check('users_role', inList(t.role, USER_ROLES)),
+    check('users_email_lower', sql`${t.email} = lower(${t.email})`),
+  ],
+);
+
+/**
+ * Server-side sessions (Phase 6C). The browser holds a random token in an HttpOnly cookie; only its
+ * SHA-256 is stored here, so a copy of the database does not give usable sessions.
+ */
+export const sessions = pgTable(
+  'sessions',
+  {
+    seq: seq(),
+    tokenHash: text('token_hash').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    /** Synchronizer token: state-changing requests must echo it in a header (CSRF). */
+    csrfToken: text('csrf_token').notNull(),
+    createdAt: isoTimestamp('created_at').notNull(),
+    lastSeenAt: isoTimestamp('last_seen_at').notNull(),
+    /** Absolute end of the session, whatever the activity. */
+    expiresAt: isoTimestamp('expires_at').notNull(),
+    revokedAt: isoTimestamp('revoked_at'),
+  },
+  (t) => [index('sessions_user').on(t.userId)],
+);
+
+/**
+ * Security audit trail (Phase 6C): sign-ins, sign-outs, user changes, denied access and document
+ * access. Separate from `audit_events`, the invoice workflow's trail. Never holds passwords,
+ * tokens, cookies or document contents; `detail_json` carries opaque ids and codes only.
+ */
+export const securityEvents = pgTable(
+  'security_events',
+  {
+    seq: seq(),
+    id: text('id').primaryKey(),
+    event: text('event').notNull(),
+    /** Who acted (null: nobody signed in, e.g. a failed sign-in for an unknown account). */
+    userId: text('user_id').references(() => users.id),
+    /** The account acted upon (user administration, a failed sign-in for a known account). */
+    subjectUserId: text('subject_user_id').references(() => users.id),
+    requestId: text('request_id'),
+    detailJson: text('detail_json').notNull(),
+    createdAt: isoTimestamp('created_at').notNull(),
+  },
+  (t) => [
+    check('security_events_event', inList(t.event, SECURITY_EVENTS)),
+    index('security_events_created').on(t.createdAt),
+  ],
+);
 
 export const settings = pgTable('settings', {
   key: text('key').primaryKey(),

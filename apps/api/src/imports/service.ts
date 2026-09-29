@@ -197,11 +197,7 @@ export class BusinessImports {
   }
 
   private async requireDesignated(userId: string): Promise<void> {
-    if (userId !== (await this.veyra.designatedUserId()))
-      throw new VeyraError(
-        'NOT_DESIGNATED_USER',
-        'Only the designated user can import business records.',
-      );
+    await this.veyra.requireActor(userId, 'imports.manage');
   }
 
   private dto(row: ImportRow): ApiImport {

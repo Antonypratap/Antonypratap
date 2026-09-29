@@ -28,7 +28,7 @@ try {
     dataDir: fileURLToPath(new URL('../../../../data/veyra', import.meta.url)),
   });
   const target = await openVeyraDb({
-    url: config.database.url,
+    url: (config.database.migrationUrl ?? config.database.url)?.reveal() ?? null,
     pgliteDir: join(config.dataDir, 'pgdata'),
     migrate: false,
     pool: { ...config.database.pool, max: 2 },

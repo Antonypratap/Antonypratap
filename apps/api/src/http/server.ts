@@ -4,12 +4,24 @@ import Fastify, {
   type FastifyError,
   type FastifyInstance,
   type FastifyReply,
+  type FastifyRequest,
 } from 'fastify';
 import multipart from '@fastify/multipart';
+import cookie from '@fastify/cookie';
+import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
 import { desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   ApiAnswerBodySchema,
+  ApiLoginBodySchema,
+  ApiSecurityEventSchema,
+  ApiSessionSchema,
+  ApiUserSchema,
+  type Permission,
+  ROLES,
+  ROLE_PERMISSIONS,
+  type ApiSession,
   ApiAuditEntrySchema,
   ApiDemoScenarioSchema,
   ApiErpSchema,
@@ -32,7 +44,18 @@ import {
 } from '@veyra/erp-connector';
 import * as t from '../db/schema';
 import { InvalidTransitionError } from '../workflow/state-machine';
-import { VeyraError, uploadLimitText, type Veyra } from '../workflow/veyra';
+import { DEMO_USER, VeyraError, uploadLimitText, type Veyra } from '../workflow/veyra';
+import { safeEqual, type ActiveSession, type SessionStore } from '../auth/sessions';
+import { normalizeEmail, type Users } from '../auth/users';
+import { verifyPassword } from '../auth/passwords';
+import type { Secret } from '../secret';
+import {
+  actorOf,
+  registerAccessControl,
+  requireAccessDeclarations,
+  requirePermission,
+  sessionCookieName,
+} from './access';
 import { DEMO_SCENARIOS, startScenario } from '../demo/scenarios';
 import { Presenter } from './present';
 import { isStorageError } from '../storage';
@@ -70,6 +93,19 @@ export interface ServerOptions {
   trustProxy?: number;
   /** Readiness of the instance's dependencies (GET /api/v1/health/ready). */
   readiness?: () => Promise<ReadinessReport>;
+  /** Sign-in, sessions and browser origins (Phase 6C). */
+  auth: {
+    sessions: SessionStore;
+    users: Users;
+    /** Secure cookie (HTTPS only). Always in production. */
+    cookieSecure: boolean;
+    /** Demo sign-in PIN; the demo sign-in exists only with it, never in production. */
+    demoPin?: Secret | null;
+    /** Where users open Veyra; state-changing browser requests from elsewhere are refused. */
+    publicOrigins: readonly string[];
+    /** Other origins allowed to call the API with credentials (CORS). Empty: no CORS. */
+    corsOrigins?: readonly string[];
+  };
 }
 
 /**
@@ -86,13 +122,18 @@ const STATUS: Record<VeyraError['code'], number> = {
   INVALID_STATE: 409,
   INVALID_INPUT: 422,
   UNSUPPORTED_FILE: 415,
-  NOT_DESIGNATED_USER: 403,
+  FORBIDDEN: 403,
+  CONFLICT: 409,
 };
+
+/** Browser features the API and documents never need (Permissions-Policy; helmet has none). */
+const PERMISSIONS_POLICY =
+  'accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), interest-cohort=()';
 
 /**
  * The REST API (/api/v1). Every request body is validated with Zod; every response is validated
- * against the shared contract before it is sent. The designated user is decided server-side:
- * V1 has one user and no login (authentication is out of scope for this slice).
+ * against the shared contract before it is sent. Every route declares who may call it and the
+ * server enforces it (./access.ts); the acting user is always the signed-in session's user.
  */
 export async function buildServer(options: ServerOptions): Promise<FastifyInstance> {
   const { veyra } = options;
@@ -103,6 +144,11 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     MAX_UPLOAD_BYTES,
   );
   const hops = options.trustProxy ?? 0;
+  const { sessions, users } = options.auth;
+  const demoPin = environment === 'production' ? null : (options.auth.demoPin ?? null);
+  const cookieName = sessionCookieName(options.auth.cookieSecure);
+  const corsOrigins = [...(options.auth.corsOrigins ?? [])];
+  const allowedOrigins = [...options.auth.publicOrigins, ...corsOrigins];
   const app = Fastify({
     loggerInstance: (options.log ?? pino({ level: 'silent' })) as FastifyBaseLogger,
     bodyLimit: options.limits?.maxJsonBodyBytes ?? 1024 * 1024,
@@ -116,6 +162,35 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       return typeof given === 'string' && REQUEST_ID.test(given) ? given : ulid();
     },
   });
+  app.decorate('routeAccess', requireAccessDeclarations(app));
+  await app.register(cookie);
+  // Security headers (maintained library). The API serves JSON and documents, never pages.
+  await app.register(helmet, {
+    global: true,
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        defaultSrc: ["'none'"],
+        baseUri: ["'none'"],
+        formAction: ["'none'"],
+        frameAncestors: ["'none'"],
+      },
+    },
+    crossOriginResourcePolicy: { policy: 'same-origin' },
+    referrerPolicy: { policy: 'no-referrer' },
+    frameguard: { action: 'deny' },
+    hsts: options.auth.cookieSecure ? { maxAge: 31_536_000, includeSubDomains: false } : false,
+  });
+  // CORS only for explicitly configured other origins (never "*"); same-origin needs none.
+  if (corsOrigins.length > 0)
+    await app.register(cors, {
+      origin: corsOrigins,
+      credentials: true,
+      methods: ['GET', 'POST', 'PATCH'],
+      allowedHeaders: ['content-type', 'x-veyra-csrf'],
+      exposedHeaders: ['x-request-id', 'retry-after'],
+      maxAge: 600,
+    });
   // Invoice uploads take one file; business-record imports up to 8 (each ≤ 5 MB, checked).
   await app.register(multipart, {
     limits: {
@@ -126,7 +201,9 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     },
   });
   const imports = new BusinessImports(veyra);
-  const limiter = new RateLimiter(options.rateLimits ?? { upload: 60, processing: 120, dev: 60 });
+  const limiter = new RateLimiter(
+    options.rateLimits ?? { upload: 60, processing: 120, dev: 60, login: 10 },
+  );
 
   const send = <S extends z.ZodType>(schema: S, value: unknown): z.output<S> => schema.parse(value);
   const error = (
@@ -138,25 +215,40 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     error: { code, message, details, ...(requestId ? { requestId } : {}) },
   });
 
+  const tooMany = (req: FastifyRequest, reply: FastifyReply, retryAfter: number) => {
+    reply.header('retry-after', String(retryAfter));
+    return reply
+      .status(429)
+      .send(
+        error(
+          'RATE_LIMITED',
+          'Too many requests. Wait a moment and try again.',
+          { retryAfterSeconds: retryAfter },
+          req.id,
+        ),
+      );
+  };
+
   // Every response carries its request id, for support and log correlation.
   app.addHook('onRequest', async (req, reply) => {
     reply.header('x-request-id', req.id);
+    reply.header('permissions-policy', PERMISSIONS_POLICY);
+    // Nothing the API returns may be kept by a shared or browser cache.
+    reply.header('cache-control', 'no-store');
     const bucket = bucketOf(req.method, req.routeOptions.url);
     if (!bucket) return;
     const retryAfter = limiter.hit(bucket, req.ip);
-    if (retryAfter !== null) {
-      reply.header('retry-after', String(retryAfter));
-      return reply
-        .status(429)
-        .send(
-          error(
-            'RATE_LIMITED',
-            'Too many requests. Wait a moment and try again.',
-            { retryAfterSeconds: retryAfter },
-            req.id,
-          ),
-        );
-    }
+    if (retryAfter !== null) return tooMany(req, reply, retryAfter);
+  });
+  // Authentication, CSRF and authorization for every route, from its declared access.
+  registerAccessControl(app, {
+    sessions,
+    users,
+    organizationId: veyra.organizationId,
+    cookieName,
+    allowedOrigins,
+    deny: (req, reply, status, code, message) =>
+      reply.status(status).send(error(code, message, {}, req.id)),
   });
   app.addHook('onResponse', async (req, reply) => {
     const route = req.routeOptions.url ?? null;
@@ -179,8 +271,17 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   app.setErrorHandler((err: FastifyError | Error, req, reply) => {
     const e = (code: string, message: string, details: Record<string, unknown> = {}) =>
       error(code, message, details, req.id);
-    if (err instanceof VeyraError)
+    if (err instanceof VeyraError) {
+      if (err.code === 'FORBIDDEN' && req.auth)
+        void users
+          .record(
+            'access.denied',
+            { userId: req.auth.user.id, requestId: req.id },
+            { method: req.method, route: req.routeOptions.url ?? '' },
+          )
+          .catch(() => undefined);
       return reply.status(STATUS[err.code]).send(e(err.code, err.message, err.details));
+    }
     if (err instanceof InvalidTransitionError)
       return reply.status(409).send(e(err.code, err.message));
     if (err instanceof z.ZodError)
@@ -225,9 +326,195 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     return reply.status(500).send(e('INTERNAL', 'Something went wrong.'));
   });
 
-  const user = () => veyra.designatedUserId();
+  const PUBLIC = { config: { access: 'public' } } as const;
+  const SESSION = { config: { access: 'session' } } as const;
+  const may = (access: Permission) => ({ config: { access } });
 
-  app.get('/api/v1/health', async () => ({
+  // ── Sign-in and sessions (Phase 6C) ──────────────────────────────────────
+  const cookieOptions = (expiresAt: string) => ({
+    httpOnly: true,
+    secure: options.auth.cookieSecure,
+    sameSite: 'strict' as const,
+    path: '/',
+    expires: new Date(expiresAt),
+  });
+  const ctx = (req: FastifyRequest) => ({ userId: req.auth?.user.id ?? null, requestId: req.id });
+  const sessionView = (auth: ActiveSession): ApiSession => ({
+    authenticated: true,
+    demoSignIn: demoPin !== null,
+    user: {
+      id: auth.user.id,
+      name: auth.user.name,
+      email: auth.user.email,
+      role: auth.user.role,
+    },
+    // Demo tooling is only offered where it exists.
+    permissions: ROLE_PERMISSIONS[auth.user.role].filter(
+      (p) => p !== 'demo.manage' || options.resetDemo !== undefined,
+    ),
+    organization: { id: veyra.organizationId, name: veyra.organizationName },
+    csrfToken: auth.csrfToken,
+    expiresAt: auth.expiresAt,
+  });
+  /** A new session (after sign-in or a password change): the old one, if any, ends first. */
+  const startSession = async (req: FastifyRequest, reply: FastifyReply, userId: string) => {
+    if (req.auth) await sessions.revokeHash(req.auth.tokenHash);
+    else await sessions.revoke(req.cookies[cookieName]);
+    const created = await sessions.create(userId);
+    void reply.setCookie(cookieName, created.token, cookieOptions(created.expiresAt));
+    const auth = await sessions.resolve(created.token);
+    if (!auth) throw new Error('new session did not resolve');
+    return auth;
+  };
+
+  app.get('/api/v1/auth/session', PUBLIC, async (req) =>
+    send(
+      ApiSessionSchema,
+      req.auth ? sessionView(req.auth) : { authenticated: false, demoSignIn: demoPin !== null },
+    ),
+  );
+
+  app.post('/api/v1/auth/login', PUBLIC, async (req, reply) => {
+    const body = ApiLoginBodySchema.parse(req.body ?? {});
+    // Per account as well as per address: guessing one account's password from many addresses.
+    const retryAfter = limiter.hit('login', `account:${normalizeEmail(body.email)}`);
+    if (retryAfter !== null) return tooMany(req, reply, retryAfter);
+    const user = await users.authenticate(body.email, body.password);
+    if (!user) {
+      await users.record(
+        'login.failed',
+        { userId: null, requestId: req.id },
+        { method: 'password' },
+        await users.idOf(body.email),
+      );
+      // One answer for unknown account, wrong password and disabled account.
+      return reply
+        .status(401)
+        .send(error('INVALID_CREDENTIALS', 'The email or password is not correct.', {}, req.id));
+    }
+    const auth = await startSession(req, reply, user.id);
+    await users.record(
+      'login.succeeded',
+      { userId: user.id, requestId: req.id },
+      { method: 'password' },
+    );
+    return send(ApiSessionSchema, sessionView(auth));
+  });
+
+  // Demo only (never production): the demo PIN opens a session as the demo's designated user.
+  if (demoPin) {
+    app.post('/api/v1/auth/demo', PUBLIC, async (req, reply) => {
+      const { pin } = z.object({ pin: z.string().max(32) }).parse(req.body ?? {});
+      if (!safeEqual(pin, demoPin.reveal())) {
+        await users.record(
+          'login.failed',
+          { userId: null, requestId: req.id },
+          { method: 'demo_pin' },
+        );
+        return reply
+          .status(401)
+          .send(error('INVALID_CREDENTIALS', 'That PIN isn’t correct.', {}, req.id));
+      }
+      const auth = await startSession(req, reply, DEMO_USER.id);
+      await users.record(
+        'login.succeeded',
+        { userId: DEMO_USER.id, requestId: req.id },
+        { method: 'demo_pin' },
+      );
+      return send(ApiSessionSchema, sessionView(auth));
+    });
+  }
+
+  app.post('/api/v1/auth/logout', SESSION, async (req, reply) => {
+    const auth = req.auth;
+    if (auth) {
+      await sessions.revokeHash(auth.tokenHash);
+      await users.record('logout', ctx(req));
+    }
+    void reply.clearCookie(cookieName, { path: '/' });
+    return { ok: true };
+  });
+
+  app.post('/api/v1/auth/password', SESSION, async (req, reply) => {
+    const { currentPassword, newPassword } = z
+      .object({ currentPassword: z.string().max(1024), newPassword: z.string().max(1024) })
+      .parse(req.body ?? {});
+    const me = await users.get(actorOf(req));
+    if (!(await verifyPassword(me.passwordHash, currentPassword)))
+      throw new VeyraError('INVALID_INPUT', 'The current password is not correct.', {
+        field: 'currentPassword',
+      });
+    await users.setPassword(me.id, newPassword, ctx(req), 'password.changed');
+    // Every session ended with the change; this browser continues on a fresh one.
+    req.auth = null;
+    return send(ApiSessionSchema, sessionView(await startSession(req, reply, me.id)));
+  });
+
+  // ── Users and the security audit trail (ADMIN) ───────────────────────────
+  const userDto = (u: Awaited<ReturnType<Users['get']>>) =>
+    ApiUserSchema.parse({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      active: u.active,
+      canSignIn: u.passwordHash !== null,
+      createdAt: u.createdAt,
+      updatedAt: u.updatedAt,
+    });
+  const Role = z.enum(ROLES);
+  app.get('/api/v1/users', may('users.manage'), async () => (await users.list()).map(userDto));
+  app.post('/api/v1/users', may('users.manage'), async (req, reply) => {
+    const body = z
+      .object({
+        email: z.string().max(254),
+        name: z.string().max(120),
+        role: Role,
+        password: z.string().max(1024),
+      })
+      .parse(req.body ?? {});
+    return reply.status(201).send(userDto(await users.create(body, ctx(req))));
+  });
+  app.patch('/api/v1/users/:id', may('users.manage'), async (req) => {
+    const { id } = Id.parse(req.params);
+    const body = z
+      .object({
+        name: z.string().max(120).optional(),
+        role: Role.optional(),
+        active: z.boolean().optional(),
+      })
+      .strict()
+      .parse(req.body ?? {});
+    const patch = {
+      ...(body.name !== undefined ? { name: body.name } : {}),
+      ...(body.role !== undefined ? { role: body.role } : {}),
+      ...(body.active !== undefined ? { active: body.active } : {}),
+    };
+    return userDto(await users.update(id, patch, ctx(req)));
+  });
+  app.post('/api/v1/users/:id/password', may('users.manage'), async (req) => {
+    const { id } = Id.parse(req.params);
+    const { password } = z.object({ password: z.string().max(1024) }).parse(req.body ?? {});
+    await users.setPassword(id, password, ctx(req), 'password.reset');
+    return { ok: true };
+  });
+  app.get('/api/v1/security/events', may('security.audit'), async () =>
+    send(
+      z.array(ApiSecurityEventSchema),
+      (await users.events()).map(({ e, name }) => ({
+        id: e.id,
+        at: e.createdAt,
+        event: e.event,
+        userId: e.userId,
+        userName: name,
+        subjectUserId: e.subjectUserId,
+        requestId: e.requestId,
+        detail: JSON.parse(e.detailJson) as Record<string, unknown>,
+      })),
+    ),
+  );
+
+  app.get('/api/v1/health', PUBLIC, async () => ({
     ok: true,
     environment,
     demo: Boolean(options.resetDemo) && environment !== 'production',
@@ -235,20 +522,20 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     extractor: { id: veyra.extractor.id, version: veyra.extractor.version },
   }));
   // Liveness: the process is up and serving. No dependency is checked.
-  app.get('/api/v1/health/live', async () => ({ status: 'ok' }));
+  app.get('/api/v1/health/live', PUBLIC, async () => ({ status: 'ok' }));
   // Readiness: this instance can do its work (database, storage, worker). 503 when it cannot.
-  app.get('/api/v1/health/ready', async (_req, reply) => {
+  app.get('/api/v1/health/ready', PUBLIC, async (_req, reply) => {
     if (!options.readiness) return { status: 'ready', environment };
     const report = await options.readiness();
     return reply.status(report.status === 'ready' ? 200 : 503).send(report);
   });
 
   // ── Documents ────────────────────────────────────────────────────────────
-  app.post('/api/v1/documents', async (req, reply) => {
+  app.post('/api/v1/documents', may('documents.upload'), async (req, reply) => {
     const file = await req.file();
     if (!file) throw new VeyraError('INVALID_INPUT', 'Attach the invoice file.');
     const bytes = await file.toBuffer();
-    const created = await veyra.upload({ filename: file.filename, bytes });
+    const created = await veyra.upload({ filename: file.filename, bytes }, actorOf(req));
     req.log.info(
       { documentId: created.documentId, invoiceId: created.invoiceId },
       'document stored',
@@ -256,7 +543,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     return reply.status(201).send(created);
   });
 
-  app.get('/api/v1/documents', async () =>
+  app.get('/api/v1/documents', may('invoices.view'), async () =>
     (
       await veyra.db
         .select()
@@ -281,7 +568,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     return d;
   };
 
-  app.get('/api/v1/documents/:id', async (req) => {
+  app.get('/api/v1/documents/:id', may('invoices.view'), async (req) => {
     const d = await documentRow(Id.parse(req.params).id);
     const inv = (
       await veyra.db.select().from(t.invoices).where(eq(t.invoices.documentId, d.id)).limit(1)
@@ -331,55 +618,73 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     };
   };
 
-  app.get('/api/v1/documents/:id/file', async (req, reply) => {
+  // Server-mediated, authorized, audited: never a public URL or a storage path. The file is
+  // untrusted: its type was decided by its bytes at upload, it is never executed, and it is
+  // served with nosniff, a CSP that allows nothing active, and (images) a sandbox.
+  app.get('/api/v1/documents/:id/file', may('documents.view'), async (req, reply) => {
     const d = await documentRow(Id.parse(req.params).id);
+    const bytes = Buffer.from(await veyra.readDocument(d));
+    await users.record('document.accessed', ctx(req), { documentId: d.id });
+    const ascii = d.filename.replace(/[^\x20-\x7e]|["\\]/g, '_');
     return reply
       .header('content-type', d.mime)
-      .header('content-disposition', `inline; filename="${d.filename.replace(/"/g, '')}"`)
+      .header(
+        'content-disposition',
+        `inline; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(d.filename)}`,
+      )
       .header('x-content-type-options', 'nosniff')
-      .send(Buffer.from(await veyra.readDocument(d)));
+      .header('cache-control', 'private, no-store')
+      .header(
+        'content-security-policy',
+        d.mime === 'application/pdf'
+          ? "default-src 'none'; frame-ancestors 'self'"
+          : "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'self'; sandbox",
+      )
+      .send(bytes);
   });
 
   // ── Invoices ─────────────────────────────────────────────────────────────
-  app.get('/api/v1/invoices', async () => send(ApiInboxSchema, await present.inbox()));
+  app.get('/api/v1/invoices', may('invoices.view'), async () =>
+    send(ApiInboxSchema, await present.inbox()),
+  );
 
-  app.get('/api/v1/invoices/:id', async (req) =>
+  app.get('/api/v1/invoices/:id', may('invoices.view'), async (req) =>
     send(ApiInvoiceDetailSchema, await present.detail(Id.parse(req.params).id)),
   );
 
-  app.post('/api/v1/invoices/:id/reject', async (req) => {
+  app.post('/api/v1/invoices/:id/reject', may('invoices.reject'), async (req) => {
     const { id } = Id.parse(req.params);
     const { reason } = z
       .object({ reason: z.string().trim().min(1).max(300) })
       .parse(req.body ?? {});
-    await veyra.reject(id, reason, await user());
+    await veyra.reject(id, reason, actorOf(req));
     return { invoiceId: id, state: (await veyra.invoiceRow(veyra.db, id)).state };
   });
 
-  app.post('/api/v1/invoices/:id/reprocess', async (req) => {
+  app.post('/api/v1/invoices/:id/reprocess', may('invoices.reprocess'), async (req) => {
     const { id } = Id.parse(req.params);
-    await veyra.reprocess(id, await user());
+    await veyra.reprocess(id, actorOf(req));
     return { invoiceId: id, state: (await veyra.invoiceRow(veyra.db, id)).state };
   });
 
   // ── Questions ────────────────────────────────────────────────────────────
-  app.get('/api/v1/questions', async (req) => {
+  app.get('/api/v1/questions', may('invoices.view'), async (req) => {
     const { status } = z
       .object({ status: z.enum(['open', 'answered']).default('open') })
       .parse(req.query ?? {});
     return send(z.array(ApiQuestionSchema), await present.questions(status));
   });
 
-  app.get('/api/v1/questions/:id', async (req) => {
+  app.get('/api/v1/questions/:id', may('invoices.view'), async (req) => {
     const q = await present.question(Id.parse(req.params).id);
     if (!q) throw new VeyraError('NOT_FOUND', 'Question not found.');
     return send(ApiQuestionSchema, q);
   });
 
-  app.post('/api/v1/questions/:id/answer', async (req) => {
+  app.post('/api/v1/questions/:id/answer', may('questions.answer'), async (req) => {
     const { id } = Id.parse(req.params);
     const body = ApiAnswerBodySchema.parse(req.body ?? {});
-    await veyra.answer(id, { optionId: body.optionId, input: body.input ?? null }, await user());
+    await veyra.answer(id, { optionId: body.optionId, input: body.input ?? null }, actorOf(req));
     const q = await present.question(id);
     return {
       questionId: id,
@@ -389,7 +694,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   });
 
   // ── Audit ────────────────────────────────────────────────────────────────
-  app.get('/api/v1/audit', async (req) => {
+  app.get('/api/v1/audit', may('audit.invoice'), async (req) => {
     const { invoiceId, scope } = z
       .object({
         invoiceId: z
@@ -399,6 +704,8 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
         scope: z.enum(['records']).optional(),
       })
       .parse(req.query ?? {});
+    // One invoice's trail needs audit.invoice (checked for the route); the whole trail more.
+    if (scope === 'records' || !invoiceId) requirePermission(req, 'audit.view');
     if (scope === 'records')
       return send(z.array(ApiAuditEntrySchema), await present.recordsAudit());
     return send(z.array(ApiAuditEntrySchema), await present.audit(invoiceId ?? null));
@@ -406,9 +713,10 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
 
   // ── ERP (read-only, through ErpConnector) ────────────────────────────────
   const erp = veyra.erp;
-  app.get('/api/v1/erp/company', async () => erp.getCompany());
+  const ERP = may('erp.view');
+  app.get('/api/v1/erp/company', ERP, async () => erp.getCompany());
   // Read-only (Phase 4): which business system, whether it is connected, what it can do.
-  app.get('/api/v1/erp/connection', async () => {
+  app.get('/api/v1/erp/connection', ERP, async () => {
     const c = await describeConnection(erp);
     return send(ApiErpSchema.connection, {
       type: c.type,
@@ -423,7 +731,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       })),
     });
   });
-  app.get('/api/v1/erp/vendors', async () =>
+  app.get('/api/v1/erp/vendors', ERP, async () =>
     send(
       ApiErpSchema.vendors,
       (await erp.listVendors()).map((v) => ({
@@ -436,7 +744,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       })),
     ),
   );
-  app.get('/api/v1/erp/items', async () =>
+  app.get('/api/v1/erp/items', ERP, async () =>
     send(
       ApiErpSchema.items,
       (await erp.listItems()).map((i) => ({
@@ -449,7 +757,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       })),
     ),
   );
-  app.get('/api/v1/erp/purchase-orders', async () => {
+  app.get('/api/v1/erp/purchase-orders', ERP, async () => {
     const vendors = new Map((await erp.listVendors()).map((v) => [v.id, v.name]));
     const items = new Map((await erp.listItems()).map((i) => [i.id, i]));
     return send(
@@ -469,7 +777,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       })),
     );
   });
-  app.get('/api/v1/erp/grns', async () => {
+  app.get('/api/v1/erp/grns', ERP, async () => {
     const pos = await erp.listPurchaseOrders();
     const items = new Map((await erp.listItems()).map((i) => [i.id, i]));
     const poLine = new Map(
@@ -493,7 +801,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       })),
     );
   });
-  app.get('/api/v1/erp/purchase-invoices', async () => {
+  app.get('/api/v1/erp/purchase-invoices', ERP, async () => {
     const vendors = new Map((await erp.listVendors()).map((v) => [v.id, v.name]));
     const orders = new Map((await erp.listPurchaseOrders()).map((o) => [o.id, o.poNumber]));
     return send(
@@ -520,35 +828,38 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       .header('x-content-type-options', 'nosniff')
       .send(body);
 
-  app.get('/api/v1/imports/templates', async () =>
+  const IMPORTS = may('imports.manage');
+  app.get('/api/v1/imports/templates', IMPORTS, async () =>
     templateFiles().map((f) => ({
       ...f,
       url: `/api/v1/imports/templates/${encodeURIComponent(f.file)}`,
     })),
   );
-  app.get('/api/v1/imports/templates/:file', async (req, reply) => {
+  app.get('/api/v1/imports/templates/:file', IMPORTS, async (req, reply) => {
     const { file } = z.object({ file: z.string().max(80) }).parse(req.params);
     const body = templateWorkbook(file);
     if (!body) throw new VeyraError('NOT_FOUND', 'No such template.');
     return download(reply, file, XLSX, body);
   });
 
-  app.post('/api/v1/imports', async (req, reply) => {
+  app.post('/api/v1/imports', IMPORTS, async (req, reply) => {
     const files: { filename: string; bytes: Uint8Array }[] = [];
     for await (const part of req.files())
       files.push({ filename: part.filename, bytes: await part.toBuffer() });
     if (files.length === 0) throw new VeyraError('INVALID_INPUT', 'Attach a file to import.');
-    return reply.status(201).send(send(ApiImportSchema, await imports.check(files, await user())));
+    return reply.status(201).send(send(ApiImportSchema, await imports.check(files, actorOf(req))));
   });
-  app.get('/api/v1/imports', async () => send(z.array(ApiImportSchema), await imports.list()));
-  app.get('/api/v1/imports/:id', async (req) =>
+  app.get('/api/v1/imports', IMPORTS, async () =>
+    send(z.array(ApiImportSchema), await imports.list()),
+  );
+  app.get('/api/v1/imports/:id', IMPORTS, async (req) =>
     send(ApiImportSchema, await imports.get(Id.parse(req.params).id)),
   );
-  app.post('/api/v1/imports/:id/confirm', async (req) =>
-    send(ApiImportSchema, await imports.confirm(Id.parse(req.params).id, await user())),
+  app.post('/api/v1/imports/:id/confirm', IMPORTS, async (req) =>
+    send(ApiImportSchema, await imports.confirm(Id.parse(req.params).id, actorOf(req))),
   );
 
-  app.get('/api/v1/exports/:name', async (req, reply) => {
+  app.get('/api/v1/exports/:name', may('exports.download'), async (req, reply) => {
     const { name } = z.object({ name: z.string().max(40) }).parse(req.params);
     if (name === 'business-records.xlsx')
       return download(
@@ -577,7 +888,8 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   // run with NODE_ENV=production; the Veyra environment decides.
   if (options.resetDemo && environment !== 'production') {
     const reset = options.resetDemo;
-    app.post('/api/v1/dev/reset', async (req) => {
+    const DEMO = may('demo.manage');
+    app.post('/api/v1/dev/reset', DEMO, async (req) => {
       const { erp: mode } = z
         .object({ erp: z.enum(['demo', 'empty']).default('demo') })
         .parse(req.body ?? {});
@@ -585,13 +897,13 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       return { ok: true, erp: mode };
     });
     // Demo scenarios (Phase 3E): each uploads one synthetic invoice through the normal path.
-    app.get('/api/v1/dev/scenarios', async () =>
+    app.get('/api/v1/dev/scenarios', DEMO, async () =>
       send(
         z.array(ApiDemoScenarioSchema),
         DEMO_SCENARIOS.map(({ key, title, story, expect }) => ({ key, title, story, expect })),
       ),
     );
-    app.post('/api/v1/dev/scenarios/:key', async (req, reply) => {
+    app.post('/api/v1/dev/scenarios/:key', DEMO, async (req, reply) => {
       const { key } = z.object({ key: z.string() }).parse(req.params);
       const started = await startScenario(veyra, key);
       if (!started) throw new VeyraError('NOT_FOUND', 'There is no such demo scenario.');

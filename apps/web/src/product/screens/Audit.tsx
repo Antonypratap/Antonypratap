@@ -5,6 +5,7 @@ import { hrefFor } from '../router';
 import { useProductData, useResource } from '../state/data';
 import { STATUS_LABEL } from '../state/status';
 import styles from './Audit.module.css';
+import { useAllowed } from '../../access/session';
 
 export function Audit({ id }: { id: string | null }) {
   const { inbox } = useProductData();
@@ -14,12 +15,13 @@ export function Audit({ id }: { id: string | null }) {
   const showRecords = hasRecords && (id === 'records' || invoices.length === 0);
   const selected = showRecords ? null : (invoices.find((i) => i.id === id) ?? invoices[0] ?? null);
 
+  const canExport = useAllowed('exports.download');
   return (
     <div className={styles.page}>
       <PageHeader
         title="Audit"
         sub="What happened to each invoice, and who did it. Veyra does the checking; you make the decisions."
-        aside={<ExportLink href={exportUrl('audit.xlsx')} />}
+        aside={canExport ? <ExportLink href={exportUrl('audit.xlsx')} /> : undefined}
       />
       {selected === null && !showRecords ? (
         <p className={styles.empty}>Nothing has happened yet. Upload an invoice from the Inbox.</p>

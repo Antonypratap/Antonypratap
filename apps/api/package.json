@@ -15,11 +15,16 @@
     "db:verify": "drizzle-kit generate --name drift | tee /dev/stderr | grep -q 'No schema changes'",
     "db:migrate": "tsx src/cli/migrate.ts",
     "fixtures": "tsx src/cli/generate-import-fixtures.ts",
-    "db:migrate-from-sqlite": "tsx src/cli/migrate-from-sqlite.ts"
+    "db:migrate-from-sqlite": "tsx src/cli/migrate-from-sqlite.ts",
+    "users": "tsx src/cli/users.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/cors": "^11.3.0",
+    "@fastify/helmet": "^13.1.1",
     "@fastify/multipart": "^10.1.2",
+    "@node-rs/argon2": "^2.2.1",
     "@veyra/erp-connector": "*",
     "@veyra/extractor": "*",
     "@veyra/fake-erp": "*",

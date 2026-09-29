@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import type { Permission } from '@veyra/shared';
+import { signOut, useSession } from '../../access/session';
 import { Icon, Logo, type IconName } from '../../design-system';
 import { hrefFor, type Route } from '../router';
 import { api } from '../api/client';
@@ -8,7 +10,14 @@ import { DemoProvider, DemoTrigger } from './DemoPanel';
 
 type Section = 'inbox' | 'questions' | 'invoices' | 'erp' | 'audit';
 
-const NAV: { key: Section; label: string; icon: IconName; route: Route }[] = [
+const NAV: {
+  key: Section;
+  label: string;
+  icon: IconName;
+  route: Route;
+  /** Hidden for roles without it (the server refuses them anyway). */
+  needs?: Permission;
+}[] = [
   { key: 'inbox', label: 'Inbox', icon: 'inbox', route: { name: 'inbox' } },
   { key: 'questions', label: 'Questions', icon: 'question', route: { name: 'questions' } },
   {
@@ -17,8 +26,20 @@ const NAV: { key: Section; label: string; icon: IconName; route: Route }[] = [
     icon: 'document',
     route: { name: 'invoices', filter: 'all' },
   },
-  { key: 'erp', label: 'ERP', icon: 'database', route: { name: 'erp', tab: 'vendors' } },
-  { key: 'audit', label: 'Audit', icon: 'audit', route: { name: 'audit', id: null } },
+  {
+    key: 'erp',
+    label: 'ERP',
+    icon: 'database',
+    route: { name: 'erp', tab: 'vendors' },
+    needs: 'erp.view',
+  },
+  {
+    key: 'audit',
+    label: 'Audit',
+    icon: 'audit',
+    route: { name: 'audit', id: null },
+    needs: 'audit.view',
+  },
 ];
 
 export function sectionOf(route: Route): Section {
@@ -42,6 +63,16 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
   const hasData = (inbox?.counts.received ?? 0) > 0;
   const waiting = inbox?.counts.needsYou ?? 0;
   const active = route.name === 'invoice' ? null : sectionOf(route);
+  const session = useSession();
+  const me = session.status === 'signedIn' ? session.session : null;
+  const may = (p: Permission) => me?.permissions.includes(p) ?? false;
+  const nav = NAV.filter((item) => !item.needs || may(item.needs));
+  const initials = (me?.user.name ?? '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? '')
+    .join('');
 
   return (
     <DemoProvider>
@@ -52,7 +83,7 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
           </a>
           <nav aria-label="Product">
             <ul className={styles.nav}>
-              {NAV.map((item) => (
+              {nav.map((item) => (
                 <li key={item.key}>
                   <a
                     href={hrefFor(item.route)}
@@ -72,8 +103,10 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
             </ul>
           </nav>
           <div className={styles.sidebarFoot}>
-            <p className={styles.demoNote}>Demo workspace. Sample ERP; no payments are made.</p>
-            {hasData && (
+            {me?.demoSignIn && (
+              <p className={styles.demoNote}>Demo workspace. Sample ERP; no payments are made.</p>
+            )}
+            {hasData && may('demo.manage') && (
               <button
                 type="button"
                 className={styles.siteLink}
@@ -89,6 +122,9 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
                 Reset demo
               </button>
             )}
+            <button type="button" className={styles.siteLink} onClick={() => void signOut()}>
+              Sign out
+            </button>
             <a href="#top" className={styles.siteLink}>
               veyra.com
             </a>
@@ -114,9 +150,12 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
                 title="Search arrives in a later version"
               />
             </label>
-            <DemoTrigger className={styles.demoButton} />
-            <span className={styles.user} title="Demo approver">
-              DA
+            {may('demo.manage') && <DemoTrigger className={styles.demoButton} />}
+            <span
+              className={styles.user}
+              title={me ? `${me.user.name} (${me.user.role.toLowerCase()})` : undefined}
+            >
+              {initials}
             </span>
           </header>
           <main
@@ -128,7 +167,7 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
         </div>
 
         <nav className={styles.tabbar} aria-label="Product (mobile)">
-          {NAV.map((item) => (
+          {nav.map((item) => (
             <a
               key={item.key}
               href={hrefFor(item.route)}

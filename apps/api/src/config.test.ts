@@ -18,7 +18,18 @@ const PRODUCTION = {
   VEYRA_DATA_DIR: '/srv/veyra/data',
   VEYRA_ERP: 'fake',
   VEYRA_OLLAMA_URL: 'http://ollama.internal:11434',
-  DATABASE_URL: 'postgres://veyra:s3cret-db-pass@db.internal:5432/veyra',
+  DATABASE_URL: 'postgres://veyra:s3cret-db-pass@db.example.com:5432/veyra?sslmode=verify-full',
+  VEYRA_ORGANIZATION_NAME: 'Toit',
+  VEYRA_PUBLIC_ORIGIN: 'https://veyra.toit.example',
+};
+const STAGING = {
+  NODE_ENV: 'production',
+  VEYRA_ENV: 'staging',
+  VEYRA_DATA_DIR: '/srv/veyra-staging',
+  VEYRA_ERP: 'fake',
+  DATABASE_URL: 'postgresql://veyra@db-staging.internal/veyra_staging',
+  VEYRA_ORGANIZATION_NAME: 'Toit (staging)',
+  VEYRA_PUBLIC_ORIGIN: 'https://veyra-staging.toit.example',
 };
 
 describe('configuration (Phase 6)', () => {
@@ -31,7 +42,8 @@ describe('configuration (Phase 6)', () => {
       host: '127.0.0.1',
       port: 8787,
       storage: { kind: 'local', dir: '/tmp/veyra-dev/uploads' },
-      erp: 'fake',
+      erp: { kind: 'fake' },
+      organizationName: 'Toit',
     });
   });
 
@@ -45,10 +57,8 @@ describe('configuration (Phase 6)', () => {
       logLevel: 'info',
       storage: { kind: 'local', dir: '/srv/veyra/data/uploads' },
     });
-    expect(c.database).toMatchObject({
-      url: PRODUCTION.DATABASE_URL,
-      pool: { max: 10, connectTimeoutMs: 5000, statementTimeoutMs: 30000 },
-    });
+    expect(c.database.url?.reveal()).toBe(PRODUCTION.DATABASE_URL);
+    expect(c.database.pool).toEqual({ max: 10, connectTimeoutMs: 5000, statementTimeoutMs: 30000 });
     expect(JSON.stringify(describeConfig(c))).not.toMatch(/ollama|srv|internal|s3cret|postgres:/);
   });
 
@@ -67,7 +77,7 @@ describe('configuration (Phase 6)', () => {
     const e = problems({ ...PRODUCTION, DATABASE_URL: 'mysql://root:hunter2@db/veyra' });
     expect(e.problems).toEqual(['DATABASE_URL is not valid (a postgres:// or postgresql:// URL)']);
     expect(e.message).not.toMatch(/hunter2|mysql|root/);
-    const staging = problems({ VEYRA_ENV: 'staging', VEYRA_DATA_DIR: '/srv/s', VEYRA_ERP: 'fake' });
+    const staging = problems({ ...STAGING, DATABASE_URL: '' });
     expect(staging.problems).toEqual([
       'DATABASE_URL is required in staging (the PostgreSQL database)',
     ]);
@@ -123,17 +133,7 @@ describe('configuration (Phase 6)', () => {
   });
 
   it('staging is production-like but may run the demo, with its own data dir and storage', () => {
-    const c = loadConfig(
-      {
-        NODE_ENV: 'production',
-        VEYRA_ENV: 'staging',
-        VEYRA_DATA_DIR: '/srv/veyra-staging',
-        VEYRA_ERP: 'fake',
-        VEYRA_DEMO: 'true',
-        DATABASE_URL: 'postgresql://veyra@db-staging.internal/veyra_staging',
-      },
-      defaults,
-    );
+    const c = loadConfig({ ...STAGING, VEYRA_DEMO: 'true', VEYRA_DEMO_PIN: '550912' }, defaults);
     expect(c).toMatchObject({
       environment: 'staging',
       demo: true,
@@ -154,5 +154,110 @@ describe('configuration (Phase 6)', () => {
     expect(problems({ VEYRA_MAX_PDF_PAGES: '500' }).problems).toEqual([
       'VEYRA_MAX_PDF_PAGES is not valid (a whole number in range)',
     ]);
+  });
+});
+
+describe('configuration: security (Phase 6C)', () => {
+  it('secrets are wrapped: the database URL and the demo PIN never print', () => {
+    const c = loadConfig({ ...STAGING, VEYRA_DEMO: 'true', VEYRA_DEMO_PIN: '550912' }, defaults);
+    const printed = `${JSON.stringify(c)} ${String(c.database.url)} ${JSON.stringify(describeConfig(c))}`;
+    expect(printed).not.toMatch(/db-staging|550912|postgresql:/);
+    expect(c.auth.demoPin?.reveal()).toBe('550912');
+  });
+
+  it('sessions: configurable idle and absolute lifetimes, idle never longer than absolute', () => {
+    const c = loadConfig(
+      { VEYRA_SESSION_IDLE_MINUTES: '15', VEYRA_SESSION_ABSOLUTE_HOURS: '8' },
+      defaults,
+    );
+    expect(c.auth.session).toEqual({ idleMs: 15 * 60_000, absoluteMs: 8 * 3_600_000 });
+    expect(loadConfig({}, defaults).auth.session).toEqual({
+      idleMs: 30 * 60_000,
+      absoluteMs: 12 * 3_600_000,
+    });
+    expect(
+      problems({ VEYRA_SESSION_IDLE_MINUTES: '600', VEYRA_SESSION_ABSOLUTE_HOURS: '2' }).problems,
+    ).toEqual(['VEYRA_SESSION_IDLE_MINUTES must not be longer than VEYRA_SESSION_ABSOLUTE_HOURS']);
+  });
+
+  it('cookies are Secure when deployed and can never be made insecure in production', () => {
+    expect(loadConfig({}, defaults).auth.cookieSecure).toBe(false); // http://localhost
+    expect(loadConfig(PRODUCTION, defaults).auth.cookieSecure).toBe(true);
+    expect(problems({ ...PRODUCTION, VEYRA_COOKIE_SECURE: 'false' }).problems).toEqual([
+      'VEYRA_COOKIE_SECURE must not be false in production',
+    ]);
+  });
+
+  it('origins: required when deployed, exact, https in production, never "*"', () => {
+    expect(loadConfig(PRODUCTION, defaults).http).toEqual({
+      publicOrigins: ['https://veyra.toit.example'],
+      corsOrigins: [],
+    });
+    expect(problems({ ...PRODUCTION, VEYRA_PUBLIC_ORIGIN: '' }).problems).toEqual([
+      'VEYRA_PUBLIC_ORIGIN is required in production (the https:// address users open)',
+    ]);
+    for (const bad of ['*', 'https://veyra.example.com/app', 'veyra.example.com'])
+      expect(problems({ ...PRODUCTION, VEYRA_CORS_ORIGINS: bad }).problems).toEqual([
+        'VEYRA_CORS_ORIGINS is not valid (comma-separated origins such as https://veyra.example.com, never *)',
+      ]);
+    expect(
+      problems({ ...PRODUCTION, VEYRA_PUBLIC_ORIGIN: 'http://veyra.toit.example' }).problems,
+    ).toEqual(['VEYRA_PUBLIC_ORIGIN and VEYRA_CORS_ORIGINS must be https:// in production']);
+  });
+
+  it('the organization is named when deployed (one organization per deployment)', () => {
+    expect(problems({ ...PRODUCTION, VEYRA_ORGANIZATION_NAME: '' }).problems).toEqual([
+      'VEYRA_ORGANIZATION_NAME is required in production',
+    ]);
+    expect(loadConfig(PRODUCTION, defaults).organizationName).toBe('Toit');
+  });
+
+  it('a deployed demo sets its own PIN; production has no demo PIN at all', () => {
+    expect(problems({ ...STAGING, VEYRA_DEMO: 'true' }).problems).toEqual([
+      'VEYRA_DEMO_PIN is required when VEYRA_DEMO is true in staging',
+    ]);
+    expect(loadConfig(PRODUCTION, defaults).auth.demoPin).toBeNull();
+    expect(
+      loadConfig({ ...PRODUCTION, VEYRA_DEMO_PIN: '123456' }, defaults).auth.demoPin,
+    ).toBeNull();
+  });
+
+  it('remote PostgreSQL in production must use TLS; a separate migration credential is optional', () => {
+    expect(
+      problems({ ...PRODUCTION, DATABASE_URL: 'postgres://veyra:x@db.example.com/veyra' }).problems,
+    ).toEqual([
+      'DATABASE_URL must set sslmode=verify-full (or require) for a database on another host in production',
+    ]);
+    // Loopback needs no TLS; an explicit waiver is possible (documented risk).
+    loadConfig({ ...PRODUCTION, DATABASE_URL: 'postgres://veyra:x@127.0.0.1/veyra' }, defaults);
+    loadConfig(
+      {
+        ...PRODUCTION,
+        DATABASE_URL: 'postgres://veyra:x@db.example.com/veyra',
+        VEYRA_DB_REQUIRE_TLS: 'false',
+      },
+      defaults,
+    );
+    const c = loadConfig(
+      {
+        ...PRODUCTION,
+        DATABASE_MIGRATION_URL: 'postgres://owner:y@db.example.com/veyra?sslmode=verify-full',
+      },
+      defaults,
+    );
+    expect(c.database.migrationUrl?.reveal()).toMatch(/^postgres:\/\/owner:/);
+    expect(JSON.stringify(c)).not.toMatch(/owner:y/);
+  });
+
+  it('the local AI assist stays local unless an operator explicitly allows a remote one', () => {
+    for (const url of ['http://127.0.0.1:11434', 'http://ollama:11434', 'http://10.0.3.4:11434'])
+      loadConfig({ VEYRA_OLLAMA_URL: url }, defaults);
+    expect(problems({ VEYRA_OLLAMA_URL: 'https://ai.example.com' }).problems).toEqual([
+      'VEYRA_OLLAMA_URL must be on this machine or a private network (set VEYRA_OLLAMA_ALLOW_REMOTE=true to send documents elsewhere)',
+    ]);
+    loadConfig(
+      { VEYRA_OLLAMA_URL: 'https://ai.example.com', VEYRA_OLLAMA_ALLOW_REMOTE: 'true' },
+      defaults,
+    );
   });
 });
