@@ -213,6 +213,9 @@ requires `https://`.
   `/auth/demo`, `/auth/session`): they carry the CSRF token, and a compressed secret next to
   attacker-influenced text is what BREACH-style attacks measure. Other responses carry no secret.
   Compression never removes a security header (tested in `http/performance.test.ts`).
+- **Public probes carry no diagnostics** (Phase 7C). In staging and production, anonymous
+  `/health` and `/health/ready` return statuses and failure codes only. The environment, ERP and
+  extractor identity, job counts and pool are at `/api/v1/system/status`, for an ADMIN.
 
 ## 9. Documents (implemented)
 
@@ -279,6 +282,14 @@ requires `https://`.
 - Configuration errors name variables, never values.
 - The secret scan (section 17) fails the build on committed credentials, and on server
   configuration names appearing in the web build.
+- **The web build accepts one variable only** (Phase 7C): `VITE_API_BASE_URL`, an address. Any
+  other `VITE_` variable stops the build, because Vite would publish it in the JavaScript. The
+  demo PIN is checked by the server and never reaches the browser.
+- **`apps/web/vercel.json` cannot hold environment variables.** The Vercel build fails if it
+  does, and also if its security headers differ from `security-headers.ts` (section 8).
+- **The API container image** (`apps/api/Dockerfile`) holds no secret and no data, and runs as an
+  unprivileged user with read-only application files. A build-time CA bundle, if one is needed,
+  is passed as a BuildKit secret and not kept in the image.
 
 **ERP credential boundary.** Implemented as a structure; there are no ERP credentials yet because
 only the fake ERP exists.
@@ -511,6 +522,12 @@ These are known and **not** addressed by Phase 6C:
 - **Dev-only moderate advisories** in drizzle-kit's esbuild remain.
 - **Denial of service** beyond the rate limits and body limits depends on the proxy and host.
 - **No independent audit or penetration test** has been done.
+- **The hosted demo (Phase 7C) is a shared workspace.** Everyone with the PIN signs in as the same
+  demo ADMIN. They can reset the demo, and create or disable demo users, for everyone. It holds
+  sample data only, and production refuses the demo. Rotate the PIN, and revoke sessions, if it
+  leaks further than intended (DEMO.md §9).
+- **Behind Vercel's rewrite, client addresses depend on the forwarding headers** (DEPLOYMENT.md
+  §14.4). If `VEYRA_TRUST_PROXY` is wrong, all demo visitors share one rate-limit bucket.
 
 ## 22. Security tests
 

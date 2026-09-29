@@ -133,6 +133,8 @@ const VARS = {
   VEYRA_ENV: z.enum(ENVIRONMENTS),
   VEYRA_API_HOST: z.string().min(1).max(255),
   VEYRA_API_PORT: int(1, 65_535),
+  // The port most hosting platforms assign (Render, Railway, Fly, Heroku-style); VEYRA_API_PORT wins.
+  PORT: int(1, 65_535),
   VEYRA_DATA_DIR: z.string().min(1),
   // Never echoed: it usually contains the database password.
   DATABASE_URL: postgresUrl,
@@ -282,7 +284,7 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
     environment,
     organizationName: organizationName ?? 'Toit',
     host: read('VEYRA_API_HOST') ?? '127.0.0.1',
-    port: read('VEYRA_API_PORT') ?? 8787,
+    port: read('VEYRA_API_PORT') ?? read('PORT') ?? 8787,
     dataDir,
     database: {
       url: databaseUrl ? new Secret(databaseUrl) : null,
@@ -342,7 +344,7 @@ function describe(name: VarName): string {
     return 'comma-separated origins such as https://veyra.example.com, never *';
   if (name === 'VEYRA_DEMO_PIN') return '4 to 12 digits';
   if (name.endsWith('_URL')) return 'an http(s) URL';
-  if (/_(PORT|BYTES|PAGES|SIDE|PIXELS|MINUTE|MINUTES|HOURS|MS|PROXY)$/.test(name))
+  if (/(^|_)(PORT|BYTES|PAGES|SIDE|PIXELS|MINUTE|MINUTES|HOURS|MS|PROXY)$/.test(name))
     return 'a whole number in range';
   return 'see .env.example';
 }

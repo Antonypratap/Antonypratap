@@ -1,0 +1,13 @@
+# Only what the API image needs; never local data, secrets or build output.
+.git
+**/node_modules
+**/dist
+**/coverage
+data
+apps/api/storage
+apps/api/bench/results
+.env
+.env.*
+!.env.example
+**/*.db
+**/*.db-*

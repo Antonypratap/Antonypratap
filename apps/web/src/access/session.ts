@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { ApiSessionSchema, CSRF_HEADER, type ApiSession, type Permission } from '@veyra/shared';
 import { notify } from '../feedback/toasts';
+import { API, API_CREDENTIALS } from '../api-endpoint';
 
 /**
  * The browser's view of the sign-in (Phase 6C). The server decides everything: the session lives
@@ -64,12 +65,12 @@ export function sessionEnded(): void {
 
 export class SignInError extends Error {}
 
-const BASE = '/api/v1/auth';
+const BASE = `${API.base}/auth`;
 
 async function call(path: string, init?: RequestInit): Promise<ApiSession> {
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, { credentials: 'same-origin', ...init });
+    res = await fetch(`${BASE}${path}`, { credentials: API_CREDENTIALS, ...init });
   } catch {
     throw new SignInError('Veyra could not be reached. Try again in a moment.');
   }
@@ -120,7 +121,7 @@ export async function demoSignIn(pin: string): Promise<void> {
 
 export async function signOut(): Promise<void> {
   const demo = state.status === 'signedIn' && state.session.demoSignIn;
-  await fetch(`${BASE}/logout`, { ...post({}), credentials: 'same-origin' }).catch(() => null);
+  await fetch(`${BASE}/logout`, { ...post({}), credentials: API_CREDENTIALS }).catch(() => null);
   // A completed action: a toast. (An ended session is consequential: that notice stays on the page.)
   set({ status: 'signedOut', demoSignIn: demo, notice: null });
   notify.signedOut();

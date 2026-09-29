@@ -77,6 +77,16 @@ export function hrefFor(route: Route): string {
   }
 }
 
+/**
+ * A product address typed or shared as a path (`/app/inbox`, `/app/invoices/<id>`): the hash
+ * route it means, or null. The host serves index.html for every path (vercel.json, Caddy
+ * `try_files`), and the app then shows the same screen as `/#/app/inbox`.
+ */
+export function hashForPath(pathname: string, search: string): string | null {
+  if (pathname !== '/app' && !pathname.startsWith('/app/')) return null;
+  return `#${pathname.replace(/\/+$/, '')}${search}`;
+}
+
 function subscribe(onChange: () => void): () => void {
   window.addEventListener('hashchange', onChange);
   return () => window.removeEventListener('hashchange', onChange);

@@ -15,13 +15,14 @@ import {
   type ApiQuestion,
 } from '@veyra/shared';
 import { csrfHeaders, sessionEnded } from '../../access/session';
+import { API, API_CREDENTIALS } from '../../api-endpoint';
 
 /**
  * The only way the product talks to Veyra: the REST API under /api/v1. Every response is
  * validated against the shared contract. The browser sends what the user chose and typed;
  * the server decides everything else (status, result, ERP records).
  */
-const BASE = '/api/v1';
+const BASE = API.base;
 
 export class ApiError extends Error {
   constructor(
@@ -57,7 +58,7 @@ async function request<S extends z.ZodType>(
   try {
     res = await fetch(`${BASE}${path}`, {
       ...init,
-      credentials: 'same-origin',
+      credentials: API_CREDENTIALS,
       headers: {
         ...(init?.headers as Record<string, string> | undefined),
         ...(unsafe ? csrfHeaders() : {}),

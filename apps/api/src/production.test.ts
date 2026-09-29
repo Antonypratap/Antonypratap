@@ -40,6 +40,7 @@ afterEach(async () => {
 });
 
 const sessions = new Map<App, TestSession>();
+const anonymousOf = new Map<App, App['server']['inject']>();
 
 async function open(extra: Partial<AppConfig> = {}): Promise<App> {
   const dir = mkdtempSync(join(tmpdir(), 'veyra-prod-'));
@@ -56,7 +57,7 @@ async function open(extra: Partial<AppConfig> = {}): Promise<App> {
   opened.push({ app, dir, database });
   const session = await testSession(app);
   sessions.set(app, session);
-  injectAs(app, session);
+  anonymousOf.set(app, injectAs(app, session));
   return app;
 }
 
@@ -138,7 +139,7 @@ describe('health', () => {
     expect(notYet.statusCode).toBe(503); // the worker has not started
     expect(notYet.json()).toMatchObject({ checks: { worker: { status: 'fail' } } });
     app.runner.start(60_000);
-    const res = await app.server.inject({ method: 'GET', url: '/api/v1/health/ready' });
+    const res = await app.server.inject({ method: 'GET', url: '/api/v1/system/status' });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({
       status: 'ready',
@@ -152,6 +153,45 @@ describe('health', () => {
       jobs: { queued: 0, running: 0, expired: 0, failedLast24h: 0 },
     });
     expect(res.body).not.toMatch(/veyra-prod-|\.db|uploads|\/tmp/);
+  });
+
+  it('deployed: anonymous probes get statuses only; the detail is for an ADMIN (Phase 7C)', async () => {
+    const app = await open({ environment: 'staging' });
+    app.runner.start(60_000);
+    const anonymous = anonymousOf.get(app) ?? app.server.inject;
+    const ready = await anonymous({ method: 'GET', url: '/api/v1/health/ready' });
+    expect(ready.statusCode).toBe(200);
+    expect(ready.json()).toEqual({
+      status: 'ready',
+      checks: { database: { status: 'ok' }, storage: { status: 'ok' }, worker: { status: 'ok' } },
+    });
+    const health = await anonymous({ method: 'GET', url: '/api/v1/health' });
+    expect(health.json()).toEqual({ ok: true, demo: true });
+    // The full report needs a signed-in ADMIN.
+    expect((await anonymous({ method: 'GET', url: '/api/v1/system/status' })).statusCode).toBe(401);
+    const finance = await testSession(app, { role: 'FINANCE' });
+    const denied = await anonymous({
+      method: 'GET',
+      url: '/api/v1/system/status',
+      headers: finance.headers,
+    });
+    expect(denied.statusCode).toBe(403);
+  });
+
+  it('deployed: a failing check still reports its code to anonymous probes', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'veyra-prod-'));
+    const storage = new FlakyStorage(new LocalDocumentStorage(join(dir, 'u')));
+    const app = await open({ environment: 'staging', storage });
+    app.runner.start(60_000);
+    const anonymous = anonymousOf.get(app) ?? app.server.inject;
+    const res = await anonymous({ method: 'GET', url: '/api/v1/health/ready' });
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toMatchObject({
+      status: 'not_ready',
+      checks: { storage: { status: 'fail', code: 'STORAGE_UNAVAILABLE' } },
+    });
+    expect(res.body).not.toMatch(/jobs|pool|environment|secret|EIO/);
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it('readiness fails (503) when storage is unavailable, with a code and nothing else', async () => {
@@ -196,7 +236,7 @@ describe('production lock-down', () => {
       expect(res.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
     }
     const health = (await app.server.inject({ method: 'GET', url: '/api/v1/health' })).json();
-    expect(health).toMatchObject({ environment: 'production', demo: false });
+    expect(health).toEqual({ ok: true, demo: false });
     // No demo seed either: production starts with an empty business.
     expect(await app.veyra.erp.listVendors()).toEqual([]);
   });

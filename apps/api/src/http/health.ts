@@ -95,3 +95,13 @@ export function readinessCheck(deps: {
     };
   };
 }
+
+/** What an anonymous probe of a deployed instance sees: statuses and failure codes only. */
+export function publicReadiness(report: ReadinessReport) {
+  const { database, storage, worker } = report.checks;
+  const only = (c: Check) => (c.code ? { status: c.status, code: c.code } : { status: c.status });
+  return {
+    status: report.status,
+    checks: { database: only(database), storage: only(storage), worker: only(worker) },
+  };
+}

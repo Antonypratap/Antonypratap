@@ -235,3 +235,56 @@ Starting a scenario again opens the same invoice (uploads are unique by file).
 
 The product's own counts are always the workspace's real counts; the 142/131/11 figures appear only on the homepage, labelled as illustrative.
 
+
+## 9. The hosted public demo (Phase 7C)
+
+The public demo is `https://veyra-demo.vercel.app`. How it is hosted is in [DEPLOYMENT.md §14](DEPLOYMENT.md); this section covers what visitors get and how the demo is looked after.
+
+**The journey.**
+
+1. The landing page.
+2. **See Veyra in action**.
+3. The demo PIN.
+4. `/app/inbox`.
+5. **Demo scenarios**: the seven situations of §8. Answer the questions (**Did the goods arrive?**, **Which supplier sent this invoice?**, the OCR confirmations), then open the audit trail and the ERP data.
+
+A link or refresh on `/app/inbox` (or any `/app/…` address) opens the same screen.
+
+**The data is deterministic.** The ERP is the sample business of §1, seeded on first start. The scenarios upload the committed documents `fixtures/documents/D01, D04, D07, D08, D09, D11, D12`, which the real extractor reads (pdf.js; Tesseract for the photo). The fixture extractor is off in the hosted demo. The same scenario therefore gives the same result every time after a reset.
+
+| Situation | Scenario | Document |
+|---|---|---|
+| Clean invoice | Clean invoice | `D01-clean-text.pdf` |
+| Missing goods receipt | Missing goods receipt | `D12-missing-receipt.pdf` |
+| Ambiguous supplier | Ambiguous supplier | `D09-ambiguous-vendor.pdf` |
+| Quantity mismatch | Quantity mismatch | `D07-quantity-mismatch.pdf` |
+| Rate mismatch | Rate mismatch | `D08-rate-mismatch.pdf` |
+| Photo / OCR | Photo needs confirmation | `D04-photo.png` |
+| Two invoices in one file | Two invoices in one file | `D11-two-invoices.pdf` |
+
+Visitors may also upload the other `fixtures/documents/` files (D02, D03, D05, D06, D10), or the Excel files of §6 after a reset to an empty business.
+
+**The PIN.**
+
+- It is set only on the API host (`VEYRA_DEMO_PIN`, a secret) and checked by the server.
+- It is never in the web app, its JavaScript or Git.
+- Share it out of band.
+- To change it, set a new value and restart the API. Existing demo sessions stay valid until they expire (30 minutes idle, 12 hours at most). To end them at once: `npm run users -w @veyra/api -- revoke-sessions --all` on the host.
+- Everyone with the PIN shares one demo workspace and one demo user (an ADMIN of the demo organization).
+
+**Resetting.** **Demo scenarios → Reset demo** restores the state of §1 for everyone.
+
+- It is a server endpoint (`POST /api/v1/dev/reset`) that needs a signed-in session with the demo permission and the CSRF token.
+- It exists only when the demo is on, which production refuses.
+- Nothing resets on deploy or restart; data persists on the API host's volume and in PostgreSQL.
+
+**Not in the hosted demo:**
+
+- no fixture extractor;
+- no public diagnostics (the health probes show statuses only; the detail is ADMIN-only);
+- no test endpoints;
+- no real customer data.
+
+The demo never runs in a production environment, and a production environment never has demo data (production refuses `VEYRA_DEMO`).
+
+**Checking it.** `scripts/demo-check.mjs` runs the whole journey against the public URL (DEPLOYMENT.md §14.3, step 4).

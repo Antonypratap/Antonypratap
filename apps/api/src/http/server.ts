@@ -67,7 +67,7 @@ import type { Environment } from '../config';
 import { ulid } from '../ids';
 import { pino, type Logger } from 'pino';
 import { RateLimiter, bucketOf, type RateBucket } from './rate-limit';
-import type { ReadinessReport } from './health';
+import { publicReadiness, type ReadinessReport } from './health';
 import { timedScope } from '../perf/timing';
 import {
   auditTable,
@@ -524,20 +524,36 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     ),
   );
 
-  app.get('/api/v1/health', PUBLIC, async () => ({
-    ok: true,
-    environment,
-    demo: Boolean(options.resetDemo) && environment !== 'production',
-    erp: veyra.erp.info,
-    extractor: { id: veyra.extractor.id, version: veyra.extractor.version },
-  }));
+  // Deployed instances answer anonymous probes with statuses only (Phase 7C): the environment,
+  // ERP and extractor identity, job counts and pool are diagnostics, for an ADMIN
+  // (GET /api/v1/system/status). Development keeps the detail on the public probes.
+  const detailed = environment === 'development';
+  const demoOn = Boolean(options.resetDemo) && environment !== 'production';
+  app.get('/api/v1/health', PUBLIC, async () =>
+    detailed
+      ? {
+          ok: true,
+          environment,
+          demo: demoOn,
+          erp: veyra.erp.info,
+          extractor: { id: veyra.extractor.id, version: veyra.extractor.version },
+        }
+      : { ok: true, demo: demoOn },
+  );
   // Liveness: the process is up and serving. No dependency is checked.
   app.get('/api/v1/health/live', PUBLIC, async () => ({ status: 'ok' }));
   // Readiness: this instance can do its work (database, storage, worker). 503 when it cannot.
   app.get('/api/v1/health/ready', PUBLIC, async (_req, reply) => {
     if (!options.readiness) return { status: 'ready', environment };
     const report = await options.readiness();
-    return reply.status(report.status === 'ready' ? 200 : 503).send(report);
+    return reply
+      .status(report.status === 'ready' ? 200 : 503)
+      .send(detailed ? report : publicReadiness(report));
+  });
+  // The full readiness report (job counts, pool, ERP status, worker tick) for an ADMIN.
+  app.get('/api/v1/system/status', may('security.audit'), async () => {
+    if (!options.readiness) return { status: 'ready', environment };
+    return options.readiness();
   });
 
   // ── Documents ────────────────────────────────────────────────────────────

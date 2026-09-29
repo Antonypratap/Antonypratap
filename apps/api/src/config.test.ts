@@ -261,3 +261,43 @@ describe('configuration: security (Phase 6C)', () => {
     );
   });
 });
+
+describe('configuration: hosted demo (Phase 7C)', () => {
+  it("the platform's PORT is used when VEYRA_API_PORT is not set; VEYRA_API_PORT wins", () => {
+    expect(loadConfig({ PORT: '10000' }, defaults).port).toBe(10_000);
+    expect(loadConfig({ PORT: '10000', VEYRA_API_PORT: '8080' }, defaults).port).toBe(8080);
+    expect(loadConfig({}, defaults).port).toBe(8787);
+    expect(problems({ PORT: 'eighty' }).problems).toEqual([
+      'PORT is not valid (a whole number in range)',
+    ]);
+  });
+
+  it('the public demo: staging with the demo, its own PIN, the Vercel origin, no auto-migration', () => {
+    const c = loadConfig(
+      {
+        ...STAGING,
+        VEYRA_PUBLIC_ORIGIN: 'https://veyra-demo.vercel.app',
+        VEYRA_DEMO: 'true',
+        VEYRA_DEMO_PIN: '482913',
+        VEYRA_MIGRATE_ON_START: 'false',
+        VEYRA_API_HOST: '0.0.0.0',
+        PORT: '8080',
+        VEYRA_TRUST_PROXY: '2',
+      },
+      defaults,
+    );
+    expect(c).toMatchObject({
+      environment: 'staging',
+      demo: true,
+      allowFixtureExtractor: false,
+      migrateOnStart: false,
+      host: '0.0.0.0',
+      port: 8080,
+      trustProxy: 2,
+      http: { publicOrigins: ['https://veyra-demo.vercel.app'], corsOrigins: [] },
+      auth: { cookieSecure: true },
+    });
+    expect(String(c.auth.demoPin)).not.toContain('482913');
+    expect(JSON.stringify(describeConfig(c))).not.toMatch(/482913|vercel|db-staging/);
+  });
+});

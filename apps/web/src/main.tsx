@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import './design-system/base.css';
 import { loadSession, useSession } from './access/session';
 import { HomePage } from './marketing/HomePage';
-import { parseHash, useHash } from './product/router';
+import { hashForPath, parseHash, useHash } from './product/router';
 import { Toaster } from './feedback/Toaster';
 
 // The workspace and sign-in load on demand: the public homepage does not download them.
@@ -38,6 +38,10 @@ function Root() {
     </Suspense>
   );
 }
+
+// /app/… as a path (a shared link, a refresh) is the same screen as /#/app/…; no reload.
+const pathRoute = hashForPath(window.location.pathname, window.location.search);
+if (pathRoute) window.history.replaceState(null, '', `/${pathRoute}`);
 
 const root = document.getElementById('root');
 if (!root) throw new Error('missing #root');

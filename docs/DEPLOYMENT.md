@@ -184,7 +184,7 @@ npm run start -w @veyra/api
   at startup (the log says `document readers loaded`) and saves that much on the first invoice.
   A failure here is logged and does not stop startup.
 - **Frontend:** serve `apps/web/dist/` as static files and route `/api/` to the API on the same
-  origin. Send the web security headers from `apps/web/src/security-headers.ts` with the static
+  origin (on Vercel: `apps/web/vercel.json`, §14). Send the web security headers from `apps/web/src/security-headers.ts` with the static
   files (the Caddy example below has them); the API sets its own.
 - **First administrator** (once per environment; the password is read from stdin, never from
   arguments or the environment):
@@ -243,17 +243,22 @@ veyra.example.com {
 | Endpoint | Answers | Use for |
 |---|---|---|
 | `GET /api/v1/health/live` | `200 {"status":"ok"}` whenever the process is up. Checks nothing else, not even the database. | Liveness probe (restart when it fails) |
-| `GET /api/v1/health/ready` | `200 ready` or `503 not_ready`. Checks that PostgreSQL answers, document storage and the worker loop, and reports ERP status and job counts. | Readiness probe, uptime monitor |
-| `GET /api/v1/health` | Kept for compatibility: environment, whether the demo is on, ERP and extractor identity. | Diagnostics |
+| `GET /api/v1/health/ready` | `200 ready` or `503 not_ready`. Checks that PostgreSQL answers, document storage and the worker loop. In staging and production an anonymous caller gets only these statuses and failure codes. | Readiness probe, uptime monitor |
+| `GET /api/v1/health` | `{ok, demo}` (the web app asks whether the demo is on). In development it also names the environment, ERP and extractor. | Compatibility |
+| `GET /api/v1/system/status` | The full readiness report: the checks, ERP status, job counts, pool, worker tick. **ADMIN only** (a signed-in session). | Operations, alert checks |
 
-The readiness report also shows the database connection pool (`pool`: open, idle, waiting and
+The full report (`/api/v1/system/status`, or `/health/ready` in development) also shows the
+database connection pool (`pool`: open, idle, waiting and
 the maximum, `VEYRA_DB_POOL_MAX`, default 10). A `waiting` count that stays above zero while the
 host has idle CPU is the evidence for a larger pool (docs/PERFORMANCE.md §8).
 
 The ERP does not make the instance unready: while it is unavailable, work waits and retries, and
 the UI keeps working. Responses hold only statuses, codes and counts, never URLs, paths or errors.
 
-**Worth alerting on:**
+Deployed instances keep the detail off the public probes (Phase 7C): the environment, ERP and
+extractor identity, job counts and pool are diagnostics, not for the internet.
+
+**Worth alerting on** (the job and ERP figures come from `/api/v1/system/status`):
 
 - `/health/ready` not 200 for more than 2 minutes (`checks.database` names a database outage).
 - `jobs.expired > 0`: a worker stopped mid-job. It is recovered automatically, but frequent expiry
@@ -417,3 +422,171 @@ npm run check
 Each test gets its own database, cloned from a migrated template, and drops it afterwards.
 Without `TEST_DATABASE_URL` the API tests fail at once with that instruction. CI
 (`.github/workflows/ci.yml`) provides a PostgreSQL 16 service.
+
+## 14. Public demo: Vercel frontend and a persistent API host (Phase 7C)
+
+The target is `https://veyra-demo.vercel.app`:
+
+1. The landing page.
+2. **See Veyra in action**.
+3. The demo PIN.
+4. `/app/inbox`.
+5. The demo scenarios, questions, audit trail and ERP demo data.
+
+What to show and how to run the demo is in [DEMO.md §9](DEMO.md). This section covers where
+each part runs and why.
+
+### 14.1 What can run where (inspection)
+
+| Question | Answer |
+|---|---|
+| A. Can `apps/web` run on Vercel as a static Vite site? | **Yes.** It is static files, hash-routed, with no server code and no secrets. |
+| B. Can `apps/api` run as Vercel serverless functions? | **No.** See C–F: it is a long-lived process with a background loop, state on disk, and ~500–750 MB of memory once warm. |
+| C. Is a persistent process required? | **Yes.** One process serves the API **and** runs the job loop that reads documents, matches and commits to the ERP. A function that stops after each request would leave uploaded invoices unread. |
+| D. Does Tesseract need native binaries? | **No.** OCR is `tesseract.js` (WebAssembly) with its language data from npm (`@tesseract.js-data/eng`): no system packages, no download at run time. The native modules are `better-sqlite3` (fake ERP) and `@node-rs/argon2` (passwords). Both install from prebuilt binaries, or compile with the Dockerfile's build stage. |
+| E. Does local storage survive an ephemeral filesystem? | **No.** Uploaded documents *and* the fake ERP's SQLite file live in `VEYRA_DATA_DIR`. On an ephemeral disk both vanish at every restart or redeploy, while PostgreSQL still points at them. The data directory must be a **persistent volume**. |
+| F. PGlite vs PostgreSQL? | PGlite (embedded) is **development only**. Staging and production refuse to start without `DATABASE_URL` (a real PostgreSQL). The fake ERP stays SQLite, on the persistent volume. |
+| G. Migrations on deploy? | `VEYRA_MIGRATE_ON_START=false` for the demo. Migrations run as an explicit release step (§14.3); without it the API refuses to start and names the pending migrations. Nothing resets data on deploy. |
+| H. What must be hosted outside Vercel? | The API + worker process (one container, with a persistent volume) and PostgreSQL. |
+
+**Decision:** Vercel serves the frontend only. A container host with a persistent volume runs
+the API. A managed PostgreSQL holds the application database. No architectural change was
+needed: the API image is the same single process as everywhere else.
+
+### 14.2 How the pieces connect
+
+```
+browser ──https──▶ veyra-demo.vercel.app ── /            → static files (apps/web/dist)
+                                          ── /app/*       → index.html (single-page app)
+                                          ── /api/*       → rewrite ──https──▶ API host /api/*
+                                                                               │  persistent volume:
+                                                                               │  uploads + fake_erp.db
+                                                                               └─▶ PostgreSQL (TLS)
+```
+
+- **The browser only ever talks to `veyra-demo.vercel.app`.** Vercel forwards `/api/*` to the API
+  host (`apps/web/vercel.json`), so:
+  - the session cookie (`__Host-veyra_session`, HttpOnly, Secure, SameSite=Strict) is
+    first-party;
+  - CSRF and origin checks see `https://veyra-demo.vercel.app`;
+  - the CSP stays `connect-src 'self'`;
+  - CORS stays off.
+- **A direct cross-origin call would not work.** An API on another registrable domain (for example
+  `*.fly.dev` next to `*.vercel.app`) would be a third-party site for the browser, and the
+  SameSite=Strict session cookie would not be sent. This is by design; do not loosen it.
+  `VITE_API_BASE_URL` exists for an API on a same-site subdomain (`api.example.com` next to
+  `app.example.com`, with `VEYRA_CORS_ORIGINS`).
+- **`vercel.json` is checked by the build on Vercel** (`apps/web/src/vercel-config.ts`):
+  - the `/api` rewrite must point at a real https host;
+  - the security headers must be exactly those of `security-headers.ts`, plus HSTS;
+  - no environment variables may be set in the file.
+
+  The committed file points at the placeholder `https://veyra-api.example.invalid`, so a Vercel
+  build **fails until you set your API host there**. That is on purpose: a demo deployed without
+  its API would look broken.
+
+### 14.3 Steps
+
+**1. PostgreSQL.** Create a managed PostgreSQL 14+ database for the demo only: the host's own,
+or a free tier such as Neon or Supabase. Check current offers; nothing here depends on a
+provider. Keep the connection URL for the secret store, with `sslmode=require` or
+`verify-full`. Optionally create the least-privilege runtime role (§4, `sql/runtime-role.sql`).
+
+**2. API host.** Any host that runs a long-lived container with a **persistent volume** and
+**at least 1 GB of memory**, and does **not** stop the container when idle. Examples at the time
+of writing: Fly.io (a Machine with a volume, auto-stop off), Railway (a service with a volume),
+Render (a paid instance with a disk), or a small VPS with Docker. Free tiers that sleep or have no
+disk do not qualify. A sleeping instance stops reading invoices until a request wakes it, and
+without a disk every restart loses the documents and the ERP file. Build from the repository root:
+
+```
+docker build -f apps/api/Dockerfile -t veyra-api .
+```
+
+The image runs as the unprivileged `node` user and holds no data or secret. `/var/lib/veyra` is
+the data volume. Set these variables in the host's **secret store** (never in Git, never in
+Vercel):
+
+| Variable | Value |
+|---|---|
+| `VEYRA_ENV` | `staging` (the demo is refused in `production`) |
+| `DATABASE_URL` | the PostgreSQL URL (secret) |
+| `VEYRA_DEMO` | `true` |
+| `VEYRA_DEMO_PIN` | a fresh 6–12 digit PIN (secret; share it out of band) |
+| `VEYRA_PUBLIC_ORIGIN` | `https://veyra-demo.vercel.app` |
+| `VEYRA_ORGANIZATION_NAME` | e.g. `Toit (demo)` |
+| `VEYRA_ERP` | `fake` |
+| `VEYRA_ALLOW_FIXTURE_EXTRACTOR` | `false` (documents are read for real: pdf.js and Tesseract) |
+| `VEYRA_MIGRATE_ON_START` | `false` |
+| `VEYRA_TRUST_PROXY` | the proxies in front of the API: Vercel's edge plus the host's own router, usually `2` (see 14.4) |
+| `PORT` or `VEYRA_API_PORT` | the platform's port (`PORT` is read when `VEYRA_API_PORT` is unset); the image listens on `0.0.0.0` |
+
+Before the first start, and before any later start that ships a migration, run the release step
+with the same environment:
+
+```
+docker run --rm --env-file <secrets> veyra-api node --import tsx apps/api/src/cli/migrate.ts
+```
+
+Then start the container with the volume mounted at `/var/lib/veyra`. Point the platform's
+health check at `/api/v1/health/ready`, and set a stop timeout of at least 30 s (§7). The API
+host's own address never needs to be shared.
+
+**3. Vercel project.**
+
+- **Project:** `veyra-demo`. **Root Directory:** `apps/web`.
+- **Framework Preset:** Vite. **Build Command, Install Command, Output Directory:** the preset's
+  defaults (`npm run build`, the npm install Vercel runs for the workspace, `dist`). Nothing
+  custom.
+- **Node.js:** 22.x.
+- **Environment variables:** none. `VITE_API_BASE_URL` stays unset (same origin through the
+  rewrite). The build refuses any `VITE_` variable except `VITE_API_BASE_URL`, because every one
+  of them would be published in the JavaScript.
+- **Edit `apps/web/vercel.json`:** replace `https://veyra-api.example.invalid` with the API
+  host's https address, keeping `/api/:path*`. Then commit and deploy.
+- **No domain purchase:** `veyra-demo.vercel.app` is Vercel's free subdomain.
+
+**4. Verify the deployed URL** (not localhost). Use a browser machine with Chromium:
+
+```
+VEYRA_DEMO_URL=https://veyra-demo.vercel.app/ VEYRA_DEMO_PIN=… RESET=1 node scripts/demo-check.mjs
+```
+
+It walks the whole journey and exits non-zero on any failure:
+
+- landing, **See Veyra in action**, a wrong PIN, the right PIN, `/app/inbox`, and a refresh on
+  `/app/inbox`;
+- the seven scenarios, answering the goods-receipt question, the audit trail and the ERP data;
+- that anonymous callers cannot reset or read diagnostics, and a foreign origin cannot sign in;
+- that the PIN appears in no script or response, with no CSP violations.
+
+Only call the demo deployed once this passes against the public URL.
+
+### 14.4 What to check on the real hosts
+
+These depend on Vercel and the API host, so they cannot be proven from this repository:
+
+- **Client addresses.** With the rewrite, requests reach the API from Vercel's edge. Check that
+  the API's request logs show varying client addresses (`VEYRA_TRUST_PROXY` counts every proxy in
+  front). If they all show the same address, the per-address rate limits (sign-in: 10 per minute)
+  apply to all visitors together. Correct the hop count before sharing the link.
+- **Upload size.** Upload a 10–20 MB photo through the Vercel URL. If Vercel's proxy refuses
+  large bodies, lower `VEYRA_MAX_UPLOAD_BYTES` to what passes, or give uploads a same-site API
+  subdomain.
+- **Headers.** `curl -sI https://veyra-demo.vercel.app/` shows the CSP, `X-Frame-Options: DENY`
+  and HSTS. `curl -s https://veyra-demo.vercel.app/api/v1/health` returns `{"ok":true,"demo":true}`.
+
+### 14.5 Tested before deployment (locally, not on Vercel)
+
+- The image was built.
+- It refused to start with pending migrations, and ran the migration step.
+- It served the demo as `staging` behind a **local emulation** of `vercel.json`: static files,
+  the same headers, the `/api` rewrite, and the SPA fallback. `scripts/demo-check.mjs` passed all
+  31 checks against it.
+- `docker stop` (SIGTERM) exited 0 after "shutting down" → "stopped".
+- Invoices, document bytes, ERP vendors and ERP purchase invoices were identical after a restart,
+  and after replacing the container on the same volume.
+- Inside the container, a digital invoice took 60–250 ms, a photo 1.7 s (OCR 1.5 s), and the
+  process used about 505 MB.
+
+The emulation is not Vercel. §14.4 still has to be checked on the real deployment.
