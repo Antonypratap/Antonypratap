@@ -15,8 +15,26 @@
   color: var(--color-ink-3);
 }
 
-.copyright {
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
   margin-left: auto;
+  font-size: var(--text-small);
+}
+
+.links a {
+  color: var(--color-ink-3);
+  text-decoration: none;
+}
+
+.links a:hover {
+  color: var(--color-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.copyright {
   font-size: var(--text-xsmall);
   color: var(--color-ink-4);
 }
@@ -26,8 +44,11 @@
     flex-wrap: wrap;
     gap: var(--space-3) var(--space-6);
   }
-  .copyright {
+  .links {
     margin-left: 0;
+    flex-basis: 100%;
+  }
+  .copyright {
     flex-basis: 100%;
   }
 }

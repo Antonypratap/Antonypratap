@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { DEMO_ENTRY_HREF } from '../access/demoAccess';
+import { demoEntryHref } from '../access/demoAccess';
 import { ButtonLink, Container, Icon, Logo } from '../design-system';
 import styles from './SiteNav.module.css';
 
@@ -7,6 +7,11 @@ const LINKS = [
   { href: '#product', label: 'Product' },
   { href: '#how-it-works', label: 'How it works' },
   { href: '#finance-teams', label: 'For finance teams' },
+];
+/** The website's way in for clients (Client login) and for prospects (Request access). */
+const ACCESS_LINKS = [
+  { href: '#/login', label: 'Client login' },
+  { href: '#/request-access', label: 'Request access' },
 ];
 
 export function SiteNav() {
@@ -53,7 +58,10 @@ export function SiteNav() {
           ))}
         </nav>
         <div className={styles.actions}>
-          <ButtonLink href={DEMO_ENTRY_HREF} size="sm">
+          <ButtonLink href="#/login" size="sm" variant="secondary">
+            Client login
+          </ButtonLink>
+          <ButtonLink href={demoEntryHref()} size="sm">
             See Veyrafy in action
           </ButtonLink>
         </div>
@@ -73,7 +81,7 @@ export function SiteNav() {
         <Container>
           <nav aria-label="Mobile">
             <ul className={styles.sheetLinks}>
-              {LINKS.map((l) => (
+              {[...LINKS, ...ACCESS_LINKS].map((l) => (
                 <li key={l.href}>
                   <a href={l.href} className={styles.sheetLink} onClick={() => setOpen(false)}>
                     {l.label}
@@ -84,7 +92,7 @@ export function SiteNav() {
             </ul>
           </nav>
           <ButtonLink
-            href={DEMO_ENTRY_HREF}
+            href={demoEntryHref()}
             size="lg"
             arrow
             className={styles.sheetCta}

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { Permission } from '@veyra/shared';
 import { signOut, useSession } from '../../access/session';
 import { Icon, Logo, type IconName } from '../../design-system';
+import { WEBSITE_ADDRESS, classifyHost } from '../../site/host';
 import { hrefFor, type Route } from '../router';
 import { api } from '../api/client';
 import { useProductData } from '../state/data';
@@ -58,6 +59,11 @@ export function sectionOf(route: Route): Section {
   }
 }
 
+/** The website, from a client address; the local homepage in development. */
+function websiteHref(): string {
+  return classifyHost(window.location.hostname).kind === 'development' ? '#top' : WEBSITE_ADDRESS;
+}
+
 export function AppShell({ route, children }: { route: Route; children: ReactNode }) {
   const { inbox, refresh } = useProductData();
   const hasData = (inbox?.counts.received ?? 0) > 0;
@@ -103,6 +109,7 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
             </ul>
           </nav>
           <div className={styles.sidebarFoot}>
+            {me && <p className={styles.organization}>{me.organization.name}</p>}
             {me?.demoSignIn && (
               <p className={styles.demoNote}>Demo workspace. Sample ERP; no payments are made.</p>
             )}
@@ -125,8 +132,8 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
             <button type="button" className={styles.siteLink} onClick={() => void signOut()}>
               Sign out
             </button>
-            <a href="#top" className={styles.siteLink}>
-              veyra.com
+            <a href={websiteHref()} className={styles.siteLink}>
+              veyrafy.com
             </a>
           </div>
         </aside>
@@ -153,7 +160,11 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
             {may('demo.manage') && <DemoTrigger className={styles.demoButton} />}
             <span
               className={styles.user}
-              title={me ? `${me.user.name} (${me.user.role.toLowerCase()})` : undefined}
+              title={
+                me
+                  ? `${me.user.name} (${me.user.role.toLowerCase()}) · ${me.organization.name}`
+                  : undefined
+              }
             >
               {initials}
             </span>

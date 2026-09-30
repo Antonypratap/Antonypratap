@@ -77,6 +77,12 @@
   margin-top: auto;
   padding: var(--space-3);
 }
+.organization {
+  font-size: 0.8125rem;
+  font-weight: var(--weight-medium);
+  color: var(--color-ink-2);
+}
+
 .demoNote {
   font-size: 0.75rem;
   line-height: 1.45;

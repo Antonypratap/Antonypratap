@@ -8,13 +8,26 @@ import styles from './SignIn.module.css';
  * requested route (still in the address bar) simply renders. Demo environments also offer the
  * demo PIN (checked by the server, never here); production has no demo sign-in at all.
  */
-export function SignIn({ demo, notice }: { demo: boolean; notice: string | null }) {
+export function SignIn({
+  demo,
+  notice,
+  organization = null,
+  home = '#top',
+}: {
+  demo: boolean;
+  notice: string | null;
+  /** The organization this Veyrafy address belongs to (client instances), shown above the form. */
+  organization?: string | null;
+  /** Where the logo and "Back to the homepage" go: the website, from a client address. */
+  home?: string;
+}) {
   const [mode, setMode] = useState<'pin' | 'password'>(demo ? 'pin' : 'password');
   return (
     <main className={styles.page}>
-      <a href="#top" className={styles.home} aria-label="Veyrafy home">
+      <a href={home} className={styles.home} aria-label="Veyrafy home">
         <Logo />
       </a>
+      {organization && <p className={styles.organization}>{organization}</p>}
       {mode === 'pin' ? <PinForm notice={notice} /> : <PasswordForm notice={notice} />}
       {demo && (
         <button
@@ -25,7 +38,7 @@ export function SignIn({ demo, notice }: { demo: boolean; notice: string | null 
           {mode === 'pin' ? 'Sign in with email instead' : 'Use the demo PIN instead'}
         </button>
       )}
-      <a href="#top" className={styles.back}>
+      <a href={home} className={styles.back}>
         Back to the homepage
       </a>
     </main>

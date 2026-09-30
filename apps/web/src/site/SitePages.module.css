@@ -1,0 +1,31 @@
+.address {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.suffix {
+  margin-top: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--color-ink-3);
+  white-space: nowrap;
+}
+
+.aside,
+.body {
+  margin-top: var(--space-4);
+  font-size: var(--text-small);
+  color: var(--color-ink-3);
+}
+
+.body {
+  margin-top: var(--space-3);
+  max-width: none;
+}
+
+.aside a,
+.body a {
+  color: var(--color-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

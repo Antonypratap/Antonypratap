@@ -16,6 +16,13 @@
   border-radius: var(--radius-sm);
 }
 
+.organization {
+  margin-bottom: calc(-1 * var(--space-4));
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink-3);
+}
+
 .panel {
   width: 100%;
   max-width: 24rem;
