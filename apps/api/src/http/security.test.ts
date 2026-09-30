@@ -329,10 +329,12 @@ describe('authorization', () => {
         'GET /api/v1/health',
         'GET /api/v1/health/live',
         'GET /api/v1/health/ready',
+        'GET /api/v1/instance',
         'HEAD /api/v1/auth/session',
         'HEAD /api/v1/health',
         'HEAD /api/v1/health/live',
         'HEAD /api/v1/health/ready',
+        'HEAD /api/v1/instance',
         'POST /api/v1/auth/login',
       ].sort(),
     );

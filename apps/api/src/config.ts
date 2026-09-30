@@ -95,6 +95,10 @@ export interface VeyraConfig {
     loginPerMinute: number;
   };
   jobs: { leaseMs: number; shutdownGraceMs: number };
+  /** The built web app served from this origin (production client instances), or null. */
+  web: { dist: string | null };
+  /** The deployed commit (RAILWAY_GIT_COMMIT_SHA), for GET /api/v1/health; null when unknown. */
+  release: string | null;
 }
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -172,6 +176,10 @@ const VARS = {
   VEYRA_RATE_LIMIT_LOGIN_PER_MINUTE: int(1, 1_000),
   VEYRA_JOB_LEASE_MS: int(10_000, 24 * 60 * 60 * 1000),
   VEYRA_SHUTDOWN_GRACE_MS: int(0, 10 * 60 * 1000),
+  // The built web app (apps/web/dist) this instance serves on its own origin; absent: /api only.
+  VEYRA_WEB_DIST: z.string().min(1),
+  // true: this process is the public website only (site.ts); read by main.ts before anything else.
+  VEYRA_SITE_ONLY: bool,
 } as const;
 type VarName = keyof typeof VARS;
 
@@ -186,8 +194,8 @@ export class ConfigError extends Error {
  * Reads and validates the configuration. Throws ConfigError listing every problem (variable names
  * and rules only; values are never included, since some are secrets).
  */
-export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig {
-  const problems: string[] = [];
+/** Reads variables by their rules, collecting problems (names and rules only, never values). */
+function reader(env: Env, problems: string[]) {
   const read = <K extends VarName>(name: K): z.output<(typeof VARS)[K]> | undefined => {
     const raw = env[name];
     if (raw === undefined || raw === '') return undefined;
@@ -204,14 +212,44 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
       problems.push(`${name} is required ${why}`);
     return value;
   };
-
   // The environment: VEYRA_ENV, or production whenever NODE_ENV says production (never the
   // reverse: an unset VEYRA_ENV on a production host must not open the demo).
   const environment: Environment =
     read('VEYRA_ENV') ?? (env.NODE_ENV === 'production' ? 'production' : 'development');
-  const deployed = environment !== 'development';
   if (environment === 'production' && env.NODE_ENV !== 'production')
     problems.push('NODE_ENV must be production when VEYRA_ENV is production');
+  return { read, require, environment, deployed: environment !== 'development' };
+}
+
+/** The web build directory: absolute outside development (it is a path inside the image). */
+function webDist(
+  read: ReturnType<typeof reader>['read'],
+  deployed: boolean,
+  problems: string[],
+): string | null {
+  const raw = read('VEYRA_WEB_DIST');
+  if (raw === undefined) return null;
+  if (deployed && !isAbsolute(raw))
+    problems.push('VEYRA_WEB_DIST must be an absolute path outside development');
+  return resolve(raw);
+}
+
+/**
+ * The deployed commit, from the platform (Railway sets RAILWAY_GIT_COMMIT_SHA). Only a plain
+ * commit hash is ever shown; anything else is treated as unknown, never echoed.
+ */
+function releaseOf(env: Env): string | null {
+  const sha = env.RAILWAY_GIT_COMMIT_SHA?.trim();
+  return sha && /^[0-9a-f]{7,40}$/i.test(sha) ? sha.toLowerCase() : null;
+}
+
+export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig {
+  const problems: string[] = [];
+  const { read, require, environment, deployed } = reader(env, problems);
+  if (read('VEYRA_SITE_ONLY'))
+    problems.push(
+      'VEYRA_SITE_ONLY is true: this service is the public website, which never starts the application (see docs/RUNBOOK-RAILWAY.md)',
+    );
 
   const dataDirRaw = deployed
     ? require('VEYRA_DATA_DIR', `in ${environment}`)
@@ -329,6 +367,45 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
       leaseMs: read('VEYRA_JOB_LEASE_MS') ?? 5 * 60 * 1000,
       shutdownGraceMs: read('VEYRA_SHUTDOWN_GRACE_MS') ?? 25_000,
     },
+    web: { dist: webDist(read, deployed, problems) },
+    release: releaseOf(env),
+  };
+  if (problems.length > 0) throw new ConfigError(problems);
+  return config;
+}
+
+/** The public website process (VEYRA_SITE_ONLY=true): static files and headers, nothing else. */
+export interface SiteConfig {
+  environment: Environment;
+  host: string;
+  port: number;
+  /** The built web app to serve. Required: the website is nothing but that build. */
+  webDist: string;
+  /** HSTS (the site is served over HTTPS whenever deployed). */
+  hsts: boolean;
+  trustProxy: number;
+  logLevel: VeyraConfig['logLevel'];
+  release: string | null;
+}
+
+/**
+ * Configuration for the website process. It reads ONLY what a static website needs: no database,
+ * storage, ERP, sign-in or job settings are read or required (DATABASE_URL may be absent).
+ */
+export function loadSiteConfig(env: Env): SiteConfig {
+  const problems: string[] = [];
+  const { read, require, environment, deployed } = reader(env, problems);
+  require('VEYRA_WEB_DIST', '(the built web app the website serves)');
+  const dist = webDist(read, deployed, problems);
+  const config: SiteConfig = {
+    environment,
+    host: read('VEYRA_API_HOST') ?? '127.0.0.1',
+    port: read('VEYRA_API_PORT') ?? read('PORT') ?? 8787,
+    webDist: dist ?? '',
+    hsts: deployed,
+    trustProxy: read('VEYRA_TRUST_PROXY') ?? 0,
+    logLevel: read('VEYRA_LOG_LEVEL') ?? (deployed ? 'info' : 'warn'),
+    release: releaseOf(env),
   };
   if (problems.length > 0) throw new ConfigError(problems);
   return config;

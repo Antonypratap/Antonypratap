@@ -166,7 +166,7 @@ describe('health', () => {
       checks: { database: { status: 'ok' }, storage: { status: 'ok' }, worker: { status: 'ok' } },
     });
     const health = await anonymous({ method: 'GET', url: '/api/v1/health' });
-    expect(health.json()).toEqual({ ok: true, demo: true });
+    expect(health.json()).toEqual({ ok: true, demo: true, version: null });
     // The full report needs a signed-in ADMIN.
     expect((await anonymous({ method: 'GET', url: '/api/v1/system/status' })).statusCode).toBe(401);
     const finance = await testSession(app, { role: 'FINANCE' });
@@ -236,7 +236,7 @@ describe('production lock-down', () => {
       expect(res.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
     }
     const health = (await app.server.inject({ method: 'GET', url: '/api/v1/health' })).json();
-    expect(health).toEqual({ ok: true, demo: false });
+    expect(health).toEqual({ ok: true, demo: false, version: null });
     // No demo seed either: production starts with an empty business.
     expect(await app.veyra.erp.listVendors()).toEqual([]);
   });

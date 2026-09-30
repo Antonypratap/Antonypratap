@@ -1,108 +1,20 @@
 /**
- * Starts the Veyra API and its job worker: `npm run dev:api` (or `npm run demo` for API + web),
- * `npm run start -w @veyra/api` when deployed. Configuration comes from the environment and is
- * validated first (src/config.ts, .env.example); a misconfigured instance does not start.
+ * The one entry point of the Veyrafy image (`npm run start -w @veyra/api`, the Docker CMD):
+ *
+ * - `VEYRA_SITE_ONLY=true`: the public website (veyrafy.com). Static files and headers only; the
+ *   application (database, storage, ERP, sign-in, jobs) is never loaded, let alone started.
+ * - otherwise: a Veyrafy instance (API, job worker and, in production, the web app on the same
+ *   origin), e.g. demo.veyrafy.com or toit.veyrafy.com, each with its own database.
+ *
+ * The switch is read here, before any other module is loaded.
  */
-import { fileURLToPath } from 'node:url';
-import { createApp } from './app';
-import { ConfigError, describeConfig, loadConfig, type VeyraConfig } from './config';
-import { PendingMigrationsError } from './db/open';
-import { createLogger } from './http/logging';
-import { createStorage } from './storage';
-
-let config: VeyraConfig;
-try {
-  config = loadConfig(process.env, {
-    dataDir: fileURLToPath(new URL('../../../data/veyra', import.meta.url)),
-  });
-} catch (error) {
-  // Names and rules only: values are never printed (some are secrets).
-  console.error(error instanceof ConfigError ? error.message : String(error));
+const siteOnly = process.env.VEYRA_SITE_ONLY;
+if (siteOnly !== undefined && siteOnly !== '' && siteOnly !== 'true' && siteOnly !== 'false') {
+  console.error(
+    'Veyrafy configuration is not valid:\n  - VEYRA_SITE_ONLY is not valid (true or false)',
+  );
   process.exit(1);
 }
+await (siteOnly === 'true' ? import('./site-main') : import('./app-main'));
 
-const log = createLogger({ level: config.logLevel, environment: config.environment });
-
-let app: Awaited<ReturnType<typeof createApp>>;
-try {
-  app = await createApp({
-    environment: config.environment,
-    dataDir: config.dataDir,
-    database: { url: config.database.url?.reveal() ?? null, pool: config.database.pool },
-    migrate: config.migrateOnStart,
-    storage: createStorage(config.storage),
-    demo: config.demo,
-    allowFixtureExtractor: config.allowFixtureExtractor,
-    nodeEnv: process.env.NODE_ENV,
-    ollama: config.ollama,
-    log,
-    limits: config.limits,
-    rateLimits: {
-      upload: config.rateLimits.uploadsPerMinute,
-      processing: config.rateLimits.processingPerMinute,
-      dev: config.rateLimits.devPerMinute,
-      login: config.rateLimits.loginPerMinute,
-    },
-    organizationName: config.organizationName,
-    auth: {
-      session: config.auth.session,
-      cookieSecure: config.auth.cookieSecure,
-      demoPin: config.auth.demoPin,
-      publicOrigins: config.http.publicOrigins,
-      corsOrigins: config.http.corsOrigins,
-    },
-    trustProxy: config.trustProxy,
-    jobs: config.jobs,
-  });
-} catch (error) {
-  if (error instanceof PendingMigrationsError) log.fatal({ pending: error.pending }, error.message);
-  else log.fatal({ err: error }, 'Veyrafy could not start');
-  process.exit(1);
-}
-
-// Storage must be usable before the instance takes traffic.
-try {
-  await app.storage.check();
-} catch (error) {
-  log.fatal({ errorCode: (error as { code?: string }).code }, 'document storage is not usable');
-  await app.close(0);
-  process.exit(1);
-}
-
-// The document readers are loaded before the instance takes traffic (Phase 7): otherwise the first
-// invoice after a start would wait about a second for them.
-const warm = Date.now();
-await app.warmUp().then(
-  () => log.info({ durationMs: Date.now() - warm }, 'document readers loaded'),
-  (error: unknown) =>
-    log.warn(
-      { errorCode: (error as { code?: string }).code ?? 'WARMUP_FAILED' },
-      'document readers not preloaded',
-    ),
-);
-
-app.runner.start();
-await app.server.listen({ host: config.host, port: config.port });
-log.info({ ...describeConfig(config), port: config.port }, 'Veyrafy API started');
-if (config.environment === 'development')
-  console.log(`Veyrafy API on http://${config.host}:${config.port}/api/v1`);
-
-let stopping = false;
-const stop = async (signal: string) => {
-  if (stopping) return;
-  stopping = true;
-  log.info({ signal }, 'shutting down');
-  try {
-    await app.close();
-    log.info('stopped');
-    process.exit(0);
-  } catch (error) {
-    log.error({ err: error }, 'shutdown did not complete cleanly');
-    process.exit(1);
-  }
-};
-process.on('SIGINT', () => void stop('SIGINT'));
-process.on('SIGTERM', () => void stop('SIGTERM'));
-process.on('unhandledRejection', (error) => {
-  log.error({ err: error }, 'unhandled rejection');
-});
+export {};

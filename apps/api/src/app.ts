@@ -27,6 +27,7 @@ import { Users } from './auth/users';
 import { CommercialAdmin } from './commercial/admin';
 import type { Secret } from './secret';
 import { JobRunner } from './workflow/runner';
+import type { WebFiles } from './http/web-static';
 import { DEFAULT_SETTINGS, DEMO_SETTINGS, Veyra } from './workflow/veyra';
 
 export interface AppConfig {
@@ -64,6 +65,10 @@ export interface AppConfig {
   jobs?: { leaseMs: number; shutdownGraceMs: number };
   /** The organization this deployment serves (Phase 6C). */
   organizationName?: string;
+  /** The built web app, served from the API's own origin (production client instances). */
+  web?: WebFiles | null;
+  /** The deployed commit (RAILWAY_GIT_COMMIT_SHA), shown by GET /api/v1/health. */
+  release?: string | null;
   /**
    * Sign-in (Phase 6C). Defaults suit development and tests only: 30 min idle, 12 h absolute,
    * cookie not Secure (plain http on localhost), the Vite dev origins.
@@ -230,6 +235,8 @@ export async function createApp(config: AppConfig) {
     ...(config.limits ? { limits: config.limits } : {}),
     ...(config.rateLimits ? { rateLimits: config.rateLimits } : {}),
     ...(config.trustProxy !== undefined ? { trustProxy: config.trustProxy } : {}),
+    web: config.web ?? null,
+    release: config.release ?? null,
     auth: {
       sessions,
       users,

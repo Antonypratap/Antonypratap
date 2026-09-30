@@ -5,7 +5,8 @@
   "description": "Veyra web: marketing site and (later) the application UI, sharing one design system.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./security-headers": "./src/security-headers.ts"
   },
   "scripts": {
     "dev": "vite",

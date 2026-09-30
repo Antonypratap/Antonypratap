@@ -10,11 +10,11 @@ import multipart from '@fastify/multipart';
 import compress from '@fastify/compress';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
-import helmet from '@fastify/helmet';
 import { desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   ApiAnswerBodySchema,
+  ApiInstanceSchema,
   ApiLoginBodySchema,
   ApiSecurityEventSchema,
   ApiSessionSchema,
@@ -74,6 +74,8 @@ import { CommercialAdmin } from '../commercial/admin';
 import { LimitReachedError, NotEntitledError } from '../commercial/entitlements';
 import { usageOf, usedFor } from '../commercial/usage';
 import { registerOps } from './ops';
+import { registerSecurityHeaders } from './security-headers';
+import { registerWebApp, type WebFiles } from './web-static';
 import {
   auditTable,
   businessRecordsXlsx,
@@ -102,6 +104,13 @@ export interface ServerOptions {
   readiness?: () => Promise<ReadinessReport>;
   /** Veyra Operations' commercial actions (Phase 8A). Absent: built on the Veyrafy's own. */
   commercial?: CommercialAdmin;
+  /**
+   * The built web app, served from this same origin (production client instances). Absent: the
+   * API serves /api only (development uses the Vite dev server).
+   */
+  web?: WebFiles | null;
+  /** The deployed commit (RAILWAY_GIT_COMMIT_SHA), shown by GET /api/v1/health. */
+  release?: string | null;
   /** Sign-in, sessions and browser origins (Phase 6C). */
   auth: {
     sessions: SessionStore;
@@ -173,23 +182,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   });
   app.decorate('routeAccess', requireAccessDeclarations(app));
   await app.register(cookie);
-  // Security headers (maintained library). The API serves JSON and documents, never pages.
-  await app.register(helmet, {
-    global: true,
-    contentSecurityPolicy: {
-      useDefaults: false,
-      directives: {
-        defaultSrc: ["'none'"],
-        baseUri: ["'none'"],
-        formAction: ["'none'"],
-        frameAncestors: ["'none'"],
-      },
-    },
-    crossOriginResourcePolicy: { policy: 'same-origin' },
-    referrerPolicy: { policy: 'no-referrer' },
-    frameguard: { action: 'deny' },
-    hsts: options.auth.cookieSecure ? { maxAge: 31_536_000, includeSubDomains: false } : false,
-  });
+  await registerSecurityHeaders(app, { hsts: options.auth.cookieSecure });
   // Response compression (Phase 7): JSON and CSV lists shrink several times over the network.
   // Only compressible types (never PDFs, images or XLSX, which are compressed already), only above
   // 1 KB, and never the sign-in responses, which carry the session's CSRF token (compressing a
@@ -273,7 +266,9 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       durationMs: Math.round(reply.elapsedTime),
     };
     // Health checks are polled constantly: debug only.
-    if (route?.startsWith('/api/v1/health')) req.log.debug(line, 'request');
+    // Health probes and the web app's own files are routine: debug only, so logs stay readable.
+    if (route?.startsWith('/api/v1/health') || (route === '/*' && reply.statusCode < 400))
+      req.log.debug(line, 'request');
     else if (reply.statusCode >= 500) req.log.error(line, 'request');
     else req.log.info(line, 'request');
   });
@@ -390,6 +385,14 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     if (!auth) throw new Error('new session did not resolve');
     return auth;
   };
+
+  // Which Veyrafy instance answers at this address: the organization's display name and whether it
+  // is the demo, nothing else (ApiInstanceSchema is strict). The web app uses it to confirm that a
+  // client address is set up. Authorization never depends on it: it is the configured
+  // organization, and every protected route checks the signed-in session.
+  app.get('/api/v1/instance', PUBLIC, async () =>
+    send(ApiInstanceSchema, { name: veyra.organizationName, demo: demoPin !== null }),
+  );
 
   app.get('/api/v1/auth/session', AUTH_PUBLIC, async (req) =>
     send(
@@ -543,6 +546,8 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   // ERP and extractor identity, job counts and pool are diagnostics, for an ADMIN
   // (GET /api/v1/system/status). Development keeps the detail on the public probes.
   const detailed = environment === 'development';
+  // Which build is live: the commit the platform deployed (not a secret; nothing else).
+  const release = options.release ?? null;
   const demoOn = Boolean(options.resetDemo) && environment !== 'production';
   app.get('/api/v1/health', PUBLIC, async () =>
     detailed
@@ -552,8 +557,9 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
           demo: demoOn,
           erp: veyra.erp.info,
           extractor: { id: veyra.extractor.id, version: veyra.extractor.version },
+          version: release,
         }
-      : { ok: true, demo: demoOn },
+      : { ok: true, demo: demoOn, version: release },
   );
   // Liveness: the process is up and serving. No dependency is checked.
   app.get('/api/v1/health/live', PUBLIC, async () => ({ status: 'ok' }));
@@ -999,6 +1005,9 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       return reply.status(started.existing ? 200 : 201).send(started);
     });
   }
+
+  // The web app on this same origin (production client instances): every non-/api GET.
+  if (options.web) registerWebApp(app, options.web);
 
   return app;
 }

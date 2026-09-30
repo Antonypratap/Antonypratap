@@ -34,6 +34,17 @@ export const ApiSessionSchema = z.discriminatedUnion('authenticated', [
 ]);
 export type ApiSession = z.infer<typeof ApiSessionSchema>;
 
+/**
+ * `GET /api/v1/instance`: which Veyrafy instance answers at this address. Public, and exactly these
+ * two fields (strict): the organization's display name and whether it is the demo. The web app
+ * uses it to confirm that a client address is set up; it carries nothing else, ever.
+ */
+export const ApiInstanceSchema = z.strictObject({
+  name: z.string().min(1).max(120),
+  demo: z.boolean(),
+});
+export type ApiInstance = z.infer<typeof ApiInstanceSchema>;
+
 export const ApiLoginBodySchema = z.object({
   email: z.string().trim().min(3).max(254),
   password: z.string().min(1).max(1024),
