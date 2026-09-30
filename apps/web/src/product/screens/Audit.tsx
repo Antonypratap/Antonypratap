@@ -4,6 +4,7 @@ import type { ApiAuditEntry } from '@veyra/shared';
 import { hrefFor } from '../router';
 import { useProductData, useResource } from '../state/data';
 import { STATUS_LABEL } from '../state/status';
+import { hasCapability, useCapabilities } from '../state/capabilities';
 import styles from './Audit.module.css';
 import { useAllowed } from '../../access/session';
 
@@ -15,7 +16,9 @@ export function Audit({ id }: { id: string | null }) {
   const showRecords = hasRecords && (id === 'records' || invoices.length === 0);
   const selected = showRecords ? null : (invoices.find((i) => i.id === id) ?? invoices[0] ?? null);
 
-  const canExport = useAllowed('exports.download');
+  // Role (who may) and commercial capability (what the organization has): both are needed.
+  const caps = useCapabilities();
+  const canExport = useAllowed('exports.download') && hasCapability(caps, 'reports.exports');
   return (
     <div className={styles.page}>
       <PageHeader

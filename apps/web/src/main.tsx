@@ -12,6 +12,11 @@ const ProductApp = lazy(() =>
   import('./product/ProductApp').then((m) => ({ default: m.ProductApp })),
 );
 const SignIn = lazy(() => import('./access/SignIn').then((m) => ({ default: m.SignIn })));
+// Veyra Operations (Phase 8A): a separate surface, loaded only when opened.
+const OpsApp = lazy(() => import('./ops/OpsApp').then((m) => ({ default: m.OpsApp })));
+const OperatorNotice = lazy(() =>
+  import('./ops/OperatorNotice').then((m) => ({ default: m.OperatorNotice })),
+);
 
 function Root() {
   const route = parseHash(useHash());
@@ -32,6 +37,11 @@ function Root() {
     <Suspense fallback={null}>
       {session.status === 'signedOut' ? (
         <SignIn demo={session.demoSignIn} notice={session.notice} />
+      ) : route.name === 'ops' ? (
+        <OpsApp route={route} />
+      ) : session.session.user.role === 'VEYRA_ADMIN' ? (
+        // A Veyra operator has no customer permissions: point to Veyra Operations instead.
+        <OperatorNotice />
       ) : (
         <ProductApp route={route} />
       )}

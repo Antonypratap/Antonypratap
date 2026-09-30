@@ -20,7 +20,8 @@ import {
   ApiSessionSchema,
   ApiUserSchema,
   type Permission,
-  ROLES,
+  ApiCapabilitiesSchema,
+  CUSTOMER_ROLES,
   ROLE_PERMISSIONS,
   type ApiSession,
   ApiAuditEntrySchema,
@@ -69,6 +70,10 @@ import { pino, type Logger } from 'pino';
 import { RateLimiter, bucketOf, type RateBucket } from './rate-limit';
 import { publicReadiness, type ReadinessReport } from './health';
 import { timedScope } from '../perf/timing';
+import { CommercialAdmin } from '../commercial/admin';
+import { LimitReachedError, NotEntitledError } from '../commercial/entitlements';
+import { usageOf, usedFor } from '../commercial/usage';
+import { registerOps } from './ops';
 import {
   auditTable,
   businessRecordsXlsx,
@@ -95,6 +100,8 @@ export interface ServerOptions {
   trustProxy?: number;
   /** Readiness of the instance's dependencies (GET /api/v1/health/ready). */
   readiness?: () => Promise<ReadinessReport>;
+  /** Veyra Operations' commercial actions (Phase 8A). Absent: built on the Veyra's own. */
+  commercial?: CommercialAdmin;
   /** Sign-in, sessions and browser origins (Phase 6C). */
   auth: {
     sessions: SessionStore;
@@ -289,6 +296,9 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
           .catch(() => undefined);
       return reply.status(STATUS[err.code]).send(e(err.code, err.message, err.details));
     }
+    // Commercial refusals (Phase 8A): a business answer, never plan or implementation detail.
+    if (err instanceof NotEntitledError || err instanceof LimitReachedError)
+      return reply.status(403).send(e(err.code, err.message));
     if (err instanceof InvalidTransitionError)
       return reply.status(409).send(e(err.code, err.message));
     if (err instanceof z.ZodError)
@@ -362,7 +372,11 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     permissions: ROLE_PERMISSIONS[auth.user.role].filter(
       (p) => p !== 'demo.manage' || options.resetDemo !== undefined,
     ),
-    organization: { id: veyra.organizationId, name: veyra.organizationName },
+    // Veyra's operators belong to the platform organization, not to the customer's.
+    organization:
+      auth.user.organizationId === t.PLATFORM_ORGANIZATION_ID
+        ? { id: t.PLATFORM_ORGANIZATION_ID, name: 'Veyra Operations' }
+        : { id: veyra.organizationId, name: veyra.organizationName },
     csrfToken: auth.csrfToken,
     expiresAt: auth.expiresAt,
   });
@@ -472,7 +486,8 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       createdAt: u.createdAt,
       updatedAt: u.updatedAt,
     });
-  const Role = z.enum(ROLES);
+  // The product manages customer accounts only: VEYRA_ADMIN is created on the server (CLI).
+  const Role = z.enum(CUSTOMER_ROLES);
   app.get('/api/v1/users', may('users.manage'), async () => (await users.list()).map(userDto));
   app.post('/api/v1/users', may('users.manage'), async (req, reply) => {
     const body = z
@@ -891,6 +906,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   );
 
   app.get('/api/v1/exports/:name', may('exports.download'), async (req, reply) => {
+    await veyra.entitlements.require(veyra.organizationId, 'reports.exports');
     const { name } = z.object({ name: z.string().max(40) }).parse(req.params);
     if (name === 'business-records.xlsx')
       return download(
@@ -912,6 +928,48 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     return m?.[2] === 'csv'
       ? download(reply, `${file}.csv`, 'text/csv; charset=utf-8', tableCsv(table))
       : download(reply, `${file}.xlsx`, XLSX, tableXlsx(table));
+  });
+
+  // ── Commercial capabilities, as the customer's users see them (Phase 8A) ──
+  // Availability and usage against limits only: never the plan, overrides or reasons. The web app
+  // shows or hides features from this; the server enforces them on every route regardless.
+  app.get('/api/v1/capabilities', may('invoices.view'), async () => {
+    const [all, usage] = await Promise.all([
+      veyra.entitlements.all(veyra.organizationId),
+      usageOf(veyra.db, veyra.organizationId, veyra.clock()),
+    ]);
+    return send(ApiCapabilitiesSchema, {
+      capabilities: all
+        .filter((e) => e.definition.customerVisible)
+        .map((e) =>
+          'enabled' in e.effective
+            ? {
+                key: e.capability,
+                name: e.definition.name,
+                type: 'BOOLEAN' as const,
+                available: e.effective.enabled,
+              }
+            : {
+                key: e.capability,
+                name: e.definition.name,
+                type: 'LIMIT' as const,
+                available: e.effective.limit !== 0,
+                limit: e.effective.limit,
+                used: usedFor(e.capability, usage),
+              },
+        ),
+    });
+  });
+
+  // ── Veyra Operations (Phase 8A): VEYRA_ADMIN only ────────────────────────
+  registerOps(app, {
+    veyra,
+    commercial:
+      options.commercial ?? new CommercialAdmin(veyra.db, veyra.entitlements, veyra.clock),
+    users,
+    environment,
+    ...(options.readiness ? { readiness: options.readiness } : {}),
+    send,
   });
 
   // ── Dev ──────────────────────────────────────────────────────────────────

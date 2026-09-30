@@ -24,6 +24,7 @@ import { LocalDocumentStorage, type DocumentStorage } from './storage';
 import { SessionStore } from './auth/sessions';
 import { timedErp, timedOcr } from './perf/timing';
 import { Users } from './auth/users';
+import { CommercialAdmin } from './commercial/admin';
 import type { Secret } from './secret';
 import { JobRunner } from './workflow/runner';
 import { DEFAULT_SETTINGS, DEMO_SETTINGS, Veyra } from './workflow/veyra';
@@ -167,7 +168,9 @@ export async function createApp(config: AppConfig) {
     config.auth?.session ?? { idleMs: 30 * 60_000, absoluteMs: 12 * 3_600_000 },
     config.clock,
   );
-  const users = new Users(db, sessions, veyra.organizationId, config.clock);
+  const users = new Users(db, sessions, veyra.organizationId, config.clock, veyra.entitlements);
+  // Veyra Operations' commercial actions (Phase 8A), on the same entitlement service and cache.
+  const commercial = new CommercialAdmin(db, veyra.entitlements, veyra.clock);
   // A fresh ERP file gets the DEMO.md seed.
   if ((await erp.listVendors()).length === 0 && demoMode) erp.reset('demo');
   const runner = new JobRunner(veyra, {
@@ -221,6 +224,7 @@ export async function createApp(config: AppConfig) {
   const server = await buildServer({
     veyra,
     environment,
+    commercial,
     ...(demoMode ? { resetDemo } : {}),
     ...(config.log ? { log: config.log } : {}),
     ...(config.limits ? { limits: config.limits } : {}),
@@ -253,6 +257,7 @@ export async function createApp(config: AppConfig) {
     storage,
     sessions,
     users,
+    commercial,
     /** The session cookie's name (it depends on whether it is Secure). */
     cookieName: sessionCookieName(cookieSecure),
     environment,

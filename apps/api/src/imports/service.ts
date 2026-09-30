@@ -3,6 +3,7 @@ import { basename } from 'node:path';
 import { and, desc, eq, ne } from 'drizzle-orm';
 import { importIdempotencyKey, type ApiImport } from '@veyra/shared';
 import { isErpConnectorError, type ImportBusinessRecordsResult } from '@veyra/erp-connector';
+import { requireErpFeature } from '../commercial/erp';
 import * as t from '../db/schema';
 import { ulid } from '../ids';
 import { VeyraError, type Veyra } from '../workflow/veyra';
@@ -41,6 +42,20 @@ export class BusinessImports {
     return f.key ?? `imports/${id}/${basename(f.path ?? '')}`;
   }
 
+  /**
+   * Importing is commercially controlled AND needs the ERP to support it (Phase 8A): checked here,
+   * in the service, so no route can skip it.
+   */
+  private requireFeature(): Promise<void> {
+    return requireErpFeature(
+      this.veyra.entitlements,
+      this.veyra.organizationId,
+      'erp.business_record_import',
+      this.veyra.erp,
+      'importBusinessRecords',
+    );
+  }
+
   snapshot(): Promise<ErpSnapshot> {
     return erpSnapshot(this.veyra.erp);
   }
@@ -52,6 +67,7 @@ export class BusinessImports {
   /** Validates an upload and stores it with its preview. Nothing is imported yet. */
   async check(files: readonly UploadedFile[], userId: string): Promise<ApiImport> {
     await this.requireDesignated(userId);
+    await this.requireFeature();
     const id = ulid();
     const stored: StoredFile[] = [];
     for (const [i, f] of files.entries()) {
@@ -106,6 +122,7 @@ export class BusinessImports {
    */
   async confirm(id: string, userId: string): Promise<ApiImport> {
     await this.requireDesignated(userId);
+    await this.requireFeature();
     const row = await this.row(id);
     if (row.status === 'imported') return this.dto(row);
     const files = await Promise.all(

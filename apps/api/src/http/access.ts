@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { CSRF_HEADER, can, type Permission } from '@veyra/shared';
+import { CSRF_HEADER, can, isOpsPermission, type Permission } from '@veyra/shared';
+import { PLATFORM_ORGANIZATION_ID } from '../db/schema';
 import { safeEqual, type ActiveSession, type SessionStore } from '../auth/sessions';
 import type { Users } from '../auth/users';
 import { VeyraError } from '../workflow/veyra';
@@ -126,7 +127,18 @@ export function registerAccessControl(app: FastifyInstance, o: AccessOptions): v
       return o.deny(req, reply, 403, 'CSRF_REJECTED', 'This request did not come from Veyra.');
     if (access === 'public') return;
     if (!req.auth) return o.deny(req, reply, 401, 'UNAUTHENTICATED', 'Sign in to continue.');
-    if (req.auth.user.organizationId !== o.organizationId)
+    // Two separate surfaces (Phase 8A). Veyra's operators (VEYRA_ADMIN, platform organization)
+    // reach only Veyra Operations (ops permissions) and their own session; customer routes refuse
+    // them. Customer users reach only their organization's routes; ops routes refuse them (they
+    // have no ops permission, whatever their customer role).
+    const operator =
+      req.auth.user.role === 'VEYRA_ADMIN' &&
+      req.auth.user.organizationId === PLATFORM_ORGANIZATION_ID;
+    if (
+      operator
+        ? access !== 'session' && !isOpsPermission(access)
+        : req.auth.user.organizationId !== o.organizationId
+    )
       return o.deny(req, reply, 403, 'FORBIDDEN', 'You do not have permission to do this.');
     if (isUnsafe(req.method)) {
       const header = req.headers[CSRF_HEADER];

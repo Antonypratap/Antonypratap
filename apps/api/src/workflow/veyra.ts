@@ -24,6 +24,8 @@ import * as t from '../db/schema';
 import { leaf, stage } from '../perf/timing';
 import { ulid } from '../ids';
 import type { DocumentStorage } from '../storage';
+import { Entitlements, INITIAL_PLAN, LimitReachedError } from '../commercial/entitlements';
+import { monthOf } from '../commercial/usage';
 import { INTERNAL_FAILURE_REASON, isInternalError, isRetryable } from './retry';
 import { readField, type JsonValue, type StoredField } from '../engine/fields';
 import { runEngine } from '../engine/run';
@@ -121,6 +123,8 @@ export interface VeyraOptions {
   commitHooks?: CommitHooks;
   /** The configured organization's name (Phase 6C). */
   organizationName?: string;
+  /** Commercial entitlements (Phase 8A); one per process, shared with Veyra Operations. */
+  entitlements?: Entitlements;
 }
 
 type Actor = { type: 'system' | 'ai' } | { type: 'user'; userId: string };
@@ -153,7 +157,11 @@ export class Veyra {
     this.commitHooks = options.commitHooks ?? {};
     this.#initial = options.initialSettings ?? DEFAULT_SETTINGS;
     this.organizationName = options.organizationName ?? 'Toit';
+    this.entitlements = options.entitlements ?? new Entitlements(this.db, this.clock);
   }
+
+  /** What this organization may use (Phase 8A): the one place commercial checks go through. */
+  readonly entitlements: Entitlements;
 
   readonly organizationName: string;
   /** Every user and resource of this deployment belongs to this organization (Phase 6C). */
@@ -184,7 +192,14 @@ export class Veyra {
     await this.db.transaction(async (tx) => {
       await tx
         .insert(t.organizations)
-        .values({ id: ORGANIZATION_ID, name: this.organizationName, createdAt: now })
+        .values({
+          id: ORGANIZATION_ID,
+          name: this.organizationName,
+          createdAt: now,
+          // A new deployment starts on the initial plan; Veyra Operations changes it (audited).
+          planKey: INITIAL_PLAN,
+          planAssignedAt: now,
+        })
         .onConflictDoUpdate({ target: t.organizations.id, set: { name: this.organizationName } });
       // The designated approver questions are assigned to. It has no password: it cannot sign in
       // (outside production, the demo sign-in uses it).
@@ -396,6 +411,10 @@ export class Veyra {
         invoiceId: inv?.id ?? null,
       });
     }
+    // Commercial limits (Phase 8A): checked before the file is stored, and again, exactly, inside
+    // the transaction that records it.
+    const limits = await this.uploadLimits();
+    await this.checkUploadLimits(this.db, bytes.length, limits);
     const documentId = ulid();
     const invoiceId = ulid();
     const ext = mime === 'application/pdf' ? 'pdf' : mime === 'image/png' ? 'png' : 'jpg';
@@ -407,6 +426,9 @@ export class Veyra {
     const now = this.now();
     try {
       await this.db.transaction(async (tx) => {
+        // Uploads are counted one at a time, so parallel uploads cannot pass a limit together.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext('veyra.upload.limits'))`);
+        await this.checkUploadLimits(tx as unknown as VeyraDb, bytes.length, limits);
         await tx.insert(t.documents).values({
           id: documentId,
           sha256,
@@ -441,6 +463,42 @@ export class Veyra {
     }
     this.onEnqueue();
     return { documentId, invoiceId };
+  }
+
+  /**
+   * The monthly invoice limit and the storage limit (Phase 8A, commercial). The invoice being
+   * uploaded counts: at a limit of 2,000 the 2,000th is accepted and the 2,001st refused. Unlimited
+   * skips the count entirely.
+   */
+  private async uploadLimits(): Promise<{ monthly: number | null; storage: number | null }> {
+    const org = this.organizationId;
+    const [monthly, storage] = await Promise.all([
+      this.entitlements.limit(org, 'invoice.monthly_limit'),
+      this.entitlements.limit(org, 'storage.max_bytes'),
+    ]);
+    return { monthly, storage };
+  }
+
+  private async checkUploadLimits(
+    q: VeyraDb,
+    adding: number,
+    limits: { monthly: number | null; storage: number | null },
+  ): Promise<void> {
+    if (limits.monthly === null && limits.storage === null) return;
+    const { from } = monthOf(this.clock());
+    const [row] = await q
+      .select({
+        month: sql<number>`count(*) filter (where ${t.documents.uploadedAt} >= ${from}::timestamptz)::int`,
+        bytes: sql<string>`coalesce(sum(${t.documents.sizeBytes}), 0)::text`,
+      })
+      .from(t.documents);
+    if (limits.monthly !== null && (row?.month ?? 0) + 1 > limits.monthly)
+      throw new LimitReachedError(
+        'invoice.monthly_limit',
+        'Monthly invoice processing limit reached.',
+      );
+    if (limits.storage !== null && Number(row?.bytes ?? 0) + adding > limits.storage)
+      throw new LimitReachedError('storage.max_bytes', 'Document storage limit reached.');
   }
 
   /**

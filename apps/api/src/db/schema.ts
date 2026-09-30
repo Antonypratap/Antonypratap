@@ -7,12 +7,16 @@ import {
   index,
   integer,
   pgTable,
+  primaryKey,
   text,
   uniqueIndex,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import {
   AUDIT_ACTOR_TYPES,
+  COMMERCIAL_EVENTS,
+  COMMERCIAL_STATUSES,
+  PLAN_STATUSES,
   CREATION_ACTION_STATUSES,
   CREATION_ENTITIES,
   CREATION_TRIGGERS,
@@ -88,14 +92,34 @@ const seq = () => bigint('seq', { mode: 'number' }).generatedByDefaultAsIdentity
  * every user belongs to it, and authorization runs user → organization → resource, so more than
  * one organization later does not mean rewriting access checks. Not multi-tenancy.
  */
-export const organizations = pgTable('organizations', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  createdAt: isoTimestamp('created_at').notNull(),
-});
+export const organizations = pgTable(
+  'organizations',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    createdAt: isoTimestamp('created_at').notNull(),
+    /**
+     * The commercial plan (Phase 8A). Null only for Veyra's own platform organization, which is
+     * not a customer. Assigned and changed only through Veyra Operations (audited).
+     */
+    planKey: text('plan_key').references((): AnyPgColumn => plans.key),
+    planAssignedAt: isoTimestamp('plan_assigned_at'),
+    commercialStatus: text('commercial_status').notNull().default('active'),
+  },
+  (t) => [
+    check('organizations_commercial_status', inList(t.commercialStatus, COMMERCIAL_STATUSES)),
+  ],
+);
+
+/**
+ * Veyra's own organization (Phase 8A): holds the VEYRA_ADMIN accounts, and nothing else. It is not
+ * a customer; customer routes refuse its users, and its users are the only ones Veyra Operations
+ * accepts.
+ */
+export const PLATFORM_ORGANIZATION_ID = '00000000000000000000000000';
 
 /** People who can sign in (Phase 6C adds role, password hash, organization). */
-export const USER_ROLES = ['ADMIN', 'FINANCE', 'REVIEWER'] as const;
+export const USER_ROLES = ['ADMIN', 'FINANCE', 'REVIEWER', 'VEYRA_ADMIN'] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
 export const users = pgTable(
@@ -118,6 +142,11 @@ export const users = pgTable(
   },
   (t) => [
     check('users_role', inList(t.role, USER_ROLES)),
+    // Platform accounts live only in the platform organization, and customer accounts never do.
+    check(
+      'users_platform_role',
+      sql`(${t.role} = 'VEYRA_ADMIN') = (${t.organizationId} = '${sql.raw(PLATFORM_ORGANIZATION_ID)}')`,
+    ),
     check('users_email_lower', sql`${t.email} = lower(${t.email})`),
   ],
 );
@@ -195,6 +224,8 @@ export const documents = pgTable(
   (t) => [
     check('documents_mime', inList(t.mime, ['application/pdf', 'image/jpeg', 'image/png'])),
     check('documents_size', sql`${t.sizeBytes} > 0`),
+    // Phase 8A: invoices uploaded this month (the commercial monthly limit and usage).
+    index('documents_uploaded').on(t.uploadedAt),
   ],
 );
 
@@ -547,5 +578,115 @@ export const imports = pgTable(
       'imports_confirmed',
       sql`(${t.status} = 'imported') = (${t.resultJson} IS NOT NULL AND ${t.confirmedAt} IS NOT NULL AND ${t.confirmedByUserId} IS NOT NULL)`,
     ),
+  ],
+);
+
+// ── Commercial entitlements (Phase 8A, docs/COMMERCIAL_ENTITLEMENTS.md) ─────
+
+/** A commercial plan: a named set of entitlements. No price lives here (billing is separate). */
+export const plans = pgTable(
+  'plans',
+  {
+    key: text('key').primaryKey(),
+    name: text('name').notNull(),
+    status: text('status').notNull(),
+    description: text('description').notNull(),
+    createdAt: isoTimestamp('created_at').notNull(),
+    updatedAt: isoTimestamp('updated_at').notNull(),
+  },
+  (t) => [check('plans_status', inList(t.status, PLAN_STATUSES))],
+);
+
+/**
+ * What a plan includes, per capability key (packages/shared/src/commercial.ts). A BOOLEAN capability
+ * has `enabled`; a LIMIT has `limit_value` (NULL = unlimited). A capability without a row is not
+ * included.
+ */
+export const planEntitlements = pgTable(
+  'plan_entitlements',
+  {
+    planKey: text('plan_key')
+      .notNull()
+      .references(() => plans.key),
+    capability: text('capability').notNull(),
+    enabled: boolean('enabled'),
+    limitValue: bigint('limit_value', { mode: 'number' }),
+    updatedAt: isoTimestamp('updated_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.planKey, t.capability] }),
+    check('plan_entitlements_one_kind', sql`${t.enabled} IS NULL OR ${t.limitValue} IS NULL`),
+    check('plan_entitlements_limit', sql`${t.limitValue} IS NULL OR ${t.limitValue} >= 0`),
+  ],
+);
+
+/**
+ * A customer-specific exception to its plan: enable a beta feature, raise a negotiated quota,
+ * switch something off. Never edited in place: a change revokes the active row and inserts a new
+ * one, so the history stays. At most one active (unrevoked) row per organization and capability;
+ * `expires_at` makes it temporary: once past, the plan applies again, with no clean-up job needed.
+ */
+export const entitlementOverrides = pgTable(
+  'entitlement_overrides',
+  {
+    seq: seq(),
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    capability: text('capability').notNull(),
+    enabled: boolean('enabled'),
+    limitValue: bigint('limit_value', { mode: 'number' }),
+    /** A LIMIT override to "unlimited" (limit_value is then NULL). */
+    unlimited: boolean('unlimited').notNull().default(false),
+    reason: text('reason').notNull(),
+    expiresAt: isoTimestamp('expires_at'),
+    createdByUserId: text('created_by_user_id')
+      .notNull()
+      .references(() => users.id),
+    createdAt: isoTimestamp('created_at').notNull(),
+    revokedAt: isoTimestamp('revoked_at'),
+    revokedByUserId: text('revoked_by_user_id').references(() => users.id),
+  },
+  (t) => [
+    uniqueIndex('entitlement_overrides_active')
+      .on(t.organizationId, t.capability)
+      .where(sql`${t.revokedAt} IS NULL`),
+    check(
+      'entitlement_overrides_one_kind',
+      sql`(${t.enabled} IS NOT NULL) <> (${t.limitValue} IS NOT NULL OR ${t.unlimited})`,
+    ),
+    check('entitlement_overrides_limit', sql`${t.limitValue} IS NULL OR ${t.limitValue} >= 0`),
+    check('entitlement_overrides_reason', sql`length(trim(${t.reason})) > 0`),
+  ],
+);
+
+/**
+ * The commercial audit trail: every plan assignment, plan change and override, with the value
+ * before and after, who, when, why and until when. Append-only (the runtime role has no UPDATE or
+ * DELETE on it; apps/api/sql/runtime-role.sql). Never deleted.
+ */
+export const commercialEvents = pgTable(
+  'commercial_events',
+  {
+    seq: seq(),
+    id: text('id').primaryKey(),
+    event: text('event').notNull(),
+    organizationId: text('organization_id').references(() => organizations.id),
+    planKey: text('plan_key'),
+    capability: text('capability'),
+    oldValueJson: text('old_value_json'),
+    newValueJson: text('new_value_json'),
+    reason: text('reason').notNull(),
+    expiresAt: isoTimestamp('expires_at'),
+    actorUserId: text('actor_user_id')
+      .notNull()
+      .references(() => users.id),
+    requestId: text('request_id'),
+    createdAt: isoTimestamp('created_at').notNull(),
+  },
+  (t) => [
+    check('commercial_events_event', inList(t.event, COMMERCIAL_EVENTS)),
+    index('commercial_events_organization').on(t.organizationId, t.seq),
   ],
 );

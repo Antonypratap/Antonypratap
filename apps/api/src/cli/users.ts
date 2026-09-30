@@ -4,7 +4,10 @@
  * by an ADMIN in the product.
  *
  *   list
- *   create --email <email> --name <name> --role ADMIN|FINANCE|REVIEWER   (password on stdin)
+ *   create --email <email> --name <name> --role ADMIN|FINANCE|REVIEWER|VEYRA_ADMIN   (password on stdin)
+ *
+ * VEYRA_ADMIN is Veyra's own operator account (Veyra Operations, docs/OPERATIONS.md), in the
+ * platform organization. It can be created only here, on the server: never from the product.
  *   set-password --email <email>                                          (password on stdin)
  *   disable --email <email> | enable --email <email>
  *   revoke-sessions --email <email> | revoke-sessions --all
@@ -20,8 +23,10 @@ import { ROLES, type Role } from '@veyra/shared';
 import { ConfigError, loadConfig } from '../config';
 import { openVeyraDb } from '../db/open';
 import * as t from '../db/schema';
+import { PLATFORM_ORGANIZATION_ID } from '../db/schema';
 import { SessionStore } from '../auth/sessions';
 import { Users } from '../auth/users';
+import { Entitlements } from '../commercial/entitlements';
 import { ORGANIZATION_ID, VeyraError } from '../workflow/veyra';
 
 const [command, ...args] = process.argv.slice(2);
@@ -48,27 +53,33 @@ try {
     pool: { ...config.database.pool, max: 1 },
   });
   const sessions = new SessionStore(database.db, config.auth.session);
-  const users = new Users(database.db, sessions, ORGANIZATION_ID);
+  const entitlements = new Entitlements(database.db);
+  const customer = new Users(database.db, sessions, ORGANIZATION_ID, undefined, entitlements);
+  const platform = new Users(database.db, sessions, PLATFORM_ORGANIZATION_ID);
   const ctx = { userId: null, requestId: null };
+  /** The account's id, and the Users of its organization (customer or platform). */
   const byEmail = async () => {
     const email = flag('email');
     if (!email) throw new VeyraError('INVALID_INPUT', 'Give --email.');
-    const id = await users.idOf(email);
+    const id = await customer.idOf(email);
     if (!id) throw new VeyraError('NOT_FOUND', 'No user with that email address.');
-    return id;
+    const users =
+      (await customer.organizationOf(email)) === PLATFORM_ORGANIZATION_ID ? platform : customer;
+    return { id, users };
   };
   try {
     switch (command) {
       case 'list':
-        for (const u of await users.list())
+        for (const u of [...(await customer.list()), ...(await platform.list())])
           console.log(
-            `${u.email.padEnd(36)} ${u.role.padEnd(9)} ${u.active ? 'active  ' : 'disabled'} ${u.passwordHash ? 'password' : 'no password'}  ${u.name}`,
+            `${u.email.padEnd(36)} ${u.role.padEnd(11)} ${u.active ? 'active  ' : 'disabled'} ${u.passwordHash ? 'password' : 'no password'}  ${u.name}`,
           );
         break;
       case 'create': {
         const role = flag('role') as Role | undefined;
         if (!role || !ROLES.includes(role))
           throw new VeyraError('INVALID_INPUT', `Give --role ${ROLES.join('|')}.`);
+        const users = role === 'VEYRA_ADMIN' ? platform : customer;
         const user = await users.create(
           {
             email: flag('email') ?? '',
@@ -81,15 +92,19 @@ try {
         console.log(`Created ${user.email} (${user.role}).`);
         break;
       }
-      case 'set-password':
-        await users.setPassword(await byEmail(), await readPassword(), ctx, 'password.reset');
+      case 'set-password': {
+        const { id, users } = await byEmail();
+        await users.setPassword(id, await readPassword(), ctx, 'password.reset');
         console.log('Password set; every session of this user has ended.');
         break;
+      }
       case 'disable':
-      case 'enable':
-        await users.update(await byEmail(), { active: command === 'enable' }, ctx);
+      case 'enable': {
+        const { id, users } = await byEmail();
+        await users.update(id, { active: command === 'enable' }, ctx);
         console.log(command === 'disable' ? 'Disabled; sessions ended.' : 'Enabled.');
         break;
+      }
       case 'revoke-sessions':
         if (args.includes('--all')) {
           const n = await database.db
@@ -98,7 +113,8 @@ try {
             .where(isNull(t.sessions.revokedAt))
             .returning({ h: t.sessions.tokenHash });
           console.log(`Ended ${n.length} session(s). Everyone must sign in again.`);
-        } else console.log(`Ended ${await sessions.revokeAllForUser(await byEmail())} session(s).`);
+        } else
+          console.log(`Ended ${await sessions.revokeAllForUser((await byEmail()).id)} session(s).`);
         break;
       default:
         console.error(

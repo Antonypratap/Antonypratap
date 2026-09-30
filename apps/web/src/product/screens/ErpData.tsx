@@ -5,6 +5,7 @@ import { api, ApiError, exportUrl, TEMPLATES, templateUrl } from '../api/client'
 import { formatDate } from '../format';
 import { hrefFor } from '../router';
 import { useProductData, useResource } from '../state/data';
+import { hasCapability, useCapabilities } from '../state/capabilities';
 import styles from './ErpData.module.css';
 import { notify } from '../../feedback/toasts';
 
@@ -14,6 +15,11 @@ import { notify } from '../../feedback/toasts';
  */
 export function ErpData() {
   const { refresh } = useProductData();
+  // Commercial capabilities (Phase 8A): what this organization may use. The server enforces them;
+  // this only avoids offering what would be refused.
+  const caps = useCapabilities();
+  const canImport = hasCapability(caps, 'erp.business_record_import');
+  const canExport = hasCapability(caps, 'reports.exports');
   const input = useRef<HTMLInputElement>(null);
   const [current, setCurrent] = useState<ApiImport | null>(null);
   const [busy, setBusy] = useState(false);
@@ -70,50 +76,58 @@ export function ErpData() {
             isn&rsquo;t connected: Veyra checks invoices against these records.
           </p>
         </div>
-        <ol className={styles.steps}>
-          <li>
-            <span className={styles.stepTitle}>Download a template</span>
-            <span className={styles.templates}>
-              {TEMPLATES.map((t) => (
-                <a key={t.file} href={templateUrl(t.file)} download className={styles.link}>
-                  {t.title}
-                </a>
-              ))}
-            </span>
-          </li>
-          <li>
-            <span className={styles.stepTitle}>Fill it in</span>
-            <span className={styles.note}>
-              One row per record. Order: vendors, items, purchase orders with their lines, goods
-              receipts with their lines. Lines go in the same upload as their order or receipt.
-            </span>
-          </li>
-          <li>
-            <span className={styles.stepTitle}>Upload it</span>
-            <span className={styles.note}>
-              Excel (.xlsx) or CSV. Veyra checks the whole upload before anything is imported.
-            </span>
-            <span>
-              <button
-                type="button"
-                className={styles.button}
-                disabled={busy}
-                onClick={() => input.current?.click()}
-              >
-                <Icon name="document" size={15} />
-                {busy && !current ? 'Checking…' : 'Upload records'}
-              </button>
-              <input
-                ref={input}
-                type="file"
-                accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
-                multiple
-                hidden
-                onChange={(e) => void upload(e.target.files)}
-              />
-            </span>
-          </li>
-        </ol>
+        {caps && !canImport && (
+          <p className={styles.note} data-testid="import-unavailable">
+            Importing business records is not included in your Veyra subscription. Your Veyra
+            contact can add it.
+          </p>
+        )}
+        {canImport && (
+          <ol className={styles.steps}>
+            <li>
+              <span className={styles.stepTitle}>Download a template</span>
+              <span className={styles.templates}>
+                {TEMPLATES.map((t) => (
+                  <a key={t.file} href={templateUrl(t.file)} download className={styles.link}>
+                    {t.title}
+                  </a>
+                ))}
+              </span>
+            </li>
+            <li>
+              <span className={styles.stepTitle}>Fill it in</span>
+              <span className={styles.note}>
+                One row per record. Order: vendors, items, purchase orders with their lines, goods
+                receipts with their lines. Lines go in the same upload as their order or receipt.
+              </span>
+            </li>
+            <li>
+              <span className={styles.stepTitle}>Upload it</span>
+              <span className={styles.note}>
+                Excel (.xlsx) or CSV. Veyra checks the whole upload before anything is imported.
+              </span>
+              <span>
+                <button
+                  type="button"
+                  className={styles.button}
+                  disabled={busy}
+                  onClick={() => input.current?.click()}
+                >
+                  <Icon name="document" size={15} />
+                  {busy && !current ? 'Checking…' : 'Upload records'}
+                </button>
+                <input
+                  ref={input}
+                  type="file"
+                  accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+                  multiple
+                  hidden
+                  onChange={(e) => void upload(e.target.files)}
+                />
+              </span>
+            </li>
+          </ol>
+        )}
         {problem && !current && (
           <p className={styles.problem} role="alert">
             {problem}
@@ -121,7 +135,7 @@ export function ErpData() {
         )}
       </section>
 
-      {current && (
+      {current && canImport && (
         <Preview
           current={current}
           busy={busy}
@@ -135,32 +149,39 @@ export function ErpData() {
         <h2 id="export-title" className={styles.title}>
           Export
         </h2>
-        <ul className={styles.exports}>
-          <li>
-            <span>Business records</span>
-            <a className={styles.link} href={exportUrl('business-records.xlsx')} download>
-              .xlsx
-            </a>
-            <span className={styles.note}>In the import format</span>
-          </li>
-          {(
-            [
-              ['invoices', 'Processed invoices'],
-              ['decisions', 'Decisions'],
-              ['audit', 'Audit trail'],
-            ] as const
-          ).map(([name, label]) => (
-            <li key={name}>
-              <span>{label}</span>
-              <a className={styles.link} href={exportUrl(`${name}.xlsx`)} download>
+        {caps && !canExport && (
+          <p className={styles.note} data-testid="export-unavailable">
+            Exports are not included in your Veyra subscription.
+          </p>
+        )}
+        {canExport && (
+          <ul className={styles.exports}>
+            <li>
+              <span>Business records</span>
+              <a className={styles.link} href={exportUrl('business-records.xlsx')} download>
                 .xlsx
               </a>
-              <a className={styles.link} href={exportUrl(`${name}.csv`)} download>
-                .csv
-              </a>
+              <span className={styles.note}>In the import format</span>
             </li>
-          ))}
-        </ul>
+            {(
+              [
+                ['invoices', 'Processed invoices'],
+                ['decisions', 'Decisions'],
+                ['audit', 'Audit trail'],
+              ] as const
+            ).map(([name, label]) => (
+              <li key={name}>
+                <span>{label}</span>
+                <a className={styles.link} href={exportUrl(`${name}.xlsx`)} download>
+                  .xlsx
+                </a>
+                <a className={styles.link} href={exportUrl(`${name}.csv`)} download>
+                  .csv
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       {history && history.length > 0 && (

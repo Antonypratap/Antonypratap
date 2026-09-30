@@ -29,7 +29,7 @@ npm run check        # format:check → lint → typecheck → test → db:verif
 | `npm run check` | Full gate: format check, lint, typecheck, tests, schema drift, secret scan, health |
 | `npm run secrets:scan` | Fails on committed credentials, tracked `.env` files or server configuration in the web build (pattern-based; see SECURITY §17) |
 | `npm run audit:deps` | `npm audit` of the shipped dependencies, failing on high/critical (CI runs it) |
-| `npm run users -w @veyra/api -- <command>` | Users from the server: `list`, `create --email E --name N --role ADMIN\|FINANCE\|REVIEWER` (password on stdin), `set-password`, `disable`, `enable`, `revoke-sessions (--email E \| --all)` |
+| `npm run users -w @veyra/api -- <command>` | Users from the server: `list`, `create --email E --name N --role ADMIN\|FINANCE\|REVIEWER\|VEYRA_ADMIN` (password on stdin; VEYRA_ADMIN is a Veyra operator, [OPERATIONS](docs/OPERATIONS.md)), `set-password`, `disable`, `enable`, `revoke-sessions (--email E \| --all)` |
 | `npm run typecheck` | `tsc` for every workspace plus `scripts/` |
 | `npm run lint` / `lint:fix` | ESLint (typescript-eslint strict + Prettier-compatible) |
 | `npm run format` / `format:check` | Prettier |

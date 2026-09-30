@@ -6,6 +6,7 @@ import { formatDate, inr } from '../format';
 import { INVOICE_FILTERS, hrefFor, type InvoiceFilter } from '../router';
 import { useProductData } from '../state/data';
 import { STATUS_LABEL, STATUS_TONE } from '../state/status';
+import { hasCapability, useCapabilities } from '../state/capabilities';
 import styles from './Invoices.module.css';
 import { useAllowed } from '../../access/session';
 
@@ -36,7 +37,9 @@ export function Invoices({ filter }: { filter: InvoiceFilter }) {
         inv.filename.toLowerCase().includes(q),
     );
 
-  const canExport = useAllowed('exports.download');
+  // Role (who may) and commercial capability (what the organization has): both are needed.
+  const caps = useCapabilities();
+  const canExport = useAllowed('exports.download') && hasCapability(caps, 'reports.exports');
   return (
     <div className={styles.page}>
       <PageHeader

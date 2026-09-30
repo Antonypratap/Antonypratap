@@ -23,8 +23,27 @@ export type ErpTab = (typeof ERP_TABS)[number];
 export const INVOICE_FILTERS = ['all', 'attention', 'handled'] as const;
 export type InvoiceFilter = (typeof INVOICE_FILTERS)[number];
 
+/** Veyra Operations (Phase 8A): the control plane, a separate surface for VEYRA_ADMIN. */
+export const OPS_SECTIONS = [
+  'overview',
+  'organizations',
+  'commercial',
+  'plans',
+  'capabilities',
+  'usage',
+  'erp',
+  'processing',
+  'exceptions',
+  'system',
+  'security',
+  'audit',
+  'settings',
+] as const;
+export type OpsSection = (typeof OPS_SECTIONS)[number];
+
 export type Route =
   | { name: 'home' }
+  | { name: 'ops'; section: OpsSection; id: string | null }
   | { name: 'inbox' }
   | { name: 'questions' }
   | { name: 'invoices'; filter: InvoiceFilter }
@@ -37,6 +56,14 @@ const isOneOf = <T extends string>(list: readonly T[], v: string | undefined): v
 
 export function parseHash(hash: string): Route {
   const h = hash.replace(/^#/, '');
+  if (h === '/ops' || h.startsWith('/ops/')) {
+    const [section, id] = h.slice('/ops'.length).split('/').filter(Boolean);
+    return {
+      name: 'ops',
+      section: isOneOf(OPS_SECTIONS, section) ? section : 'overview',
+      id: id ? decodeURIComponent(id) : null,
+    };
+  }
   if (!h.startsWith('/app')) return { name: 'home' };
   const [path = '', query = ''] = h.slice('/app'.length).split('?');
   const [section, arg] = path.split('/').filter(Boolean);
@@ -62,6 +89,8 @@ export function hrefFor(route: Route): string {
   switch (route.name) {
     case 'home':
       return '#';
+    case 'ops':
+      return `#/ops/${route.section}${route.id ? `/${encodeURIComponent(route.id)}` : ''}`;
     case 'inbox':
       return '#/app/inbox';
     case 'questions':
@@ -83,7 +112,9 @@ export function hrefFor(route: Route): string {
  * `try_files`), and the app then shows the same screen as `/#/app/inbox`.
  */
 export function hashForPath(pathname: string, search: string): string | null {
-  if (pathname !== '/app' && !pathname.startsWith('/app/')) return null;
+  const product = pathname === '/app' || pathname.startsWith('/app/');
+  const ops = pathname === '/ops' || pathname.startsWith('/ops/');
+  if (!product && !ops) return null;
   return `#${pathname.replace(/\/+$/, '')}${search}`;
 }
 

@@ -33,7 +33,9 @@ export async function testSession(
       name: `Test ${opts.role.toLowerCase()}`,
       email: `${opts.role.toLowerCase()}-${userId.toLowerCase()}@test.invalid`,
       active: true,
-      organizationId: app.veyra.organizationId,
+      // Veyra's operators live in the platform organization (Phase 8A).
+      organizationId:
+        opts.role === 'VEYRA_ADMIN' ? t.PLATFORM_ORGANIZATION_ID : app.veyra.organizationId,
       role: opts.role,
       passwordHash: null,
       createdAt: now,

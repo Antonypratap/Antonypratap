@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import {
+  ApiCapabilitiesSchema,
+  type ApiCapabilities,
   ApiAuditEntrySchema,
   ApiDemoScenarioSchema,
   type ApiDemoScenario,
@@ -47,7 +49,7 @@ const ErrorBody = z.object({
 const UNREACHABLE = 'Veyra could not be reached. Check your connection; it will keep trying.';
 const GATEWAY = new Set([502, 503, 504]);
 
-async function request<S extends z.ZodType>(
+export async function request<S extends z.ZodType>(
   schema: S,
   path: string,
   init?: RequestInit,
@@ -87,7 +89,7 @@ async function request<S extends z.ZodType>(
   return schema.parse(body);
 }
 
-const json = (body: unknown): RequestInit => ({
+export const json = (body: unknown): RequestInit => ({
   method: 'POST',
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify(body),
@@ -97,6 +99,8 @@ const Created = z.object({ documentId: z.string(), invoiceId: z.string() });
 const Moved = z.object({ state: z.string().nullable() }).loose();
 
 export const api = {
+  /** What this organization may use (Phase 8A): availability and usage, never the plan. */
+  capabilities: (): Promise<ApiCapabilities> => request(ApiCapabilitiesSchema, '/capabilities'),
   inbox: (): Promise<ApiInbox> => request(ApiInboxSchema, '/invoices'),
   invoice: (id: string): Promise<ApiInvoiceDetail> =>
     request(ApiInvoiceDetailSchema, `/invoices/${encodeURIComponent(id)}`),

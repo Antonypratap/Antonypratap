@@ -122,7 +122,20 @@ Tests: `src/auth/auth.test.ts`, `src/http/security.test.ts` ("authentication").
 
 ## 6. Authorization (implemented)
 
-**Roles** (`packages/shared/src/auth.ts`). There are three roles and a small, flat permission list:
+**Roles** (`packages/shared/src/auth.ts`). There are three customer roles and a small, flat permission list.
+
+**Veyra's operators are separate** (Phase 8A, [OPERATIONS.md](OPERATIONS.md)):
+
+- `VEYRA_ADMIN` lives in Veyra's own platform organization. It has only `ops.view` and
+  `ops.manage` (Veyra Operations: plans, entitlements, usage, health), and no customer permission.
+- Customer routes refuse it; ops routes refuse every customer role, including ADMIN.
+- It is created only with the server CLI.
+- The database refuses the role in a customer organization, and any customer role in the platform
+  organization.
+- Commercial entitlements ([COMMERCIAL_ENTITLEMENTS.md](COMMERCIAL_ENTITLEMENTS.md)) decide what the
+  organization may use. They never bypass authorization, validation or audit.
+
+The customer roles:
 
 | Permission | ADMIN | FINANCE | REVIEWER |
 |---|:-:|:-:|:-:|
