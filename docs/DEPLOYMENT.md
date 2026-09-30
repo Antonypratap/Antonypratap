@@ -425,6 +425,9 @@ Without `TEST_DATABASE_URL` the API tests fail at once with that instruction. CI
 
 ## 14. Public demo: Vercel frontend and a persistent API host (Phase 7C)
 
+> **Superseded for veyrafy.com by §15** (one image; website, demo and each client as separate
+> services). This section remains valid for a Vercel-hosted frontend.
+
 The target is `https://veyra-demo.vercel.app`:
 
 1. The landing page.
@@ -590,3 +593,42 @@ These depend on Vercel and the API host, so they cannot be proven from this repo
   process used about 505 MB.
 
 The emulation is not Vercel. §14.4 still has to be checked on the real deployment.
+
+## 15. Production on Railway: one image, the website and one instance per client
+
+The step-by-step guide for the account owner is [RUNBOOK-RAILWAY.md](RUNBOOK-RAILWAY.md). This
+section is the technical summary.
+
+| Service | Address | Role | Database |
+|---|---|---|---|
+| website | `veyrafy.com` | `VEYRA_SITE_ONLY=true`: the built web app and its headers only | none |
+| demo | `demo.veyrafy.com` | `VEYRA_ENV=staging`, `VEYRA_DEMO=true`, sample data, PIN sign-in | own PostgreSQL |
+| client | `<slug>.veyrafy.com` (e.g. `toit`) | `VEYRA_ENV=production`, e-mail sign-in | own PostgreSQL |
+
+- **One image** (`apps/api/Dockerfile`) for every service. It builds the web app (`apps/web/dist`)
+  and sets `VEYRA_WEB_DIST`, so each instance serves its web app **and** `/api/v1` from one
+  origin: the session cookie, CSRF and `connect-src 'self'` work unchanged, and nothing depends
+  on `127.0.0.1`. `vite preview` is for local use only, never production.
+- **Static files** (`apps/api/src/http/web-static.ts`): the build is read into memory at start;
+  only exact build files are served (no request path reaches the file system); `/assets/*` is
+  `immutable`, `index.html` and app routes are `no-cache`; encoded dots, separators and NUL are
+  refused; `/api/*` stays the API (JSON 404). Pages get `webSecurityHeaders()`
+  (`apps/web/src/security-headers.ts`, the same policy Vercel and `vite preview` send), API
+  responses the API's own stricter policy.
+- **The website process** (`apps/api/src/site-main.ts`, chosen by `main.ts` before anything else
+  is loaded) reads only `VEYRA_WEB_DIST`, the port, `VEYRA_ENV`, `VEYRA_LOG_LEVEL`,
+  `VEYRA_TRUST_PROXY`. It opens no database, runs no migrations, starts no ERP, storage, sign-in
+  or jobs, and does not need `DATABASE_URL`. `/api/*` answers only `health/live` and `health`.
+- **Addresses** (`apps/web/src/site/host.ts`): `veyrafy.com`/`www` are the website (never the
+  app or a sign-in form); `<valid-slug>.veyrafy.com` is a client address, confirmed by that
+  instance's `GET /api/v1/instance` (`{ name, demo }`, strict); anything else under veyrafy.com,
+  or an address with no instance, shows "This Veyrafy address isn't set up." No client list
+  exists in the web build, so a new client never needs a website release. The address never
+  grants access: each instance serves one organization and checks the session on every call.
+- **Deployed version:** `GET /api/v1/health` returns `version`, the `RAILWAY_GIT_COMMIT_SHA` of
+  the running build (a plain commit hash, or null).
+- **Database TLS:** production requires `sslmode=require` (or `verify-full`) for a database on
+  another host; on Railway use the database's TLS address (RUNBOOK §5.3).
+- **Migrations:** Railway's pre-deploy command `node --import tsx apps/api/src/cli/migrate.ts`
+  on each instance (never on the website).
+

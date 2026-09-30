@@ -238,12 +238,12 @@ The product's own counts are always the workspace's real counts; the 142/131/11 
 
 ## 9. The hosted public demo (Phase 7C)
 
-The public demo is `https://veyra-demo.vercel.app`. How it is hosted is in [DEPLOYMENT.md §14](DEPLOYMENT.md); this section covers what visitors get and how the demo is looked after.
+The public demo is `https://demo.veyrafy.com`: its own service and database with sample data only. How it is hosted is in [DEPLOYMENT.md §15](DEPLOYMENT.md) and [RUNBOOK-RAILWAY.md](RUNBOOK-RAILWAY.md); this section covers what visitors get and how the demo is looked after. The PIN is whatever the account owner set as `VEYRA_DEMO_PIN` on that service (RUNBOOK §5.4); it is never published.
 
 **The journey.**
 
-1. The landing page.
-2. **See Veyrafy in action**.
+1. `https://veyrafy.com` → **See Veyrafy in action** (or open `https://demo.veyrafy.com` directly).
+2. The demo sign-in opens at once (no marketing page on the demo address).
 3. The demo PIN.
 4. `/app/inbox`.
 5. **Demo scenarios**: the seven situations of §8. Answer the questions (**Did the goods arrive?**, **Which supplier sent this invoice?**, the OCR confirmations), then open the audit trail and the ERP data.

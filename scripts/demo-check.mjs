@@ -1,9 +1,10 @@
 /**
- * End-to-end check of a HOSTED demo (Phase 7C, docs/DEPLOYMENT.md §14, docs/DEMO.md §9): the
- * public journey in a real browser against the deployed URL, not localhost.
+ * End-to-end check of the HOSTED demo instance (docs/RUNBOOK-RAILWAY.md, docs/DEMO.md §9): the
+ * public journey in a real browser against the deployed address, not localhost. With
+ * VEYRA_SITE_URL it also checks the public website (Client login, Request access, no app).
  *
- *   VEYRA_DEMO_URL=https://veyra-demo.vercel.app/ VEYRA_DEMO_PIN=… RESET=1 \
- *     node scripts/demo-check.mjs
+ *   VEYRA_DEMO_URL=https://demo.veyrafy.com/ VEYRA_SITE_URL=https://veyrafy.com/ \
+ *     VEYRA_DEMO_PIN=… RESET=1 node scripts/demo-check.mjs
  *
  * RESET=1 first resets the demo (Demo scenarios → Reset demo), which every visitor will notice;
  * without it the scenario outcomes are only checked loosely, because earlier visitors may have
@@ -73,10 +74,12 @@ ok(
   'HSTS on the public site',
 );
 
-// 2. "See Veyrafy in action" → demo PIN → inbox
-await page.getByRole('link', { name: 'See Veyrafy in action' }).first().click();
+// 2. The demo address opens its sign-in directly (no marketing site) → demo PIN → inbox
 await page.getByLabel('PIN').waitFor({ timeout: 15_000 });
-ok(new URL(page.url()).hash.startsWith('#/app'), '"See Veyrafy in action" opens the demo sign-in');
+ok(
+  !(await page.getByText('Invoices, handled.').count()),
+  'the demo address opens the demo sign-in, not the marketing site',
+);
 await page.getByLabel('PIN').fill('000000');
 await page.getByRole('button', { name: 'Open demo' }).click();
 ok(
@@ -228,8 +231,9 @@ ok((await call('POST', '/dev/reset')).status() === 401, 'anonymous demo reset re
 ok((await call('GET', '/system/status')).status() === 401, 'anonymous system status refused (401)');
 const health = await (await call('GET', '/health')).json();
 ok(
-  JSON.stringify(Object.keys(health).sort()) === '["demo","ok"]',
-  'public /health holds statuses only',
+  JSON.stringify(Object.keys(health).sort()) === '["demo","ok","version"]' &&
+    (health.version === null || /^[0-9a-f]{7,40}$/.test(health.version)),
+  `public /health holds statuses and the deployed commit only (${health.version ?? 'unknown'})`,
 );
 const ready = await (await call('GET', '/health/ready')).json();
 ok(
@@ -255,6 +259,38 @@ ok(
     !/postgres(ql)?:\/\/|\bat \S+\.ts:\d+|\/var\/lib\//.test(apiBodies.join('\n')),
   `no PIN, database URL, path or stack trace in ${apiBodies.length} API responses`,
 );
+// 9. Optional: the public website (VEYRA_SITE_URL): marketing, Client login, Request access,
+// and never the application or a sign-in form.
+if (process.env.VEYRA_SITE_URL) {
+  const site = new URL(process.env.VEYRA_SITE_URL).href;
+  const sp = await ctx.newPage();
+  await sp.goto(site, { waitUntil: 'networkidle' });
+  ok(
+    await sp.getByRole('link', { name: 'Client login' }).first().isVisible(),
+    'website: Client login',
+  );
+  ok(
+    (await sp.getByRole('link', { name: 'See Veyrafy in action' }).first().getAttribute('href')) ===
+      new URL(base).origin + '/',
+    'website: "See Veyrafy in action" goes to the demo instance',
+  );
+  await sp.goto(`${site}#/request-access`);
+  ok(
+    await sp.getByText('+91 98800 00990').first().isVisible(),
+    'website: Request access shows the contact number',
+  );
+  await sp.goto(`${site}app/inbox`, { waitUntil: 'networkidle' });
+  ok(
+    (await sp.getByRole('heading', { name: 'Client login' }).count()) === 1 &&
+      !(await sp.getByLabel('PIN').count()) &&
+      !(await sp.getByLabel('Password').count()),
+    'website: an application link shows Client login, never the app or a sign-in form',
+  );
+  const siteInstance = await sp.request.fetch(`${site}api/v1/instance`);
+  ok(siteInstance.status() === 404, 'website: no application API');
+  await sp.close();
+}
+
 ok(csp.length === 0, `no CSP violations ${csp.slice(0, 2).join(' | ')}`);
 const unexpected = errors.filter((e) => !/status of (401|403)/.test(e));
 ok(unexpected.length === 0, `no unexpected console errors ${unexpected.slice(0, 2).join(' | ')}`);
