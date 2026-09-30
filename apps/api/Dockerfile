@@ -1,7 +1,10 @@
 # syntax=docker/dockerfile:1
 #
-# The Veyra API and its worker: one Node.js process (REST API, job runner, pdf.js, Tesseract OCR
-# in WebAssembly, the fake ERP on SQLite). docs/DEPLOYMENT.md "Public demo".
+# The one Veyrafy image (docs/RUNBOOK-RAILWAY.md). The same image runs every service:
+#   - a client instance (demo.veyrafy.com, toit.veyrafy.com): one Node.js process with the REST
+#     API, the job runner, pdf.js, Tesseract OCR in WebAssembly, the fake ERP on SQLite, AND the
+#     built web app on the same origin (VEYRA_WEB_DIST), so the browser calls /api/v1 on itself;
+#   - the public website (veyrafy.com): VEYRA_SITE_ONLY=true, the built web app only.
 #
 #   docker build -f apps/api/Dockerfile -t veyra-api .          # from the repository root
 #
@@ -31,12 +34,17 @@ RUN --mount=type=secret,id=npm_ca,required=false \
 COPY tsconfig.base.json ./
 COPY packages packages
 COPY apps/api apps/api
+COPY apps/web apps/web
 COPY fixtures fixtures
+# The web app, built into apps/web/dist and served by the API (never `vite preview`). The build
+# refuses any VITE_ variable but VITE_API_BASE_URL, which stays unset: same origin.
+RUN npm run build -w @veyra/web
 
 FROM node:22-bookworm-slim
 ENV NODE_ENV=production \
   VEYRA_API_HOST=0.0.0.0 \
-  VEYRA_DATA_DIR=/var/lib/veyra
+  VEYRA_DATA_DIR=/var/lib/veyra \
+  VEYRA_WEB_DIST=/srv/veyra/apps/web/dist
 WORKDIR /srv/veyra
 COPY --from=build --chown=root:root /srv/veyra /srv/veyra
 # The application files belong to root and are read-only for the process; only the data volume
