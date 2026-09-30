@@ -128,7 +128,7 @@ describe('end to end: upload → … → VERIFIED_PENDING_PAYMENT', () => {
     expect(await h.erp.findItemsByHsn('9608')).toHaveLength(1);
   });
 
-  it('S07 ambiguous open PO: the user picks, never Veyra', async () => {
+  it('S07 ambiguous open PO: the user picks, never Veyrafy', async () => {
     h = await createHarness();
     const id = await h.upload('S07');
     const q = (await h.openQuestions(id))[0];

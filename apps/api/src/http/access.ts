@@ -124,7 +124,7 @@ export function registerAccessControl(app: FastifyInstance, o: AccessOptions): v
     if (req.auth) req.log = req.log.child({ userId: req.auth.user.id });
 
     if (isUnsafe(req.method) && crossOrigin(req, o.allowedOrigins))
-      return o.deny(req, reply, 403, 'CSRF_REJECTED', 'This request did not come from Veyra.');
+      return o.deny(req, reply, 403, 'CSRF_REJECTED', 'This request did not come from Veyrafy.');
     if (access === 'public') return;
     if (!req.auth) return o.deny(req, reply, 401, 'UNAUTHENTICATED', 'Sign in to continue.');
     // Two separate surfaces (Phase 8A). Veyra's operators (VEYRA_ADMIN, platform organization)

@@ -7,7 +7,7 @@ export function SiteFooter() {
       <Container className={styles.inner}>
         <Logo />
         <p className={styles.tagline}>Invoices, handled.</p>
-        <p className={styles.copyright}>© {new Date().getFullYear()} Veyra</p>
+        <p className={styles.copyright}>© {new Date().getFullYear()} Veyrafy</p>
       </Container>
     </footer>
   );

@@ -53,7 +53,7 @@ export function Showcase() {
           <h2 id="showcase-title" className={styles.statement}>
             Your team sees the <span className={styles.attentionText}>11</span>.
             <br />
-            Veyra takes care of the <span className={styles.handledText}>131</span>.
+            Veyrafy takes care of the <span className={styles.handledText}>131</span>.
           </h2>
 
           <div

@@ -352,7 +352,7 @@ describe('boolean capabilities are enforced by the server', () => {
     const refused = await a.server.inject({ method: 'GET', url: '/api/v1/exports/invoices.xlsx' });
     expect(refused.statusCode).toBe(403);
     expect(refused.json()).toMatchObject({
-      error: { code: 'NOT_ENTITLED', message: 'This is not included in your Veyra plan.' },
+      error: { code: 'NOT_ENTITLED', message: 'This is not included in your Veyrafy plan.' },
     });
     await setOverride(a, operator, org, 'reports.exports', { enabled: true });
     expect(
@@ -415,7 +415,7 @@ describe('boolean capabilities are enforced by the server', () => {
   });
 });
 
-describe('Veyra Operations is for VEYRA_ADMIN only', () => {
+describe('Veyrafy Operations is for VEYRA_ADMIN only', () => {
   it('every ops route refuses customer ADMIN, FINANCE and REVIEWER; VEYRA_ADMIN reads them', async () => {
     const { a, operator, org } = await open();
     const ops = a.server.routeAccess.filter((r) => r.url.startsWith('/api/v1/ops/'));
@@ -466,7 +466,7 @@ describe('Veyra Operations is for VEYRA_ADMIN only', () => {
       organization: { name: string };
     }>();
     expect(session.permissions.sort()).toEqual(['ops.manage', 'ops.view']);
-    expect(session.organization.name).toBe('Veyra Operations');
+    expect(session.organization.name).toBe('Veyrafy Operations');
     const created = await a.server.inject({
       method: 'POST',
       url: '/api/v1/users',

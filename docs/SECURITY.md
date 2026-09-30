@@ -1,15 +1,15 @@
-# Veyra security and data protection
+# Veyrafy security and data protection
 
 The security foundation added in Phase 6C: the threat model, the controls that are implemented, the
 ones the deployment must provide, and what remains open. It describes what the code does and what
-the tests prove. It is not a certification. Veyra has not been audited or penetration-tested, and
+the tests prove. It is not a certification. Veyrafy has not been audited or penetration-tested, and
 it makes no claim of SOC 2, ISO 27001, GDPR or any other compliance. Do not describe it as "secure";
 describe the controls below.
 
 Words used precisely:
 
-- **Implemented control:** enforced by Veyra's code and covered by tests (file named).
-- **Deployment responsibility:** something Veyra depends on but cannot do itself (TLS, disk
+- **Implemented control:** enforced by Veyrafy's code and covered by tests (file named).
+- **Deployment responsibility:** something Veyrafy depends on but cannot do itself (TLS, disk
   encryption, backups, network exposure). [DEPLOYMENT.md](DEPLOYMENT.md) says how.
 - **Mitigation:** reduces a risk without removing it.
 - **Remaining risk:** known, not addressed yet (the list is in section 21).
@@ -31,7 +31,7 @@ Words used precisely:
 ## 2. Trust boundaries
 
 ```
- Browser ──HTTPS──▶ Reverse proxy (TLS, edge limits) ──▶ Veyra API ──▶ PostgreSQL
+ Browser ──HTTPS──▶ Reverse proxy (TLS, edge limits) ──▶ Veyrafy API ──▶ PostgreSQL
  (untrusted)          deployment responsibility          │   │   └──▶ Document storage (local disk)
                                                          │   └──────▶ ERP connector ──▶ ERP
                                                          └──────────▶ Ollama (optional, local)
@@ -45,7 +45,7 @@ Words used precisely:
 3. **API → document storage.** Only the API reads or writes documents, under keys it makes from
    ids. No web server serves the storage folder.
 4. **API → ERP.** Only the ERP connector talks to the ERP, and only the connector will hold ERP
-   credentials (section 11). The ERP's answers are untrusted input to Veyra's rules.
+   credentials (section 11). The ERP's answers are untrusted input to Veyrafy's rules.
 5. **API → extractor/AI.** Document text goes to the local extractor and, if configured, to Ollama.
    What comes back is untrusted (section 12).
 6. **Operator.** Whoever holds shell or secret-store access is fully trusted. That trust is outside
@@ -124,10 +124,10 @@ Tests: `src/auth/auth.test.ts`, `src/http/security.test.ts` ("authentication").
 
 **Roles** (`packages/shared/src/auth.ts`). There are three customer roles and a small, flat permission list.
 
-**Veyra's operators are separate** (Phase 8A, [OPERATIONS.md](OPERATIONS.md)):
+**Veyrafy's operators are separate** (Phase 8A, [OPERATIONS.md](OPERATIONS.md)):
 
-- `VEYRA_ADMIN` lives in Veyra's own platform organization. It has only `ops.view` and
-  `ops.manage` (Veyra Operations: plans, entitlements, usage, health), and no customer permission.
+- `VEYRA_ADMIN` lives in Veyrafy's own platform organization. It has only `ops.view` and
+  `ops.manage` (Veyrafy Operations: plans, entitlements, usage, health), and no customer permission.
 - Customer routes refuse it; ops routes refuse every customer role, including ADMIN.
 - It is created only with the server CLI.
 - The database refuses the role in a customer organization, and any customer role in the platform
@@ -189,7 +189,7 @@ Authentication uses cookies, so cross-site request forgery is addressed in three
 1. **SameSite=Strict** session cookie.
 2. **Origin check.** Every state-changing request (anything but GET/HEAD/OPTIONS), sign-in
    included, is refused (`403 CSRF_REJECTED`) when:
-   - its `Origin` is not one of Veyra's origins (`VEYRA_PUBLIC_ORIGIN`, `VEYRA_CORS_ORIGINS`); or
+   - its `Origin` is not one of Veyrafy's origins (`VEYRA_PUBLIC_ORIGIN`, `VEYRA_CORS_ORIGINS`); or
    - it has no `Origin` and `Sec-Fetch-Site` says `cross-site` or `same-site`.
 3. **Synchronizer token.**
    - Every state-changing request with a session must send the session's CSRF token in
@@ -211,7 +211,7 @@ requires `https://`.
     `Cross-Origin-Resource-Policy: same-origin`;
   - HSTS when cookies are Secure;
   - `Permissions-Policy` (camera, microphone, geolocation, payment, … all off). Helmet has no
-    Permissions-Policy support, so Veyra sets this header itself.
+    Permissions-Policy support, so Veyrafy sets this header itself.
   - `Cache-Control: no-store` on every API response.
 - **Web app** (`apps/web/src/security-headers.ts`):
   - A strict CSP allowing only same-origin scripts and styles (no inline scripts, no eval,
@@ -317,10 +317,10 @@ only the fake ERP exists.
 
 ## 12. AI and Document Data Handling
 
-Veyra reads invoices with AI-assisted extraction. Where document data goes depends on the
+Veyrafy reads invoices with AI-assisted extraction. Where document data goes depends on the
 configuration:
 
-**LOCAL PROCESSING (default; the only mode Veyra ships with)**
+**LOCAL PROCESSING (default; the only mode Veyrafy ships with)**
 
 - **pdf.js** (text layer) and **Tesseract** (OCR, WebAssembly, bundled English model) run inside
   the API process. Nothing is downloaded at run time and nothing leaves the host.
@@ -373,18 +373,18 @@ configuration:
 
 ## 14. Backups (deployment responsibility)
 
-Veyra does not create, encrypt or store backups. The operator does (DEPLOYMENT.md §10). Required:
+Veyrafy does not create, encrypt or store backups. The operator does (DEPLOYMENT.md §10). Required:
 
 - **Encrypted at rest.**
   - Managed PostgreSQL snapshots are encrypted by most providers; confirm it is on.
   - `pg_dump` files and document copies must be written to encrypted storage, or encrypted before
     copying (for example `age` or `gpg`).
-  - Veyra itself encrypts nothing at rest.
+  - Veyrafy itself encrypts nothing at rest.
 - **Access-restricted.** Backups should be readable by a separate backup role or account, not the
   application's credentials. Backups contain every invoice, answer and account.
 - **Restore-tested.** A weekly automated restore check and a monthly restore into staging.
 - **Provider boundary.** A managed provider is responsible for the physical security and
-  encryption of its storage and snapshots, as its terms state. Veyra's operator is responsible
+  encryption of its storage and snapshots, as its terms state. Veyrafy's operator is responsible
   for:
   - turning backups on;
   - retention;
@@ -444,13 +444,13 @@ The limiter is in-process and in-memory, per client address per minute:
 
 ## 18. Data retention
 
-Veyra keeps everything it stores until an operator removes it:
+Veyrafy keeps everything it stores until an operator removes it:
 
 - documents, invoice data, answers, the workflow audit trail;
 - ended sessions (revoked or expired rows);
 - security events.
 
-It deletes nothing automatically. **No retention period is set in Veyra.** The customer decides
+It deletes nothing automatically. **No retention period is set in Veyrafy.** The customer decides
 it: accounting-record retention rules (for example under Indian GST and Companies Act
 requirements) and privacy obligations apply, and should be confirmed with the customer's advisers.
 Automatic deletion, purging old sessions and exporting or erasing one person's data are future
@@ -461,14 +461,14 @@ work (section 21).
 **Suspected ERP credential compromise:**
 
 1. **Revoke** the credential in the ERP itself, first (disable the API user or key).
-2. **Stop the integration.** Stop the Veyra API or its worker so no ERP writes are attempted.
+2. **Stop the integration.** Stop the Veyrafy API or its worker so no ERP writes are attempted.
    Invoices wait; nothing is lost.
-3. **Preserve evidence.** Export the ERP's own access logs, Veyra's logs for the period,
+3. **Preserve evidence.** Export the ERP's own access logs, Veyrafy's logs for the period,
    `erp_writes`, `audit_events` and `security_events`. Take a database dump before changing
    anything.
 4. **Rotate.** Issue a new credential and store it only in the secret store.
-5. **Investigate.** Compare ERP-side changes against Veyra's `erp_writes` ledger: every legitimate
-   write has an idempotency key there. Anything else was not Veyra.
+5. **Investigate.** Compare ERP-side changes against Veyrafy's `erp_writes` ledger: every legitimate
+   write has an idempotency key there. Anything else was not Veyrafy.
 6. **Restore after verification.** Restart only when the credential is replaced, the source of the
    leak is closed, and unexpected ERP changes are reversed in the ERP.
 
@@ -522,10 +522,10 @@ These are known and **not** addressed by Phase 6C:
 - **Rate limiting is per process and in memory.** It is not distributed, and a restart resets it.
 - **Single organization per deployment.** There is no per-row organization ownership, so a second
   organization in the same database would need schema and authorization changes first.
-- **Documents on local disk,** unencrypted by Veyra. Encryption at rest depends on the disk or
+- **Documents on local disk,** unencrypted by Veyrafy. Encryption at rest depends on the disk or
   volume.
 - **PDFs are served inline from the app origin.** Types are verified and the response is inert,
-  but a flaw in a browser's PDF viewer is outside Veyra's control. Serving documents from a
+  but a flaw in a browser's PDF viewer is outside Veyrafy's control. Serving documents from a
   separate origin would be stronger.
 - **Security events are append-only only when the least-privilege role is used.** A superuser or
   owner role can still change them.

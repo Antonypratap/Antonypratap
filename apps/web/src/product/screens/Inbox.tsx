@@ -40,7 +40,7 @@ export function Inbox() {
               : needsYou > 0
                 ? 'Here’s what needs your attention.'
                 : invoices.length === 0
-                  ? 'Upload an invoice and Veyra takes it from there.'
+                  ? 'Upload an invoice and Veyrafy takes it from there.'
                   : 'Nothing needs you right now.'}
           </p>
         </div>
@@ -54,7 +54,7 @@ export function Inbox() {
         </div>
         <div className={styles.rest}>
           <p className={styles.restLine}>
-            <span className={styles.handledNumber}>{handledByVeyra}</span> handled by Veyra
+            <span className={styles.handledNumber}>{handledByVeyra}</span> handled by Veyrafy
             {decidedByYou > 0 && (
               <span className={styles.decidedByYou}> · {decidedByYou} decided by you</span>
             )}
@@ -90,7 +90,7 @@ export function Inbox() {
               <div>
                 <p className={styles.emptyTitle}>No invoices yet.</p>
                 <p className={styles.emptyText}>
-                  Upload an invoice and Veyra takes it from there.
+                  Upload an invoice and Veyrafy takes it from there.
                   {demo.available && (
                     <>
                       {' '}
@@ -104,7 +104,7 @@ export function Inbox() {
             ) : (
               <div>
                 <p className={styles.emptyTitle}>You&rsquo;re all caught up.</p>
-                <p className={styles.emptyText}>Veyra is handling everything else.</p>
+                <p className={styles.emptyText}>Veyrafy is handling everything else.</p>
               </div>
             )}
           </div>
@@ -150,7 +150,7 @@ export function Inbox() {
       {processing.length > 0 && (
         <section className={styles.decided} aria-labelledby="processing-title">
           <h2 id="processing-title" className={styles.sectionLabel}>
-            Veyra is working on
+            Veyrafy is working on
           </h2>
           <ul className={styles.quietList}>
             {processing.map((inv) => (

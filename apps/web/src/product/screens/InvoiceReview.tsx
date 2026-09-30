@@ -27,12 +27,12 @@ export function InvoiceReview({ id }: { id: string }) {
 }
 
 const WORKING: Partial<Record<ApiInvoiceDetail['state'], string>> = {
-  UPLOADED: 'Veyra is reading the invoice.',
-  EXTRACTING: 'Veyra is reading the invoice.',
-  MATCHING: 'Veyra is checking it against your records.',
-  RESOLVING: 'Veyra is checking it against your records.',
-  VALIDATING: 'Veyra is checking it against your records.',
-  COMMITTING: 'Veyra is recording it in your ERP.',
+  UPLOADED: 'Veyrafy is reading the invoice.',
+  EXTRACTING: 'Veyrafy is reading the invoice.',
+  MATCHING: 'Veyrafy is checking it against your records.',
+  RESOLVING: 'Veyrafy is checking it against your records.',
+  VALIDATING: 'Veyrafy is checking it against your records.',
+  COMMITTING: 'Veyrafy is recording it in your ERP.',
 };
 
 interface LocalAnswer {
@@ -70,7 +70,7 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
   const position = queue.findIndex((i) => i.id === invoice.id);
   const next = nextInQueue(inbox, invoice.id);
   const working = invoice.erp.reconciling
-    ? 'Veyra is confirming the transaction with your business system. Nothing is shown as recorded until it is confirmed.'
+    ? 'Veyrafy is confirming the transaction with your business system. Nothing is shown as recorded until it is confirmed.'
     : WORKING[invoice.state];
 
   // Show a new question as soon as it exists; otherwise the decision just made (or the last one).
@@ -187,7 +187,7 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
           </div>
         </section>
 
-        <aside className={styles.panel} aria-label="Veyra review">
+        <aside className={styles.panel} aria-label="Veyrafy review">
           <dl className={styles.facts}>
             <div className={styles.factWide}>
               <dt>Supplier</dt>
@@ -275,7 +275,7 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
               <section className={styles.question} aria-labelledby="failed-title">
                 <p className={styles.questionLabel}>Needs your attention</p>
                 <h2 id="failed-title" className={styles.questionTitle}>
-                  Veyra couldn&rsquo;t finish this invoice.
+                  Veyrafy couldn&rsquo;t finish this invoice.
                 </h2>
                 <dl className={styles.compare}>
                   <div data-tone="attention">
@@ -345,7 +345,7 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
                 ) : working ? (
                   <p className={styles.doneState} data-working="true">
                     <span className={styles.pulse} aria-hidden="true" />
-                    Veyra is re-checking the invoice. {working}
+                    Veyrafy is re-checking the invoice. {working}
                   </p>
                 ) : null}
                 <div className={styles.doneActions}>
@@ -420,7 +420,7 @@ function QuestionBlock({ question, resolved }: { question: ApiQuestion; resolved
       )}
       {resolved ? (
         <details className={styles.why}>
-          <summary>Why Veyra asked</summary>
+          <summary>Why Veyrafy asked</summary>
           <ul>
             {question.why.map((w) => (
               <li key={w}>{w}</li>
@@ -429,7 +429,7 @@ function QuestionBlock({ question, resolved }: { question: ApiQuestion; resolved
         </details>
       ) : (
         <div className={styles.whyOpen}>
-          <h3 className={styles.whyTitle}>Why Veyra needs you</h3>
+          <h3 className={styles.whyTitle}>Why Veyrafy needs you</h3>
           <ul>
             {question.why.map((w) => (
               <li key={w}>{w}</li>
@@ -460,8 +460,8 @@ function Ready({ invoice }: { invoice: ApiInvoiceDetail }) {
       </p>
       <p className={styles.readyText}>
         {invoice.status === 'handled'
-          ? 'Veyra resolved this invoice and recorded the transaction. No action required.'
-          : 'Veyra checked the invoice again after your decision and recorded the transaction.'}
+          ? 'Veyrafy resolved this invoice and recorded the transaction. No action required.'
+          : 'Veyrafy checked the invoice again after your decision and recorded the transaction.'}
       </p>
       {evidence.length > 0 && (
         <dl className={styles.evidence}>

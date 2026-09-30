@@ -11,17 +11,17 @@ export function Philosophy() {
   return (
     <section id="principle" className={styles.section} aria-labelledby="philosophy-title">
       <Container className={styles.inner}>
-        <Eyebrow tone="inverse">The Veyra principle</Eyebrow>
+        <Eyebrow tone="inverse">The Veyrafy principle</Eyebrow>
         <h2 id="philosophy-title" className={styles.lead}>
-          When something isn&rsquo;t right, Veyra doesn&rsquo;t pretend it is.
+          When something isn&rsquo;t right, Veyrafy doesn&rsquo;t pretend it is.
         </h2>
         <Reveal>
           <p className={styles.statement}>
             <span className={styles.line}>
-              If it&rsquo;s clear, Veyra <span className={styles.handles}>handles it.</span>
+              If it&rsquo;s clear, Veyrafy <span className={styles.handles}>handles it.</span>
             </span>
             <span className={styles.line}>
-              If it&rsquo;s not, Veyra <span className={styles.asks}>asks.</span>
+              If it&rsquo;s not, Veyrafy <span className={styles.asks}>asks.</span>
             </span>
           </p>
         </Reveal>

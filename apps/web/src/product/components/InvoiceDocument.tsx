@@ -73,7 +73,7 @@ function MarkedField({
 }
 
 /**
- * The invoice as Veyra read it, drawn in HTML: every value here comes from the stored reading of
+ * The invoice as Veyrafy read it, drawn in HTML: every value here comes from the stored reading of
  * the uploaded document. Values a question is about are marked; unclear ones are blurred.
  */
 export function InvoiceDocument({ invoice }: { invoice: ApiInvoiceDetail }) {
@@ -87,7 +87,7 @@ export function InvoiceDocument({ invoice }: { invoice: ApiInvoiceDetail }) {
     <article
       className={styles.paper}
       data-photo={invoice.source === 'Photo'}
-      aria-label={`Invoice ${invoice.number ?? ''} as read by Veyra`}
+      aria-label={`Invoice ${invoice.number ?? ''} as read by Veyrafy`}
     >
       <span className={styles.sample}>As read</span>
 

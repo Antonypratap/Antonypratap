@@ -300,7 +300,7 @@ export const DOCUMENT_SAMPLES: readonly DocumentSample[] = [
   {
     file: 'D12-missing-receipt.pdf',
     kind: 'text-pdf',
-    title: 'No goods receipt recorded for the order: Veyra asks whether the goods arrived',
+    title: 'No goods receipt recorded for the order: Veyrafy asks whether the goods arrived',
     invoices: [
       {
         vendor: APEX,

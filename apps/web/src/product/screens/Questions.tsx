@@ -18,10 +18,13 @@ export function Questions() {
       {n > 0 ? (
         <PageHeader
           title={`${n} ${n === 1 ? 'decision needs' : 'decisions need'} you.`}
-          sub="Everything else is handled by Veyra."
+          sub="Everything else is handled by Veyrafy."
         />
       ) : (
-        <PageHeader title="Nothing needs your decision." sub="Veyra is taking care of the rest." />
+        <PageHeader
+          title="Nothing needs your decision."
+          sub="Veyrafy is taking care of the rest."
+        />
       )}
 
       {n > 0 && (
@@ -37,7 +40,7 @@ export function Questions() {
                 </span>
                 <span className={styles.what}>
                   <span className={styles.kind}>
-                    {inv.question ? ASK_LABEL[inv.question.kind] : 'Veyra couldn’t finish'}
+                    {inv.question ? ASK_LABEL[inv.question.kind] : 'Veyrafy couldn’t finish'}
                   </span>
                   <span className={styles.summary}>
                     {inv.question?.headline ?? 'Check the file and try again, or reject it.'}

@@ -1,12 +1,12 @@
 # Production readiness
 
-What Veyra's runtime can and cannot do today. Read before deploying; how to deploy is in
+What Veyrafy's runtime can and cannot do today. Read before deploying; how to deploy is in
 [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## In place
 
 - **Database:**
-  - PostgreSQL for the Veyra application database.
+  - PostgreSQL for the Veyrafy application database.
   - A connection pool, closed on shutdown; statement and connection timeouts.
   - Versioned migrations, explicit in production.
   - A verified, non-destructive import from the earlier SQLite database.
@@ -66,10 +66,10 @@ What Veyra's runtime can and cannot do today. Read before deploying; how to depl
 ## Where SQLite remains
 
 - **The fake ERP** (`packages/fake-erp`, `fake_erp.db`): a development and demo ERP behind the
-  `ErpConnector` boundary. It is not part of the Veyra application database.
+  `ErpConnector` boundary. It is not part of the Veyrafy application database.
 - **The one-time import tool** (`db:migrate-from-sqlite`): it only *reads* an old `veyra.db`.
 
-No Veyra workflow data (invoices, documents, questions, answers, audit, jobs, imports, ERP write
+No Veyrafy workflow data (invoices, documents, questions, answers, audit, jobs, imports, ERP write
 log, settings) is stored in SQLite any more.
 
 ## Deliberately deferred

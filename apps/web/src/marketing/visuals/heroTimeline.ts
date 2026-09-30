@@ -1,7 +1,7 @@
 /**
  * The hero's staged story, as a pure function of a step counter:
  *   step 1      an invoice arrives, with the work attached to it
- *   steps 2–7   Veyra takes that work away, one task at a time; one task turns into a decision
+ *   steps 2–7   Veyrafy takes that work away, one task at a time; one task turns into a decision
  *   step 8      the decision is put in front of the team
  *   step 9      settled: the work is gone, one decision is left
  * All data is illustrative.

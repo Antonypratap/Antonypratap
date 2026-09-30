@@ -4,7 +4,7 @@ import type { ApiCapabilities } from '@veyra/shared';
 import { hasCapability } from '../product/state/capabilities';
 import { OPS_SECTIONS, hashForPath, hrefFor, parseHash } from '../product/router';
 
-describe('Veyra Operations routes (Phase 8A)', () => {
+describe('Veyrafy Operations routes (Phase 8A)', () => {
   it('every section has its own address, separate from the customer application', () => {
     for (const section of OPS_SECTIONS) {
       const href = hrefFor({ name: 'ops', section, id: null });

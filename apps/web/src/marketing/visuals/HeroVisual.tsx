@@ -3,7 +3,7 @@ import { HERO_STEPS, heroStateAt } from './heroTimeline';
 import styles from './HeroVisual.module.css';
 
 /**
- * Hero: one invoice arrives with the work attached to it. Veyra takes the work away,
+ * Hero: one invoice arrives with the work attached to it. Veyrafy takes the work away,
  * line by line. What is left is the one decision that belongs to a person. Plays once.
  */
 export function HeroVisual() {
@@ -14,7 +14,7 @@ export function HeroVisual() {
     <figure
       className={styles.figure}
       data-arrived={s.arrived}
-      aria-label="Illustration: an invoice arrives with six tasks attached. Veyra removes five of them. One decision is left for the finance team."
+      aria-label="Illustration: an invoice arrives with six tasks attached. Veyrafy removes five of them. One decision is left for the finance team."
     >
       <div className={styles.stack} aria-hidden="true">
         <span className={styles.stackSheet} />

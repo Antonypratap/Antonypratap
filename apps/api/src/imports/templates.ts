@@ -6,10 +6,10 @@ const IMPORT_ORDER =
 
 function instructions(tables: readonly TableKey[], title: string): OutSheet {
   const rows: OutCell[][] = [
-    [{ text: `Veyra business records: ${title}`, bold: true }],
+    [{ text: `Veyrafy business records: ${title}`, bold: true }],
     [
       {
-        text: 'Fill in one row per record on the sheet(s) of this workbook, then upload the file in Veyra under ERP → Import and export.',
+        text: 'Fill in one row per record on the sheet(s) of this workbook, then upload the file in Veyrafy under ERP → Import and export.',
         wrap: true,
       },
     ],
@@ -21,13 +21,13 @@ function instructions(tables: readonly TableKey[], title: string): OutSheet {
     ],
     [
       {
-        text: 'Veyra checks the whole upload before anything is imported. If any row has a problem, nothing is imported: fix the rows it lists and upload again.',
+        text: 'Veyrafy checks the whole upload before anything is imported. If any row has a problem, nothing is imported: fix the rows it lists and upload again.',
         wrap: true,
       },
     ],
     [
       {
-        text: 'Records that already exist with the same details are skipped. Veyra never changes an existing record.',
+        text: 'Records that already exist with the same details are skipped. Veyrafy never changes an existing record.',
         wrap: true,
       },
     ],

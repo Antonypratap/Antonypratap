@@ -52,7 +52,7 @@ export interface VeyraDatabase {
 export class PendingMigrationsError extends Error {
   constructor(readonly pending: string[]) {
     super(
-      `The Veyra database has ${pending.length} pending migration(s): ${pending.join(', ')}. Run "npm run db:migrate -w @veyra/api" first.`,
+      `The Veyrafy database has ${pending.length} pending migration(s): ${pending.join(', ')}. Run "npm run db:migrate -w @veyra/api" first.`,
     );
     this.name = 'PendingMigrationsError';
   }

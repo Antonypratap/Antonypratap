@@ -1,4 +1,4 @@
-# Veyra — Business Rules (V1)
+# Veyrafy — Business Rules (V1)
 
 Status: **Approved (rev 3)**. This file is the specification for the deterministic core. Every rule here gets a unit test named after its code.
 
@@ -218,7 +218,7 @@ Safety net: if no question is open but some rule is `fail` / `not_evaluated`, th
 | R08 `TAX_TYPE` | intrinsic | Vendor state = place of supply ⇒ IGST = 0 and CGST = SGST; otherwise CGST = SGST = 0 | — |
 | R09 `HEADER_TOTALS` | intrinsic | Header taxable = Σ lines; each tax head = Σ (or group sum); total per §4.1 | — |
 | R10 `ROUND_OFF` | intrinsic | Round-off per §4.1 | `NO_ROUND_OFF_LINE` |
-| R11 `NOT_DUPLICATE` | intrinsic | No ERP purchase invoice and no other non-REJECTED Veyra invoice with the same (vendor GSTIN, normalised invoice no, FY). Re-checked at commit. | — |
+| R11 `NOT_DUPLICATE` | intrinsic | No ERP purchase invoice and no other non-REJECTED Veyrafy invoice with the same (vendor GSTIN, normalised invoice no, FY). Re-checked at commit. | — |
 | R12 `VENDOR_RESOLVED` | master | Vendor found or staged | — |
 | R13 `VENDOR_ACTIVE` | master | Vendor status active (or reactivation staged). Fail → **`BD_VENDOR_INACTIVE`** (not VF) | — |
 | R14 `ITEMS_RESOLVED` | master | Every line has an item (found / staged-approved) | — |

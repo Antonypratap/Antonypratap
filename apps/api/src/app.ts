@@ -128,7 +128,7 @@ export async function createApp(config: AppConfig) {
   mkdirSync(config.dataDir, { recursive: true });
   const url = config.database?.url ?? null;
   if (!url && environment !== 'development')
-    throw new Error('The Veyra database URL (DATABASE_URL) is required outside development.');
+    throw new Error('The Veyrafy database URL (DATABASE_URL) is required outside development.');
   if (!url && process.env.VITEST)
     throw new Error('Tests run against PostgreSQL: pass a database URL (see TEST_DATABASE_URL).');
   const database = await openVeyraDb({

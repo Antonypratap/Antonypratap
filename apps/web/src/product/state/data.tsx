@@ -14,7 +14,7 @@ import { api, ApiError } from '../api/client';
 import { notify } from '../../feedback/toasts';
 
 /**
- * One source of truth for the product: the Veyra API. Inbox counts, the question queue, invoice
+ * One source of truth for the product: the Veyrafy API. Inbox counts, the question queue, invoice
  * statuses and history all come from the same responses, so they always agree. While anything is
  * processing the data refreshes every second; otherwise every few seconds, and not at all while
  * the tab is hidden. A timed refresh that finds nothing changed changes nothing: no re-render and
@@ -76,7 +76,7 @@ export function ProductDataProvider({ children }: { children: ReactNode }) {
         setAnswered(nextAnswered);
         if (!first) setVersion((v) => v + 1);
       } catch (e) {
-        setError(e instanceof ApiError ? e.message : 'Veyra could not be reached.');
+        setError(e instanceof ApiError ? e.message : 'Veyrafy could not be reached.');
         // One toast for the outage (not one per poll), and one when it is back.
         if (e instanceof ApiError && e.code === 'OFFLINE' && !offline.current) {
           offline.current = true;

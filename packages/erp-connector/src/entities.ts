@@ -83,7 +83,7 @@ export const VendorSchema = z
     if (v.nameNormalized !== normalizeName(v.name))
       issue(ctx, 'nameNormalized must equal normalizeName(name)');
     if ((v.origin === 'created_by_veyra') !== (v.sourceInvoiceId !== null)) {
-      issue(ctx, 'sourceInvoiceId is set exactly for records created by Veyra');
+      issue(ctx, 'sourceInvoiceId is set exactly for records created by Veyrafy');
     }
   });
 export type Vendor = z.infer<typeof VendorSchema>;
@@ -107,7 +107,7 @@ export const ItemSchema = z
     if (i.nameNormalized !== normalizeName(i.name))
       issue(ctx, 'nameNormalized must equal normalizeName(name)');
     if ((i.origin === 'created_by_veyra') !== (i.sourceInvoiceId !== null)) {
-      issue(ctx, 'sourceInvoiceId is set exactly for records created by Veyra');
+      issue(ctx, 'sourceInvoiceId is set exactly for records created by Veyrafy');
     }
   });
 export type Item = z.infer<typeof ItemSchema>;
@@ -124,7 +124,7 @@ export const VendorItemAliasSchema = z
   })
   .superRefine((a, ctx) => {
     if ((a.origin === 'created_by_veyra') !== (a.sourceInvoiceId !== null)) {
-      issue(ctx, 'sourceInvoiceId is set exactly for records created by Veyra');
+      issue(ctx, 'sourceInvoiceId is set exactly for records created by Veyrafy');
     }
   });
 export type VendorItemAlias = z.infer<typeof VendorItemAliasSchema>;
@@ -202,7 +202,7 @@ export const GrnSchema = z
     if (viaVeyra !== (g.confirmedByUserId !== null) || viaVeyra !== (g.sourceInvoiceId !== null)) {
       issue(
         ctx,
-        'GRNs created via Veyra record the confirming user and source invoice; seeded GRNs do not',
+        'GRNs created via Veyrafy record the confirming user and source invoice; seeded GRNs do not',
       );
     }
   });

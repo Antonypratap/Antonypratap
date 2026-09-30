@@ -1,17 +1,17 @@
-# Veyra Operations
+# Veyrafy Operations
 
-**Phase 8A.** Veyra has two separate surfaces:
+**Phase 8A.** Veyrafy has two separate surfaces:
 
-| | Customer application | Veyra Operations (control plane) |
+| | Customer application | Veyrafy Operations (control plane) |
 |---|---|---|
-| Who | the customer's users (ADMIN, FINANCE, REVIEWER) | the Veyra team (VEYRA_ADMIN) |
+| Who | the customer's users (ADMIN, FINANCE, REVIEWER) | the Veyrafy team (VEYRA_ADMIN) |
 | Where | `/#/app/…` | `/#/ops/…` (or `/ops/…` as a path) |
 | API | `/api/v1/…` | `/api/v1/ops/…` |
 | Does | processes and resolves invoices | operates the customer: plans, entitlements, usage, platform health |
 
 **The rules are enforced by the server**, not just hidden in the browser:
 
-- **VEYRA_ADMIN is a separate platform account.** It lives in Veyra's own platform organization.
+- **VEYRA_ADMIN is a separate platform account.** It lives in Veyrafy's own platform organization.
   It has the two ops permissions and nothing else: it cannot see invoices, documents or the
   customer's audit trail. Customer routes refuse it.
 - **A customer ADMIN never gets VEYRA_ADMIN.** The product's user API cannot create one, and the
@@ -93,7 +93,7 @@ limits. It also cannot make the ERP do something it does not support (see
 The customer application reads `GET /api/v1/capabilities`. That returns availability and, for
 limits, usage. It never returns plans, overrides or reasons.
 
-- A feature that is not included is hidden, or shown plainly as "not included in your Veyra
+- A feature that is not included is hidden, or shown plainly as "not included in your Veyrafy
   subscription". There is no upsell.
 - A limit that is reached is refused by the server with a business message, for example "Monthly
   invoice processing limit reached.", shown on the page.

@@ -1,19 +1,12 @@
 .logo {
   display: inline-flex;
   align-items: center;
-  gap: 0.5625rem;
+  gap: 0.5rem;
 }
 
 .mark {
-  width: 1.5rem;
-  height: 1.5rem;
-}
-
-.stroke {
-  fill: none;
-  stroke-width: 2.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  width: 1.625rem;
+  height: 1.625rem;
 }
 
 .word {
@@ -22,21 +15,32 @@
   letter-spacing: -0.03em;
 }
 
-.ink .tile {
-  fill: var(--color-ink);
+/* Brand colours of the mark (the logo artwork): slate tints, navy, and the verification green. */
+.s1 {
+  stroke: #b3b8c6;
 }
-.ink .stroke {
-  stroke: var(--color-canvas);
+.s2 {
+  stroke: #636b81;
 }
+.s3 {
+  stroke: #13213f;
+}
+.check {
+  stroke: #03a874;
+}
+
 .ink .word {
   color: var(--color-ink);
 }
 
-.inverse .tile {
-  fill: var(--color-inverse-ink);
+.inverse .s1 {
+  stroke: #5b6275;
 }
-.inverse .stroke {
-  stroke: var(--color-inverse);
+.inverse .s2 {
+  stroke: #9aa1b3;
+}
+.inverse .s3 {
+  stroke: #e8ebf2;
 }
 .inverse .word {
   color: var(--color-inverse-ink);

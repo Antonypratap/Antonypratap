@@ -77,7 +77,7 @@ function invoiceHtml(inv: SampleInvoice, sample: DocumentSample): string {
     ${tot('Round Off', inv.roundOff)}
     <tr><td><b>Grand Total</b></td><td class="r">${total}</td></tr>
   </table>
-  <p class="foot">This is a computer-generated invoice. Synthetic sample for Veyra testing (${esc(
+  <p class="foot">This is a computer-generated invoice. Synthetic sample for Veyrafy testing (${esc(
     sample.file,
   )}).</p>
 </section>`;

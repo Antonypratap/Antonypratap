@@ -1,4 +1,4 @@
-# Veyra — Demo Data & Scenarios (V1)
+# Veyrafy — Demo Data & Scenarios (V1)
 
 Status: **Approved (rev 3)**. The numbers in this file were verified with a script: integer paise, GST half-up to the paisa. They become the fixture `*.expected.json` files and the API integration tests (Phase 10).
 
@@ -9,7 +9,7 @@ Status: **Approved (rev 3)**. The numbers in this file were verified with a scri
 
 ## 1. Seed data
 
-### 1.1 Veyra
+### 1.1 Veyrafy
 
 | Setting | Value |
 |---|---|
@@ -124,7 +124,7 @@ Buyer GSTIN and place of supply are Karnataka (29) on every invoice unless state
 2. Upload **S01**. It moves UPLOADED → … → VERIFIED automatically. Open Checks: all green.
 3. Upload **S03**. Show the new vendor and the auto-PO staged with the `auto_created_from_invoice` tag, and R21–R24 as N/A. Answer the GRN question; the invoice verifies. Show the ERP browser: vendor, PO and GRN, all tagged with their origin.
 4. Upload **S04**. It is above the threshold, so a PO approval question appears. Approve, then confirm the GRN.
-5. Upload **S07**. The vendor has two open POs, so Veyra asks instead of creating one.
+5. Upload **S07**. The vendor has two open POs, so Veyrafy asks instead of creating one.
 6. Upload **S09**. A 1-paisa difference blocks it; show that there is no override.
 7. Upload **S14**. Correct the blurry total; the invoice verifies.
 8. Upload **S17**. Resolve the ambiguous vendor.
@@ -149,10 +149,10 @@ fixtures/invoices/
 npm run demo -- --reset      # API on :8787 (fixture extractor, DEMO.md seed) + web on :5173
 ```
 
-1. Open http://localhost:5173/, click **See Veyra in action** and enter the demo PIN (once per browser tab; see README). Then click **Upload invoice** in the Inbox. Choose files from `fixtures/invoices/`.
+1. Open http://localhost:5173/, click **See Veyrafy in action** and enter the demo PIN (once per browser tab; see README). Then click **Upload invoice** in the Inbox. Choose files from `fixtures/invoices/`.
 2. Each invoice shows as *Processing*, then either *Handled* (S01, S02) or *Needs your attention*.
 3. Open one from the queue, answer the question (for example S08: **Record the receipt**, date and quantities), and watch it resume, commit and become *Ready* (`VERIFIED_PENDING_PAYMENT`).
-4. **ERP** shows the records Veyra wrote, tagged by origin; **Audit** shows every step, Veyra vs You.
+4. **ERP** shows the records Veyrafy wrote, tagged by origin; **Audit** shows every step, Veyrafy vs You.
 
 "Today" is the real date in Asia/Kolkata. The scenarios are dated September 2026 and the demo assumes it runs on or after 28 Sep 2026 (R05 rejects future-dated invoices).
 
@@ -163,7 +163,7 @@ A business with no ERP connection brings its records in Excel. The demo files in
 ```
 fixtures/imports/
   templates/                      Vendors.xlsx, Items.xlsx, PurchaseOrders.xlsx, PurchaseOrderLines.xlsx,
-                                  GoodsReceipts.xlsx, GoodsReceiptLines.xlsx, Veyra-Master-Data-Import.xlsx
+                                  GoodsReceipts.xlsx, GoodsReceiptLines.xlsx, Veyrafy-Master-Data-Import.xlsx
   Demo-1-Vendors.xlsx             7 vendors
   Demo-2-Items.xlsx               7 items
   Demo-3-PurchaseOrders.xlsx      13 purchase orders with their lines
@@ -179,17 +179,17 @@ npm run demo -- --empty      # starts from a business with only its company reco
 
 1. **ERP** → *Import business records* (or the **Import and export** tab). The Vendors tab is empty.
 2. Upload `Demo-Items-With-Errors.xlsx`: *Fix these and upload again*, with each problem by sheet and row. There is no import button; nothing changed.
-3. Upload `Demo-1-Vendors.xlsx`: *Check before importing* → *Import 7 records* → *Import complete*. Repeat with files 2, 3 and 4, in that order (uploading 3 before 1 and 2 fails: its vendors and items are unknown, and Veyra never creates them).
+3. Upload `Demo-1-Vendors.xlsx`: *Check before importing* → *Import 7 records* → *Import complete*. Repeat with files 2, 3 and 4, in that order (uploading 3 before 1 and 2 fails: its vendors and items are unknown, and Veyrafy never creates them).
 4. Upload `Demo-1-Vendors.xlsx` again: every row *already exists*; nothing to import.
-5. **ERP** shows the records as *Imported by you*. **Audit** → *Business records* shows each upload and import (You) and what was added (Veyra).
-6. **Inbox** → upload `S08-missing-grn.pdf`. It matches the imported vendor and PO-2026-0104, which was imported without a receipt, so Veyra asks *Did the goods arrive?* Record the receipt; the invoice becomes *Ready* (`VERIFIED_PENDING_PAYMENT`). `S01-clean.pdf` is *Handled* with no question.
+5. **ERP** shows the records as *Imported by you*. **Audit** → *Business records* shows each upload and import (You) and what was added (Veyrafy).
+6. **Inbox** → upload `S08-missing-grn.pdf`. It matches the imported vendor and PO-2026-0104, which was imported without a receipt, so Veyrafy asks *Did the goods arrive?* Record the receipt; the invoice becomes *Ready* (`VERIFIED_PENDING_PAYMENT`). `S01-clean.pdf` is *Handled* with no question.
 7. **Invoices** / **Audit** → *Export*, or **ERP** → *Import and export* → *Export*: processed invoices, decisions and the audit trail as .xlsx or .csv; business records as .xlsx in the import format.
 
 The same run is an automated test: `apps/api/src/imports/excel-to-invoice.test.ts`.
 
 ## 7. Real documents (Phase 3D)
 
-`fixtures/documents/` holds synthetic invoices (made up, matching the §1 seed) that go through the **real** extractor: PDF text layer or Tesseract OCR. Start the demo as usual (`npm run demo`), open http://localhost:5173/, click **See Veyra in action** and enter the demo PIN, then upload from the Inbox.
+`fixtures/documents/` holds synthetic invoices (made up, matching the §1 seed) that go through the **real** extractor: PDF text layer or Tesseract OCR. Start the demo as usual (`npm run demo`), open http://localhost:5173/, click **See Veyrafy in action** and enter the demo PIN, then upload from the Inbox.
 
 | File | Kind | What happens |
 |---|---|---|
@@ -221,7 +221,7 @@ A scenario only uploads one synthetic invoice from `fixtures/documents/` through
 | Ambiguous supplier | `D09-ambiguous-vendor.pdf` | *Your decision is needed*: **Which supplier sent this invoice?** with both GSTINs → choose → ready |
 | Quantity mismatch | `D07-quantity-mismatch.pdf` | *Check needed*: invoiced 120 vs ordered 100; no override |
 | Rate mismatch | `D08-rate-mismatch.pdf` | *Check needed*: invoice ₹150.00, PO ₹145.00, difference ₹5.00; no override |
-| Photo needs confirmation | `D04-photo.png` (OCR) | *Veyra needs you to confirm*: **Veyra read** 29AAACS1111A176, not a valid GSTIN; **Why Veyra needs you** → enter / confirm → ready |
+| Photo needs confirmation | `D04-photo.png` (OCR) | *Veyrafy needs you to confirm*: **Veyrafy read** 29AAACS1111A176, not a valid GSTIN; **Why Veyrafy needs you** → enter / confirm → ready |
 | Two invoices in one file | `D11-two-invoices.pdf` | Stopped: "Upload each invoice as its own file." |
 
 Starting a scenario again opens the same invoice (uploads are unique by file).
@@ -229,9 +229,9 @@ Starting a scenario again opens the same invoice (uploads are unique by file).
 **The 3-minute demo**
 
 1. Homepage: "142 invoices received, 131 handled, 11 need you" (an illustrative week). *Your team doesn't work through 142 invoices; they deal with the 11 that need them.*
-2. **See Veyra in action** → demo PIN → Inbox.
+2. **See Veyrafy in action** → demo PIN → Inbox.
 3. **Demo scenarios → Clean invoice**: the invoice is read, matched and recorded. **Invoice ready**, no action required. **Open the ERP record** (the purchase invoice against its PO), then **See what happened** (the audit: VEYRA read, matched supplier and order, validated, recorded the ERP transaction). Back to the Inbox.
-4. **Demo scenarios → Reset demo**, then **Photo needs confirmation**: Veyra shows what it read and why it needs you. Answer (enter the GSTIN, confirm the order number, pick the supplier); after each answer *You decided*, Veyra re-checks, and the invoice ends **Invoice ready**.
+4. **Demo scenarios → Reset demo**, then **Photo needs confirmation**: Veyrafy shows what it read and why it needs you. Answer (enter the GSTIN, confirm the order number, pick the supplier); after each answer *You decided*, Veyrafy re-checks, and the invoice ends **Invoice ready**.
 
 The product's own counts are always the workspace's real counts; the 142/131/11 figures appear only on the homepage, labelled as illustrative.
 
@@ -243,7 +243,7 @@ The public demo is `https://veyra-demo.vercel.app`. How it is hosted is in [DEPL
 **The journey.**
 
 1. The landing page.
-2. **See Veyra in action**.
+2. **See Veyrafy in action**.
 3. The demo PIN.
 4. `/app/inbox`.
 5. **Demo scenarios**: the seven situations of §8. Answer the questions (**Did the goods arrive?**, **Which supplier sent this invoice?**, the OCR confirmations), then open the audit trail and the ERP data.

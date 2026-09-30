@@ -32,14 +32,14 @@ describe('API client: an unreachable API', () => {
   });
 
   it.each([502, 503, 504])(
-    'a gateway %i for an API that is down is OFFLINE (the proxy answers, not Veyra)',
+    'a gateway %i for an API that is down is OFFLINE (the proxy answers, not Veyrafy)',
     async (status) => {
       respond(status, '<html>Bad Gateway</html>');
       expect((await failure()).code).toBe('OFFLINE');
     },
   );
 
-  it('a Veyra error body keeps its own code, even with 503', async () => {
+  it('a Veyrafy error body keeps its own code, even with 503', async () => {
     respond(503, JSON.stringify({ error: { code: 'NOT_READY', message: 'Not ready yet.' } }));
     const e = await failure();
     expect(e.code).toBe('NOT_READY');

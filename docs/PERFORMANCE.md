@@ -1,6 +1,6 @@
-# Veyra performance
+# Veyrafy performance
 
-Phase 7 measured Veyra first, changed only what the measurements pointed at, and measured again
+Phase 7 measured Veyrafy first, changed only what the measurements pointed at, and measured again
 with the same harness. This page covers the method, the numbers before and after, what changed and
 why, and what is still slow. Every number here comes from `apps/api/bench/results/*.json` and can
 be reproduced with the commands in §2.
@@ -28,7 +28,7 @@ be reproduced with the commands in §2.
 | Memory | 16 GB |
 | Node.js | 22.22.2 |
 | PostgreSQL | 16.13 on the same host, default configuration (`shared_buffers` 128 MB, `work_mem` 4 MB, `max_connections` 100, `synchronous_commit` on) |
-| Veyra pool | node-postgres, `VEYRA_DB_POOL_MAX` 10 (default) |
+| Veyrafy pool | node-postgres, `VEYRA_DB_POOL_MAX` 10 (default) |
 | ERP | the fake ERP (SQLite, WAL, on the same disk) |
 | Network | none: the harness calls the API in-process (`fastify.inject`), so API numbers exclude TCP and TLS |
 
@@ -102,8 +102,8 @@ Each job and each upload or answer request now logs **one** line with a stage su
 **Photo or scan: 1.15 s p50.** OCR (Tesseract) 0.97 s, image preparation 0.13 s, the rest as
 above.
 
-**Veyra time versus ERP time versus OCR time:** for a digital invoice, Veyra's own processing is
-about 45 ms, the fake ERP 1.5–4 ms, and OCR 0. For a photo: Veyra about 45 ms, ERP about 1 ms, and
+**Veyrafy time versus ERP time versus OCR time:** for a digital invoice, Veyrafy's own processing is
+about 45 ms, the fake ERP 1.5–4 ms, and OCR 0. For a photo: Veyrafy about 45 ms, ERP about 1 ms, and
 OCR about 1 s. With a real ERP over a network, ERP_LOOKUP will grow by the ERP's round-trip time
 multiplied by the number of reads (about 6); the logs show it separately.
 
@@ -220,7 +220,7 @@ that finance users act on, for no measurable gain. No Redis.
 ## 8. Load and concurrency
 
 `npm run bench:load` runs each scenario twice: with 1 worker (the API process alone), and with
-3 workers (the API process plus two more Veyra processes on the same database, documents and
+3 workers (the API process plus two more Veyrafy processes on the same database, documents and
 ERP). Before each measured scenario, every process reads one warm-up document. Each side ran
 **5 times, alternating** before and after on the same machine (`load-baseline*.json`,
 `load-after*.json`). The table shows the **median of the 5 runs** and, in brackets, the range.
@@ -342,7 +342,7 @@ In order of expected impact:
    leaves the server).
 2. **pdf.js and image decoding run on the API's main thread,** so while a large document is being
    read in a process, other requests on that process wait (the load test shows upload requests
-   slowing while documents are read, §8). Every Veyra process also runs the job loop, so more
+   slowing while documents are read, §8). Every Veyrafy process also runs the job loop, so more
    processes spread the reading but do not remove the wait. Moving extraction to a worker thread
    would fix it properly.
 3. **The inbox is not paginated.** It is fast at 200 invoices (22 ms) and will grow linearly;
@@ -354,7 +354,7 @@ In order of expected impact:
 6. **Migrations build indexes with plain `CREATE INDEX`,** which briefly blocks writes. For very
    large tables this should become `CONCURRENTLY` (outside a transaction).
 7. **Compression CPU:** it costs 0.3–1.8 ms per list response on this machine and saves 70–96% of
-   the bytes. Behind a proxy that compresses, it could be turned off in Veyra.
+   the bytes. Behind a proxy that compresses, it could be turned off in Veyrafy.
 8. **The open-questions list returns every question's full input schema** (289 KB uncompressed
    at 200 invoices). Compression hides most of it; a lighter list shape would fix it.
 9. **Unexplained once:** 2 ERP writes ended `failed` in one early 3-worker "before" run (§8).

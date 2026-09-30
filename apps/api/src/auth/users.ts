@@ -237,7 +237,7 @@ export class Users {
     )[0];
     const ok = await verifyPassword(user?.passwordHash ?? null, password);
     if (!user || !ok || !user.active) return null;
-    // This organization's users, and Veyra's own operators (VEYRA_ADMIN, platform organization).
+    // This organization's users, and Veyrafy's own operators (VEYRA_ADMIN, platform organization).
     const operator =
       user.role === 'VEYRA_ADMIN' && user.organizationId === t.PLATFORM_ORGANIZATION_ID;
     if (user.organizationId !== this.organizationId && !operator) return null;

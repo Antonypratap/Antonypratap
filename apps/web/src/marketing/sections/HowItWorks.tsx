@@ -11,7 +11,7 @@ const STAGES: { title: string; text: string; state: ReactNode }[] = [
   },
   {
     title: 'Works',
-    text: 'Veyra reads it, checks it and does the routine work your team does today.',
+    text: 'Veyrafy reads it, checks it and does the routine work your team does today.',
     state: (
       <span className={styles.struckChip}>
         <Struck struck>Check the totals</Struck>
@@ -20,7 +20,7 @@ const STAGES: { title: string; text: string; state: ReactNode }[] = [
   },
   {
     title: 'Asks when needed',
-    text: 'If something doesn’t add up, Veyra asks the right person. It never guesses.',
+    text: 'If something doesn’t add up, Veyrafy asks the right person. It never guesses.',
     state: <StatusPill status="attention">Needs you</StatusPill>,
   },
   {
@@ -38,7 +38,7 @@ export function HowItWorks() {
           id="how-title"
           eyebrow="How it works"
           title="From invoice to ready."
-          lede="Veyra works in the background. You only hear from it when a decision is yours to make."
+          lede="Veyrafy works in the background. You only hear from it when a decision is yours to make."
         />
         <ol className={styles.flow}>
           {STAGES.map((s, i) => (

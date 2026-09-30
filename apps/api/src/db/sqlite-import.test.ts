@@ -258,7 +258,7 @@ describe('SQLite → PostgreSQL data migration', () => {
     legacy.close();
     const { db } = await emptyTarget();
     await expect(importFromSqlite({ sqliteFile: file, target: db })).rejects.toThrow(
-      /not a Veyra UTC timestamp/,
+      /not a Veyrafy UTC timestamp/,
     );
     expect(await db.db.select().from(t.invoices)).toEqual([]);
   });

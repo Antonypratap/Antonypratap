@@ -11,12 +11,12 @@ export function FinalCta() {
             Let the work disappear.
           </h2>
           <p className={styles.copy}>
-            Veyra handles the invoice work.
+            Veyrafy handles the invoice work.
             <br />
             Your people handle the business.
           </p>
           <ButtonLink href={DEMO_ENTRY_HREF} size="lg" arrow>
-            See Veyra in action
+            See Veyrafy in action
           </ButtonLink>
         </Reveal>
       </Container>

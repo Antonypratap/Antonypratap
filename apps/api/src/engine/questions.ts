@@ -111,7 +111,7 @@ export const recheckOption = (label: string): OptionDraft => ({
   label,
   effect: { type: 'RECHECK' },
   emphasis: 'secondary',
-  result: 'Veyra checked the invoice again.',
+  result: 'Veyrafy checked the invoice again.',
   input: null,
 });
 
@@ -181,25 +181,25 @@ export function mdField(
     evidence: !shown
       ? 'Not found on the invoice'
       : read.state === 'unparseable'
-        ? `Veyra read ${shown}, but that is not a valid ${label.replace(/^your /, '')}`
+        ? `Veyrafy read ${shown}, but that is not a valid ${label.replace(/^your /, '')}`
         : confirmable
-          ? `Veyra read ${shown}, but not clearly enough to use it`
-          : `Veyra read ${shown}, but not clearly, and that is not a valid ${label.replace(/^your /, '')}`,
+          ? `Veyrafy read ${shown}, but not clearly enough to use it`
+          : `Veyrafy read ${shown}, but not clearly, and that is not a valid ${label.replace(/^your /, '')}`,
     headline: `What is ${theLabel(label)}?`,
     facts: [
-      ...(shown ? [{ label: 'Veyra read', value: shown, tone: 'attention' as const }] : []),
+      ...(shown ? [{ label: 'Veyrafy read', value: shown, tone: 'attention' as const }] : []),
       ...(extra.facts ?? []),
     ],
     why: [
       ...(extra.why ?? []),
       read.state === 'absent'
-        ? 'Veyra could not find this on the invoice.'
+        ? 'Veyrafy could not find this on the invoice.'
         : read.state === 'unparseable'
-          ? 'What Veyra read does not have the right format, so it cannot be used.'
+          ? 'What Veyrafy read does not have the right format, so it cannot be used.'
           : confirmable
-            ? 'The document is not clear enough here for Veyra to be certain.'
-            : 'The document is not clear here, and what Veyra read is not in a valid format.',
-      'Veyra uses a value only when it has been read with certainty.',
+            ? 'The document is not clear enough here for Veyrafy to be certain.'
+            : 'The document is not clear here, and what Veyrafy read is not in a valid format.',
+      'Veyrafy uses a value only when it has been read with certainty.',
       'It never fills in a value from anywhere else.',
     ],
     paths: [path],
@@ -245,7 +245,7 @@ export function amVendor(
         : code === 'AM_VENDOR_PAN'
           ? 'The GSTIN is new, but its PAN belongs to a supplier you already have: this may be another GST registration of the same business.'
           : 'No supplier in your records has this GSTIN, but some have the same name.',
-      'Veyra never links a supplier by name alone.',
+      'Veyrafy never links a supplier by name alone.',
     ],
     paths: ['header.vendorName', 'header.vendorGstin'],
     options: [
@@ -265,7 +265,7 @@ export function amVendor(
             : "None of these, it's a new supplier",
         effect: { type: 'REQUEST_CREATION', entity: 'vendor', lineNo: null },
         emphasis: 'quiet',
-        result: 'Veyra will prepare a new supplier for your approval.',
+        result: 'Veyrafy will prepare a new supplier for your approval.',
         input: null,
       },
       rejectOption(),
@@ -290,7 +290,7 @@ export function amOpenPo(candidates: readonly PoCandidate[], vendorName: string)
     facts: candidates.map((c) => ({ label: c.poNumber, value: c.summary })),
     why: [
       'The invoice does not print an order number.',
-      `${vendorName} has open orders, so Veyra will not create a new one or pick one for you.`,
+      `${vendorName} has open orders, so Veyrafy will not create a new one or pick one for you.`,
     ],
     paths: ['header.poNumber'],
     options: [
@@ -307,7 +307,7 @@ export function amOpenPo(candidates: readonly PoCandidate[], vendorName: string)
         label: 'It is not against any of these orders',
         effect: { type: 'DECLARE_NON_PO' },
         emphasis: 'quiet',
-        result: 'Veyra will follow your purchase order policy.',
+        result: 'Veyrafy will follow your purchase order policy.',
         input: null,
       },
       rejectOption(),
@@ -327,7 +327,7 @@ export function amPoLine(
     facts: candidates.map((c) => ({ label: 'Order line', value: c.label })),
     why: [
       'More than one line on the order has the same item type.',
-      'Veyra never matches a line by its price.',
+      'Veyrafy never matches a line by its price.',
     ],
     paths: [`lines[${lineNo}].description`],
     options: [
@@ -357,7 +357,7 @@ export function amItem(
     facts: candidates.map((c) => ({ label: c.code, value: c.name })),
     why: [
       'No item in your records has exactly this name and HSN code.',
-      'Veyra never picks an item for you.',
+      'Veyrafy never picks an item for you.',
     ],
     paths: [`lines[${lineNo}].description`, `lines[${lineNo}].hsnSac`],
     options: [
@@ -374,7 +374,7 @@ export function amItem(
         label: "None of these, it's a new item",
         effect: { type: 'REQUEST_CREATION', entity: 'item', lineNo },
         emphasis: 'quiet',
-        result: 'Veyra will prepare a new item for your approval.',
+        result: 'Veyrafy will prepare a new item for your approval.',
         input: null,
       },
       rejectOption(),
@@ -418,7 +418,7 @@ export function bdPoClosed(poNumber: string): QuestionDraft {
       { label: 'Order', value: poNumber },
       { label: 'Status in your records', value: 'Closed', tone: 'attention' },
     ],
-    why: ['Veyra does not record invoices against a closed order, and never reopens one.'],
+    why: ['Veyrafy does not record invoices against a closed order, and never reopens one.'],
     paths: ['header.poNumber'],
     options: [recheckOption('It was reopened. Check again'), rejectOption()],
   });
@@ -445,7 +445,7 @@ export function caVendor(
     ],
     why: [
       'You said this is a new supplier.',
-      'Bank details on an invoice are never used: they stay unverified and Veyra makes no payment.',
+      'Bank details on an invoice are never used: they stay unverified and Veyrafy makes no payment.',
     ],
     paths: ['header.vendorName', 'header.vendorGstin', 'header.vendorAddress'],
     options: [
@@ -522,7 +522,7 @@ export function caPo(
     ],
     why: [
       'The invoice has no order number and the supplier has no open order.',
-      'A new order would copy the invoice lines. Its number is assigned by your ERP; Veyra never invents one.',
+      'A new order would copy the invoice lines. Its number is assigned by your ERP; Veyrafy never invents one.',
     ],
     paths: ['header.poNumber', 'header.totalPaise'],
     options: [
@@ -559,7 +559,7 @@ export function caGrn(
     })),
     why: [
       'An invoice is recorded only against goods you confirm were received.',
-      'Veyra never assumes goods arrived because an invoice came in.',
+      'Veyrafy never assumes goods arrived because an invoice came in.',
     ],
     paths: lines.map((_, i) => `lines[${i + 1}].qtyMilli`),
     options: [
@@ -613,7 +613,7 @@ export function vf(spec: VfSpec): QuestionDraft {
       label: 'Record the additional receipt',
       effect: { type: 'REQUEST_CREATION', entity: 'grn', lineNo: null },
       emphasis: 'primary',
-      result: 'Veyra will ask you for the receipt details.',
+      result: 'Veyrafy will ask you for the receipt details.',
       input: null,
     });
   }

@@ -1,5 +1,5 @@
 /**
- * @veyra/web: Veyra web UI (React + Vite).
+ * @veyra/web: Veyrafy web UI (React + Vite).
  *
  * Phase 0 scaffold only. Implementation lands in Phase 11 (see docs/ARCHITECTURE.md §11).
  */

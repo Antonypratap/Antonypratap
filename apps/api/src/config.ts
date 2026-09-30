@@ -177,7 +177,7 @@ type VarName = keyof typeof VARS;
 
 export class ConfigError extends Error {
   constructor(readonly problems: string[]) {
-    super(`Veyra configuration is not valid:\n${problems.map((p) => `  - ${p}`).join('\n')}`);
+    super(`Veyrafy configuration is not valid:\n${problems.map((p) => `  - ${p}`).join('\n')}`);
     this.name = 'ConfigError';
   }
 }

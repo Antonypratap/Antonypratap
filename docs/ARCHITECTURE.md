@@ -1,8 +1,8 @@
-# Veyra — Architecture (V1)
+# Veyrafy — Architecture (V1)
 
 Status: **Approved (rev 3: decisions D1–D4 recorded)**. Phases 0–2 complete (scaffold; shared contracts, India tax, ERP connector contract; fake ERP + SQLite). **Phase 3B complete**: the first real vertical slice (see §13).
 
-Veyra is an AI-assisted business transaction automation platform. The V1 use case:
+Veyrafy is an AI-assisted business transaction automation platform. The V1 use case:
 
 > Purchase invoice (photo / PDF) → extract data → find vendor / items / PO / GRN →
 > create missing records only when policy allows → validate → ask the designated user
@@ -17,7 +17,7 @@ Veyra is an AI-assisted business transaction automation platform. The V1 use cas
 | 3 | **No tolerance** | All comparisons are exact integer comparisons (paise, milli-units, basis points). |
 | 4 | **No approval hierarchy** | Exactly one designated user answers every question. |
 | 5 | **No timeout** | An invoice in `NEEDS_INPUT` waits indefinitely. Nothing escalates or auto-resolves. |
-| 6 | **No payment execution** | Terminal success state is `VERIFIED_PENDING_PAYMENT`. Veyra has no payment code path. |
+| 6 | **No payment execution** | Terminal success state is `VERIFIED_PENDING_PAYMENT`. Veyrafy has no payment code path. |
 | 7 | **AI only reads** | AI (OCR / LLM) proposes extracted field values with evidence. All matching, creation, validation and state transitions are deterministic code. |
 | 8 | **No human "Verify" click** | If every deterministic rule passes, the invoice transitions automatically to `VERIFIED_PENDING_PAYMENT`. |
 | 9 | **₹0 to build and run** | Only free/open-source tooling; everything runs locally and offline. |
@@ -64,7 +64,7 @@ V1 scope: **India, GST, INR only.** One buyer company. One PO per invoice.
 | Runtime | Node 20+, TypeScript strict, npm workspaces | Free, one language end to end. |
 | API | Fastify + Zod (schemas shared with web) | Typed, fast, request/response validation. |
 | DB | SQLite via `better-sqlite3` + Drizzle ORM/migrations | Zero-cost, file-based, synchronous transactions. |
-| ERP boundary | **Two SQLite files**: `veyra.db` and `fake_erp.db`. Veyra reaches ERP data only via `ErpConnector`. | Makes replacing the fake ERP with a real connector a drop-in change. |
+| ERP boundary | **Two SQLite files**: `veyra.db` and `fake_erp.db`. Veyrafy reaches ERP data only via `ErpConnector`. | Makes replacing the fake ERP with a real connector a drop-in change. |
 | Money | Integer **paise** (`*_paise`). Never floats. | No tolerance requires exact arithmetic. |
 | Quantity | Integer **milli-units** (`*_milli`, 1 kg = 1000). | Exact fractional quantities. |
 | Rates | Integer **basis points** (`*_bp`, 18% = 1800). | Exact tax arithmetic. |
@@ -287,7 +287,7 @@ Schema and migrations:
   - `purchase_invoices.status = 'verified_pending_payment'` as the only possible status
   - `company` as a single row
 
-Record identifiers are opaque to Veyra. The fake ERP makes them readable and deterministic:
+Record identifiers are opaque to Veyrafy. The fake ERP makes them readable and deterministic:
 - masters use their code (`V001`, `ITM-001`)
 - documents use their number (`PO-2026-0101`)
 - lines use `<parent>#<n>`
@@ -378,7 +378,7 @@ Nothing is written to the ERP until an invoice is fully valid. Creations (vendor
 - Each call carries `idempotencyKey = veyra:<invoiceId>:<actionId>`, so a crashed commit can resume safely.
 - Commit jobs run one at a time. Immediately before committing, the ERP-dependent rules (duplicate, remaining GRN qty, vendor/PO status) are re-evaluated against live ERP data.
 - A natural-key conflict at commit (another invoice created the same vendor GSTIN first) sends the invoice back to `MATCHING`, which now finds the existing record. It does not fail.
-- On `REJECTED`, staged actions become `discarded`. The ERP never receives orphan records from abandoned invoices. **Consequence (decision D1):** a GRN confirmed on an invoice that is later rejected is never written to the ERP. The confirmation remains in Veyra's `creation_actions` (`discarded`) and in the audit trail.
+- On `REJECTED`, staged actions become `discarded`. The ERP never receives orphan records from abandoned invoices. **Consequence (decision D1):** a GRN confirmed on an invoice that is later rejected is never written to the ERP. The confirmation remains in Veyrafy's `creation_actions` (`discarded`) and in the audit trail.
 - **Restartability (decision D4):** `COMMITTING` is automatic. Each staged action records its `erp_id` as soon as the connector returns it. A restarted commit skips actions that already have an `erp_id` and re-sends the rest with the same idempotency key, and the connector returns the existing record for a key it has seen before. `recordPurchaseInvoice` is also protected by the ERP's `UNIQUE(vendor, invoice_no, FY)` constraint.
 
 ## 5. Workflow state machine
@@ -546,7 +546,7 @@ Each phase ends green on `npm run check` (typecheck + lint + tests) and is pushe
 | **0. Scaffold** | npm workspaces, tsconfig, ESLint/Prettier, Vitest, CI workflow, empty apps/packages | `npm run check` passes in CI |
 | **1. Domain foundations** | `shared` (enums, Zod schemas, money/qty/rate helpers), `india-tax` (GSTIN checksum, state codes, PAN, FY, GST calc half-up) | 100% unit coverage of the arithmetic and GSTIN code |
 | **2. ERP port + fake ERP** | `ErpConnector` interface, contract test suite, `FakeErpConnector`, `fake_erp.db` migrations, seed from DEMO.md, idempotency log | Contract suite passes; seed loads; idempotent re-calls return the same ids |
-| **3. Veyra DB + workflow core** | `veyra.db` migrations, state machine, job runner (commit concurrency 1), audit writer, users/settings, dev auth | Every legal transition tested; illegal transitions throw; the audit row is written in the same transaction |
+| **3. Veyrafy DB + workflow core** | `veyra.db` migrations, state machine, job runner (commit concurrency 1), audit writer, users/settings, dev auth | Every legal transition tested; illegal transitions throw; the audit row is written in the same transaction |
 | **4. Extraction** | `Extractor` interface; `FixtureExtractor`; `LocalOcrExtractor` (pdf text layer → OCR → field parser); `OllamaExtractor` with verbatim cross-check; fixture generator script | All S01–S17 fixtures extract as expected via fixture mode; LocalOcr reproduces header fields on the generated text-layer PDFs; Ollama skipped when unavailable |
 | **5. Matching (FIND/USE)** | Vendor, item, PO, GRN finders + overlay of staged records | Unit tests per RULES.md §2 |
 | **6. Resolution (CREATE)** | Creation policy (vendor, item, alias, PO threshold, GRN never auto), staging | Unit tests per RULES.md §3, including the threshold boundary (equal → question) |
@@ -563,7 +563,7 @@ Phases 1–10 are headless and API-first. The UI is built last on tested logic.
 
 | # | Decision | Where |
 |---|---|---|
-| D1 | New ERP records are staged and written only when the whole invoice transaction commits. User-confirmed GRN data stays in Veyra's `creation_actions` and audit trail if the invoice is rejected, but it is **never** written to the ERP unless the commit succeeds. | §4.3 |
+| D1 | New ERP records are staged and written only when the whole invoice transaction commits. User-confirmed GRN data stays in Veyrafy's `creation_actions` and audit trail if the invoice is rejected, but it is **never** written to the ERP unless the commit succeeds. | §4.3 |
 | D2 | Round-off is accepted only when printed on the invoice and exactly equal to the amount needed to reach the nearest rupee. The UI shows *calculated total → round-off → invoice total*. A difference is never silently absorbed. | RULES §4.1, R10 |
 | D3 | Place of supply follows a deterministic hierarchy: printed → established from valid GST evidence on the document → ask. It is never inferred from the buyer GSTIN alone. | RULES §1.6 |
 | D4 | `COMMITTING` is automatic, restartable and idempotent. A crash never creates duplicate ERP records. | §4.3 |
@@ -581,7 +581,7 @@ Upload → extract → resolve → match → ask → validate → commit → `VE
 | Part | Where | Notes |
 |---|---|---|
 | Extractor port + `FixtureExtractor` | `packages/extractor` | Demo/test only (below). |
-| Veyra database | `apps/api/src/db` | Drizzle schema + generated migration; `npm run db:verify` checks drift. |
+| Veyrafy database | `apps/api/src/db` | Drizzle schema + generated migration; `npm run db:verify` checks drift. |
 | Deterministic engine | `apps/api/src/engine` | `runEngine()` is FIND → USE → CREATE → VALIDATE in one pure pass; it only reads the ERP (through the port) and returns what to persist. |
 | Workflow | `apps/api/src/workflow` | State machine, persistence of each run, answers, rejection, commit, job runner. |
 | REST API | `apps/api/src/http` | Fastify + Zod; responses validated against `packages/shared/src/schemas/api.ts`. |
@@ -605,7 +605,7 @@ Upload → extract → resolve → match → ask → validate → commit → `VE
 - **IMPLEMENTATION DECISION** Answers are stored as data on the answered question (`answer_json`, ordered by `answer_seq`) and re-applied on every run; field corrections are `human_corrected` / `human_confirmed` fields. A re-run is therefore a pure function of fields + answers + ERP state.
 - **IMPLEMENTATION DECISION** Staged actions carry a deterministic `signature` (entity, policy, approving question, payload). A re-run that stages the same thing reuses the same action id, so idempotency keys are stable across runs.
 - **IMPLEMENTATION DECISION** The commit plan is frozen as `invoices.commit_plan_json` when validation passes. COMMITTING executes that plan and never re-plans mid-way (re-planning after a partial commit would see its own new records and ask new questions).
-- **IMPLEMENTATION DECISION** Duplicate detection (R11) keys on vendor GSTIN + normalised invoice number + FY, across the ERP and other non-rejected Veyra invoices (`invoices.dup_*`). Invoice date and amount are shown in the question ("same amount") but are not part of the key: an invoice number reused with a different amount is still a conflict the user must see. A possible duplicate is asked (`VF_R11`), never auto-rejected.
+- **IMPLEMENTATION DECISION** Duplicate detection (R11) keys on vendor GSTIN + normalised invoice number + FY, across the ERP and other non-rejected Veyrafy invoices (`invoices.dup_*`). Invoice date and amount are shown in the question ("same amount") but are not part of the key: an invoice number reused with a different amount is still a conflict the user must see. A possible duplicate is asked (`VF_R11`), never auto-rejected.
 - **IMPLEMENTATION DECISION** Table naming follows the Phase 3B brief: `extracted_fields` (called `fields` in §4.2). Added columns: `documents.size_bytes`; `invoices.run_no`, `dup_vendor_gstin`, `dup_invoice_no`, `dup_fy`, `commit_plan_json`; `creation_actions.signature`; `questions.answer_seq`; `jobs.updated_at`. There is no `sessions` table (no authentication in this slice).
 - **IMPLEMENTATION DECISION** API naming follows the brief: `POST /api/v1/documents` uploads (it creates the document and its invoice; 409 on an identical file). The other routes are §8's, plus `GET /documents`, `GET /documents/:id/file`, `GET /erp/grns` and `POST /dev/reset` (not registered in production). Responses are presentation-ready (status, question wording, audit titles) so the browser derives nothing.
 - **IMPLEMENTATION DECISION** UI status is derived on the server: NEEDS_INPUT and FAILED → *Needs your attention*; system states → *Processing*; VERIFIED_PENDING_PAYMENT → *Handled* (no decision was needed) or *Ready* (the user decided something); REJECTED → *Rejected*. The Inbox count, the Questions count and the queue all come from this one status.
@@ -626,13 +626,13 @@ Upload → extract → resolve → match → ask → validate → commit → `VE
 
 | # | Brief asks for | Fixed requirement | What was built | Needs a client decision |
 |---|---|---|---|---|
-| C1 | UoM: apply a known conversion; otherwise ask for a factor and save the mapping | RULES R27: "Line UOM = item UOM (no conversion in V1)" | R27 as written: a mismatch raises `VF_R27` (correct a misread unit, re-check, or reject). No factor is asked for or stored. | Whether V2 adds approved UoM conversions (and where they live: ERP or Veyra). |
+| C1 | UoM: apply a known conversion; otherwise ask for a factor and save the mapping | RULES R27: "Line UOM = item UOM (no conversion in V1)" | R27 as written: a mismatch raises `VF_R27` (correct a misread unit, re-check, or reject). No factor is asked for or stored. | Whether V2 adds approved UoM conversions (and where they live: ERP or Veyrafy). |
 | C2 | Items: allow "classify as non-stock expense" | RULES §2.3/§5 offer link, create or reject only; `recordPurchaseInvoice` requires an item and a PO line on every line | Not built. | Whether non-stock lines are in scope, and how they are recorded in the ERP. |
 | C3 | "Ask supplier" moves the invoice to a processing/follow-up state | §5 has no such state; RULES §5 has no such option | Not built. The invoice stays in NEEDS_INPUT (it waits indefinitely); the user can re-check once the supplier has answered, or reject. | Whether a follow-up state (and its exit conditions) should be added. |
 
 ## 14. Phase 3C: the Excel business data bridge
 
-For a business whose ERP is not connected, the designated user provides the records Veyra checks invoices against in Excel: **download template → fill in → upload → validate → preview → confirm → records available**, plus exports. Imported records live in the same ERP store, behind the same `ErpConnector`, as every other record; the invoice workflow is unchanged and reads them exactly as it reads seeded or Veyra-created records. Labels as in §13.
+For a business whose ERP is not connected, the designated user provides the records Veyrafy checks invoices against in Excel: **download template → fill in → upload → validate → preview → confirm → records available**, plus exports. Imported records live in the same ERP store, behind the same `ErpConnector`, as every other record; the invoice workflow is unchanged and reads them exactly as it reads seeded or Veyrafy-created records. Labels as in §13.
 
 ### 14.1 What runs
 
@@ -640,7 +640,7 @@ For a business whose ERP is not connected, the designated user provides the reco
 |---|---|---|
 | Import operation | `packages/erp-connector` (`importBusinessRecords`), `packages/fake-erp` | Contract-tested (5 tests). New origin `imported` with `source_import_id` on vendors, items, POs and GRNs. Migration `0001_import_origin`. |
 | Spreadsheet I/O | `apps/api/src/spreadsheet` | Zero-dependency, limit-checked ZIP, XLSX and CSV readers/writers. |
-| Templates, validation, import service | `apps/api/src/imports` | `spec.ts` (tables, columns), `templates.ts`, `validate.ts` (`checkImport`), `service.ts` (`BusinessImports`). Veyra table `imports` (migration `0001_imports`) keeps each upload's check and result. |
+| Templates, validation, import service | `apps/api/src/imports` | `spec.ts` (tables, columns), `templates.ts`, `validate.ts` (`checkImport`), `service.ts` (`BusinessImports`). Veyrafy table `imports` (migration `0001_imports`) keeps each upload's check and result. |
 | Exports | `apps/api/src/exports` | Processed invoices, decisions, audit trail (XLSX or CSV); business records (XLSX, in the import format). |
 | UI | `apps/web/src/product/screens/ErpData.tsx` | ERP → **Import and export** tab; *Import business records* link in the ERP header; *Export* links on Invoices and Audit; *Business records* entry in Audit. |
 | Demo files | `fixtures/imports/` | Templates and demo uploads, generated deterministically by `npm run fixtures:generate`. |
@@ -649,7 +649,7 @@ API (`/api/v1`):
 
 ```
 GET  /imports/templates                 list of templates
-GET  /imports/templates/:file           download (Vendors.xlsx … Veyra-Master-Data-Import.xlsx)
+GET  /imports/templates/:file           download (Vendors.xlsx … Veyrafy-Master-Data-Import.xlsx)
 POST /imports                           multipart, 1–8 .xlsx/.csv files → 201 import (checked, nothing written)
 GET  /imports                           import history
 GET  /imports/:id                       one import
@@ -666,10 +666,10 @@ POST /dev/reset  { erp: 'demo'|'empty' } (not in production) 'empty' = company o
 - **CLIENT REQUIREMENT** Templates: one per table plus the combined `Veyra-Master-Data-Import.xlsx` (all six sheets and a *How to fill in* sheet). Every template has a *How to fill in* sheet listing each column as *Required* / *Optional* with a description and an example, and a data sheet per table with a frozen header row and one example row whose first cell starts with `EXAMPLE-`. Example rows are skipped (with a notice) if left in.
 - **CLIENT REQUIREMENT** Whole upload validated before anything is written; nothing is ever partially imported. Confirm is offered only with zero errors, re-validates against the ERP as it is at that moment, and the connector writes everything in one transaction or nothing.
 - **CLIENT REQUIREMENT** Retry-safe: the confirm is keyed `veyra:import:<importId>`; confirming twice returns the stored result. Re-uploading the same file finds every record already present and imports nothing.
-- **CLIENT REQUIREMENT** Existing records are never overwritten: an identical record (same natural key and same details) is skipped as *already exists*; a record whose key exists with different details is an error (*"already exists with different details. Veyra does not change existing records."*).
+- **CLIENT REQUIREMENT** Existing records are never overwritten: an identical record (same natural key and same details) is skipped as *already exists*; a record whose key exists with different details is an error (*"already exists with different details. Veyrafy does not change existing records."*).
 - **CLIENT REQUIREMENT** References are never auto-created: a PO naming an unknown vendor, a line naming an unknown item, a receipt naming an unknown PO or PO line is an error. The dependency order is vendors → items → POs + lines → GRNs + lines, within one upload or across uploads.
 - **CLIENT REQUIREMENT** Uploaded files are untrusted: type by signature (ZIP/XLSX or text CSV), ≤ 5 MB each, ≤ 8 per upload, ZIP entry-count and expanded-size limits (zip-bomb guard), no encryption or zip64, ≤ 20,000 rows and 60 columns a sheet. Formulas and macros are never evaluated: a formula cell uses only the value Excel stored with it, and one with no stored value is an error. Every cell is parsed by type (codes, GSTIN with checksum, dates, integer-exact money, quantities and rates).
-- **CLIENT REQUIREMENT** Audit: *Business records uploaded* and *Business records imported* by You; *N records added* by Veyra, with counts per type. Import history shows file, type, date, records and result.
+- **CLIENT REQUIREMENT** Audit: *Business records uploaded* and *Business records imported* by You; *N records added* by Veyrafy, with counts per type. Import history shows file, type, date, records and result.
 - **CLIENT REQUIREMENT** Exports with business columns (no internal ids): processed invoices, decisions, audit trail.
 
 ### 14.3 Implementation decisions
@@ -690,7 +690,7 @@ POST /dev/reset  { erp: 'demo'|'empty' } (not in production) 'empty' = company o
 
 ## 15. Phase 3D: real invoice document ingestion
 
-Veyra now reads real invoice documents (PDF, JPEG, PNG) locally and for free, and hands the reading to the unchanged workflow: **upload → extract → match → resolve → validate → commit → `VERIFIED_PENDING_PAYMENT`**, or `NEEDS_INPUT` whenever anything is uncertain. The deterministic engine stays the only authority; the extractor only proposes values with evidence. Labels as in §13.
+Veyrafy now reads real invoice documents (PDF, JPEG, PNG) locally and for free, and hands the reading to the unchanged workflow: **upload → extract → match → resolve → validate → commit → `VERIFIED_PENDING_PAYMENT`**, or `NEEDS_INPUT` whenever anything is uncertain. The deterministic engine stays the only authority; the extractor only proposes values with evidence. Labels as in §13.
 
 ### 15.1 What runs
 
@@ -740,16 +740,16 @@ Veyra now reads real invoice documents (PDF, JPEG, PNG) locally and for free, an
 
 ### 15.6 Demo access gate
 
-The product workspace (`#/app/…`) sits behind a demo PIN gate (see README): the homepage is public; "See Veyra in action" opens the gate; the correct PIN opens the requested route and is remembered for the browser tab (`sessionStorage`); a wrong PIN shows "That PIN isn't correct."; the PIN is compared by digest and never shown. **This is not authentication**: no users, sessions or server checks, and the API is not gated. It is isolated in `apps/web/src/access/` for replacement by real authentication.
+The product workspace (`#/app/…`) sits behind a demo PIN gate (see README): the homepage is public; "See Veyrafy in action" opens the gate; the correct PIN opens the requested route and is remembered for the browser tab (`sessionStorage`); a wrong PIN shows "That PIN isn't correct."; the PIN is compared by digest and never shown. **This is not authentication**: no users, sessions or server checks, and the API is not gated. It is isolated in `apps/web/src/access/` for replacement by real authentication.
 
 ## 16. Phase 3E: demo and exception experience
 
 Presentation and demo tooling only. No change to the state machine, question codes, rules, designated-user model, ERP connector contract, fake ERP schema, number models, commit, idempotency, payment behaviour or extraction trust model. Labels as in §13.
 
 - **CLIENT REQUIREMENT** Demo scenarios and reset without touching the database: `GET /dev/scenarios`, `POST /dev/scenarios/:key` (`apps/api/src/demo/scenarios.ts`), registered only with the demo reset (never in production). A scenario uploads one synthetic document through the normal upload path; nothing downstream is scripted. Reset is the existing `POST /dev/reset`.
-- **CLIENT REQUIREMENT** The UI shows only real workflow state: "Veyra is re-checking" while the invoice is in a system state, the next question when one is raised, **Invoice ready** only when the server says `VERIFIED_PENDING_PAYMENT`, the failure when it fails. No simulated progress.
+- **CLIENT REQUIREMENT** The UI shows only real workflow state: "Veyrafy is re-checking" while the invoice is in a system state, the next question when one is raised, **Invoice ready** only when the server says `VERIFIED_PENDING_PAYMENT`, the failure when it fails. No simulated progress.
 - **CLIENT REQUIREMENT** Machine codes never reach a person: question codes stay machine-readable in the API and database; everything shown (summaries, headlines, facts, options, audit) is business language. Tested.
-- **IMPLEMENTATION DECISION** Question presentation: kind label (*Your decision is needed* / *Your approval is needed* / *Veyra needs you to confirm* / *Check needed*), the question, what Veyra found (the question's evidence line), the facts, **Why Veyra needs you** (visible), the choices, and what happens after the decision. Field questions say **Veyra read …** and distinguish "not clearly enough to use" from "not a valid value". Goods-receipt options read *Yes, record the receipt* / *No, reject this invoice* (option ids unchanged).
+- **IMPLEMENTATION DECISION** Question presentation: kind label (*Your decision is needed* / *Your approval is needed* / *Veyrafy needs you to confirm* / *Check needed*), the question, what Veyrafy found (the question's evidence line), the facts, **Why Veyrafy needs you** (visible), the choices, and what happens after the decision. Field questions say **Veyrafy read …** and distinguish "not clearly enough to use" from "not a valid value". Goods-receipt options read *Yes, record the receipt* / *No, reject this invoice* (option ids unchanged).
 - **IMPLEMENTATION DECISION** **Invoice ready** evidence is derived only from the invoice's checks and ERP records (supplier, PO, goods receipts with who recorded them, 3-way match, amounts, the recorded purchase invoice); a row without evidence is omitted, never asserted. `ApiInvoiceDetail.erp` gained `receipts` and `purchaseInvoice`; inbox questions gained `kind` and `headline`; ERP purchase invoices gained `poNumber` and `lines` (additive API fields).
 - **IMPLEMENTATION DECISION** Audit wording (presentation of the unchanged audit rows): *Uploaded invoice*, *Read invoice*, *Matched supplier*, *Matched purchase order*, *Validated invoice*, *Asked you*, *Confirmed goods receipt* / *Chose the supplier* / …, *Corrected a value*, *Recorded ERP transaction*, *Ready for payment*; VEYRA and YOU badges. One matching event is shown as two entries (supplier, order); an approval is shown once, as the decision.
 - **IMPLEMENTATION DECISION** Colour semantics kept strict: green only for handled / ready; amber for attention; processing, your decision and rejected are neutral.
@@ -762,7 +762,7 @@ Strengthens the ERP integration boundary only. No change to the state machine, q
 
 **Boundary**
 - **CLIENT REQUIREMENT** The application reaches the ERP only through the `ErpConnector` port (`packages/erp-connector`). Reads and writes are declared separately (`ERP_READ_OPERATIONS` / `ERP_WRITE_OPERATIONS`); every write takes an idempotency key. The only imports of `@veyra/fake-erp` remain the composition root (`apps/api/src/app.ts`), the dev fixtures and tests (lint rule unchanged). No direct-access violations were found; none were removed.
-- **IMPLEMENTATION DECISION** Capabilities: a connector declares them (`capabilities()`, `ERP_CAPABILITIES`, `supports()`); every operation maps to the capability it needs (`OPERATION_CAPABILITY`). The composition root wraps every connector in `guardCapabilities`, so an undeclared operation fails with `UNSUPPORTED` before the connector is called. Veyra never falls back to another behaviour. The fake ERP declares everything except one-time suppliers.
+- **IMPLEMENTATION DECISION** Capabilities: a connector declares them (`capabilities()`, `ERP_CAPABILITIES`, `supports()`); every operation maps to the capability it needs (`OPERATION_CAPABILITY`). The composition root wraps every connector in `guardCapabilities`, so an undeclared operation fails with `UNSUPPORTED` before the connector is called. Veyrafy never falls back to another behaviour. The fake ERP declares everything except one-time suppliers.
 - **IMPLEMENTATION DECISION** Connection metadata: `info` gains `type` and `displayName`; `checkConnection()` never throws and returns a typed status (`CONNECTED`, `AUTHENTICATION_FAILED`, `UNAVAILABLE`, `CONFIGURATION_ERROR`, `UNKNOWN`) plus the company. `GET /api/v1/erp/connection` (read-only) returns system, status, company and each capability with a plain label. The response schema is strict, so it cannot carry settings or secrets.
 
 **Errors and retries**
@@ -779,11 +779,11 @@ Strengthens the ERP integration boundary only. No change to the state machine, q
 - **IMPLEMENTATION DECISION** Reconciliation: `reconcileWrite(key)` (capability `write.reconcile`) is a read. It reports whether the ERP applied a write with that key (`created` with the record id, `not_created`, or `unknown`). The fake ERP answers from its idempotency log.
 - **CLIENT REQUIREMENT** Commit failure semantics: `ErpUnavailableError.writeOutcome` says whether a write was `not_sent` or had an `unknown` outcome.
   - **Not sent:** safe to retry with the same key; audited once as *ERP unavailable*.
-  - **Unknown (response lost):** Veyra reconciles before anything else. If the ERP has the write, the record is taken with the same key (the idempotency contract returns the stored record) and audited as *Confirmed the ERP transaction*. If the ERP cannot say, the ledger row is `unknown`, audited once as *ERP transaction outcome requires reconciliation*, and the invoice stays unresolved.
-  - An unresolved write is never retried as a new transaction and never shown as *Invoice ready*. The UI says Veyra is confirming the transaction with the business system.
-  - For the purchase invoice, the natural-key lookup (vendor, number, financial year) also finds Veyra's own record, keyed by `veyraInvoiceId`.
-- **TECHNICAL CONSTRAINT** An unresolved invoice stays in `COMMITTING`. The state machine allows `FAILED → EXTRACTING/MATCHING/REJECTED` only, so a failed invoice cannot resume its commit. Reprocessing through `MATCHING` would make R11 (duplicate purchase invoice) flag Veyra's own ERP record. Changing either is out of scope, so the commit job keeps reconciling an unresolved write once a minute with the same keys; it is not failed.
-- **CLIENT REQUIREMENT** Pre-commit re-check kept (§4.3). It runs before the first write only. Once the ledger shows a write may have reached the ERP, the frozen plan is resumed with the same keys: a fresh re-check would see Veyra's own records as changes.
+  - **Unknown (response lost):** Veyrafy reconciles before anything else. If the ERP has the write, the record is taken with the same key (the idempotency contract returns the stored record) and audited as *Confirmed the ERP transaction*. If the ERP cannot say, the ledger row is `unknown`, audited once as *ERP transaction outcome requires reconciliation*, and the invoice stays unresolved.
+  - An unresolved write is never retried as a new transaction and never shown as *Invoice ready*. The UI says Veyrafy is confirming the transaction with the business system.
+  - For the purchase invoice, the natural-key lookup (vendor, number, financial year) also finds Veyrafy's own record, keyed by `veyraInvoiceId`.
+- **TECHNICAL CONSTRAINT** An unresolved invoice stays in `COMMITTING`. The state machine allows `FAILED → EXTRACTING/MATCHING/REJECTED` only, so a failed invoice cannot resume its commit. Reprocessing through `MATCHING` would make R11 (duplicate purchase invoice) flag Veyrafy's own ERP record. Changing either is out of scope, so the commit job keeps reconciling an unresolved write once a minute with the same keys; it is not failed.
+- **CLIENT REQUIREMENT** Pre-commit re-check kept (§4.3). It runs before the first write only. Once the ledger shows a write may have reached the ERP, the frozen plan is resumed with the same keys: a fresh re-check would see Veyrafy's own records as changes.
 
 **Audit and UI**
 - **IMPLEMENTATION DECISION** Audit wording: *Matched supplier* / *Matched purchase order* (read from the ERP), *Validated ERP references* (the re-check before recording), *Recorded ERP transaction*, *ERP unavailable*, *ERP transaction outcome requires reconciliation*, *Confirmed the ERP transaction*. Audit details carry operation and ERP record id only.
@@ -804,7 +804,7 @@ Infrastructure and operational hardening only. SQLite stays the application data
   - Environments are `development`, `staging` and `production`. Production is also implied by `NODE_ENV=production`.
   - Startup fails naming variables, never values.
   - Production refuses the demo and the fixture extractor, and requires an absolute data directory and an explicit ERP.
-  - Veyra needs no secrets today.
+  - Veyrafy needs no secrets today.
 - **CLIENT REQUIREMENT** Production lock-down is enforced server-side:
   - `/dev/reset` and the demo-scenario endpoints are not registered.
   - No demo seed, and no fixture extractor.
@@ -839,11 +839,11 @@ Infrastructure and operational hardening only. SQLite stays the application data
 
 ## 19. Phase 6A: PostgreSQL application database
 
-A persistence-layer change only. The Veyra application database moved from SQLite (better-sqlite3, synchronous) to PostgreSQL (Drizzle, asynchronous). The fake ERP stays SQLite behind `ErpConnector`, and the two databases are never combined. Unchanged: the workflow, state machine, questions, rules, matching, validation, the ERP contract and reconciliation, extraction/OCR, document storage, demo scenarios and the UI. This supersedes the SQLite notes in §4.2 and the single-instance constraint in §18. Operations: [DEPLOYMENT.md](DEPLOYMENT.md). Labels as in §13.
+A persistence-layer change only. The Veyrafy application database moved from SQLite (better-sqlite3, synchronous) to PostgreSQL (Drizzle, asynchronous). The fake ERP stays SQLite behind `ErpConnector`, and the two databases are never combined. Unchanged: the workflow, state machine, questions, rules, matching, validation, the ERP contract and reconciliation, extraction/OCR, document storage, demo scenarios and the UI. This supersedes the SQLite notes in §4.2 and the single-instance constraint in §18. Operations: [DEPLOYMENT.md](DEPLOYMENT.md). Labels as in §13.
 
 **Schema and data types**
 - **IMPLEMENTATION DECISION** Schema (`apps/api/src/db/schema.ts`, `pg-core`): the same 15 tables, columns, relationships, foreign keys, unique rules (including the partial unique index on open questions), check constraints and indexes, generated as one migration (`drizzle/0000_init.sql`).
-  - Veyra still generates its ULID ids.
+  - Veyrafy still generates its ULID ids.
   - Integers stay integers (money, quantities and rates live inside validated JSON as integers, as before; there are no float columns). JSON stays text, byte for byte.
   - SQLite-only checks (`typeof(x) = 'integer'`) are enforced by the column types instead.
 - **IMPLEMENTATION DECISION** Time: instants (created/updated/answered/committed/confirmed/locked/run-after) are `timestamp(3) with time zone`. They are read and written as the same ISO-8601 UTC strings as before, and sessions run in UTC. There are no business-date columns: invoice and receipt dates stay YYYY-MM-DD inside the validated JSON and are never converted.

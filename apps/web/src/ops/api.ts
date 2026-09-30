@@ -10,7 +10,7 @@ import {
 import { json, request } from '../product/api/client';
 
 /**
- * Veyra Operations' calls (Phase 8A): `/api/v1/ops/*`, which only a VEYRA_ADMIN session may use.
+ * Veyrafy Operations' calls (Phase 8A): `/api/v1/ops/*`, which only a VEYRA_ADMIN session may use.
  * Every change carries a reason; the server validates and audits it.
  */
 const Loose = z.record(z.string(), z.unknown());

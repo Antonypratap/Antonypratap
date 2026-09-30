@@ -51,7 +51,7 @@ function Control() {
         <span className={styles.accept}>Accept 90 units</span>
         <span className={styles.ask}>Ask the supplier</span>
       </div>
-      <p className={styles.controlNote}>Veyra waits for your answer.</p>
+      <p className={styles.controlNote}>Veyrafy waits for your answer.</p>
     </div>
   );
 }
@@ -87,7 +87,7 @@ export function Outcomes() {
           <Eyebrow>For finance teams</Eyebrow>
           <h2 id="outcomes-title" className={styles.title}>
             Your team sees what matters.{' '}
-            <span className={styles.titleMuted}>Veyra takes care of the rest.</span>
+            <span className={styles.titleMuted}>Veyrafy takes care of the rest.</span>
           </h2>
         </div>
         <ol className={styles.rows}>
@@ -105,7 +105,7 @@ export function Outcomes() {
           </Row>
           <Row
             title="Control when it counts."
-            text="When something needs judgement, Veyra asks the right person and waits. It never decides for you."
+            text="When something needs judgement, Veyrafy asks the right person and waits. It never decides for you."
           >
             {() => <Control />}
           </Row>

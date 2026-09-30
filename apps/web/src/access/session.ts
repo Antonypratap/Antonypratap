@@ -72,7 +72,7 @@ async function call(path: string, init?: RequestInit): Promise<ApiSession> {
   try {
     res = await fetch(`${BASE}${path}`, { credentials: API_CREDENTIALS, ...init });
   } catch {
-    throw new SignInError('Veyra could not be reached. Try again in a moment.');
+    throw new SignInError('Veyrafy could not be reached. Try again in a moment.');
   }
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) {
@@ -98,7 +98,7 @@ export async function loadSession(): Promise<void> {
   try {
     apply(await call('/session'));
   } catch {
-    set({ status: 'signedOut', demoSignIn: false, notice: 'Veyra could not be reached.' });
+    set({ status: 'signedOut', demoSignIn: false, notice: 'Veyrafy could not be reached.' });
   }
 }
 

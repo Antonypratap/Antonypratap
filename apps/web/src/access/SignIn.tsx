@@ -12,7 +12,7 @@ export function SignIn({ demo, notice }: { demo: boolean; notice: string | null 
   const [mode, setMode] = useState<'pin' | 'password'>(demo ? 'pin' : 'password');
   return (
     <main className={styles.page}>
-      <a href="#top" className={styles.home} aria-label="Veyra home">
+      <a href="#top" className={styles.home} aria-label="Veyrafy home">
         <Logo />
       </a>
       {mode === 'pin' ? <PinForm notice={notice} /> : <PasswordForm notice={notice} />}
@@ -61,7 +61,7 @@ function PasswordForm({ notice }: { notice: string | null }) {
       noValidate
     >
       <h1 id={`${id}-title`} className={styles.title}>
-        Sign in to Veyra
+        Sign in to Veyrafy
       </h1>
       <p className={styles.text}>{notice ?? 'Use the email address your administrator set up.'}</p>
       <label className={styles.label} htmlFor={`${id}-email`}>
@@ -128,9 +128,9 @@ function PinForm({ notice }: { notice: string | null }) {
       noValidate
     >
       <h1 id={`${id}-title`} className={styles.title}>
-        See Veyra in action
+        See Veyrafy in action
       </h1>
-      <p className={styles.text}>{notice ?? 'Enter the demo PIN to open the Veyra workspace.'}</p>
+      <p className={styles.text}>{notice ?? 'Enter the demo PIN to open the Veyrafy workspace.'}</p>
       <label className={styles.label} htmlFor={`${id}-pin`}>
         PIN
       </label>

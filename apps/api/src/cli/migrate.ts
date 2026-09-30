@@ -34,8 +34,8 @@ try {
   if (left.length) throw new Error(`still pending: ${left.join(', ')}`);
   console.log(
     pending.length
-      ? `Veyra database: applied ${pending.length} migration(s): ${pending.join(', ')}`
-      : 'Veyra database: already up to date',
+      ? `Veyrafy database: applied ${pending.length} migration(s): ${pending.join(', ')}`
+      : 'Veyrafy database: already up to date',
   );
 } catch (error) {
   // Never the URL or its credentials: the configuration names variables only.

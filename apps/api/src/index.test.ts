@@ -134,19 +134,19 @@ describe('the vertical slice over HTTP', () => {
     const trail = await get<ApiAuditEntry[]>(`/api/v1/audit?invoiceId=${invoiceId}`);
     expect(trail.map((e) => `${e.by}: ${e.title}`)).toEqual([
       'You: Uploaded invoice',
-      'Veyra: Read invoice',
-      'Veyra: Matched supplier',
-      'Veyra: Matched purchase order',
-      'Veyra: Found something to check',
-      'Veyra: Asked you',
+      'Veyrafy: Read invoice',
+      'Veyrafy: Matched supplier',
+      'Veyrafy: Matched purchase order',
+      'Veyrafy: Found something to check',
+      'Veyrafy: Asked you',
       'You: Confirmed goods receipt',
-      'Veyra: Matched supplier',
-      'Veyra: Matched purchase order',
-      'Veyra: Validated invoice',
-      'Veyra: Validated ERP references',
-      'Veyra: Recorded in your ERP',
-      'Veyra: Recorded ERP transaction',
-      'Veyra: Ready for payment',
+      'Veyrafy: Matched supplier',
+      'Veyrafy: Matched purchase order',
+      'Veyrafy: Validated invoice',
+      'Veyrafy: Validated ERP references',
+      'Veyrafy: Recorded in your ERP',
+      'Veyrafy: Recorded ERP transaction',
+      'Veyrafy: Ready for payment',
     ]);
   });
 

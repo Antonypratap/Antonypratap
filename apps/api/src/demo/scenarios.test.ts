@@ -93,7 +93,7 @@ describe('demo scenario launcher', () => {
     for (const s of list) expect(`${s.title} ${s.story}`).not.toMatch(CODES);
   });
 
-  it('clean invoice: handled by Veyra with evidence; verified, pending payment; no one asked', async () => {
+  it('clean invoice: handled by Veyrafy with evidence; verified, pending payment; no one asked', async () => {
     const id = await start('clean');
     const inv = await detail(id);
     expect(inv).toMatchObject({ state: 'VERIFIED_PENDING_PAYMENT', status: 'handled' });
@@ -133,19 +133,19 @@ describe('demo scenario launcher', () => {
     ]);
     expect(await audit(id)).toEqual([
       'You: Uploaded invoice',
-      'Veyra: Read invoice',
-      'Veyra: Matched supplier',
-      'Veyra: Matched purchase order',
-      'Veyra: Found something to check',
-      'Veyra: Asked you',
+      'Veyrafy: Read invoice',
+      'Veyrafy: Matched supplier',
+      'Veyrafy: Matched purchase order',
+      'Veyrafy: Found something to check',
+      'Veyrafy: Asked you',
       'You: Confirmed goods receipt',
-      'Veyra: Matched supplier',
-      'Veyra: Matched purchase order',
-      'Veyra: Validated invoice',
-      'Veyra: Validated ERP references',
-      'Veyra: Recorded in your ERP',
-      'Veyra: Recorded ERP transaction',
-      'Veyra: Ready for payment',
+      'Veyrafy: Matched supplier',
+      'Veyrafy: Matched purchase order',
+      'Veyrafy: Validated invoice',
+      'Veyrafy: Validated ERP references',
+      'Veyrafy: Recorded in your ERP',
+      'Veyrafy: Recorded ERP transaction',
+      'Veyrafy: Ready for payment',
     ]);
   });
 
@@ -192,7 +192,7 @@ describe('demo scenario launcher', () => {
     ]);
   });
 
-  it('photo needs confirmation: says what Veyra read and why it needs you; confidence is not inflated', async () => {
+  it('photo needs confirmation: says what Veyrafy read and why it needs you; confidence is not inflated', async () => {
     const id = await start('unclear-scan');
     const q = await question(id);
     expect(q).toMatchObject({
@@ -200,9 +200,9 @@ describe('demo scenario launcher', () => {
       kind: 'MISSING_DATA',
       paths: ['header.buyerGstin'],
     });
-    expect(q?.facts[0]).toMatchObject({ label: 'Veyra read', value: '29AAACS1111A176' });
+    expect(q?.facts[0]).toMatchObject({ label: 'Veyrafy read', value: '29AAACS1111A176' });
     expect(q?.evidence).toBe(
-      'Veyra read 29AAACS1111A176, but not clearly, and that is not a valid GSTIN on the invoice',
+      'Veyrafy read 29AAACS1111A176, but not clearly, and that is not a valid GSTIN on the invoice',
     );
     expect(q?.why[0]).toMatch(/not clear here/);
     // A misread that is not a valid value cannot be "confirmed": it must be entered.

@@ -125,7 +125,7 @@ function toPostgres(column: string, value: unknown, boolColumns: Set<string>): u
     const s = String(value);
     const d = new Date(s);
     if (Number.isNaN(d.getTime()) || d.toISOString() !== s)
-      throw new Error(`${column}: "${s}" is not a Veyra UTC timestamp; nothing was imported`);
+      throw new Error(`${column}: "${s}" is not a Veyrafy UTC timestamp; nothing was imported`);
     return s;
   }
   return value;

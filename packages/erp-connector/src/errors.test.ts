@@ -90,7 +90,7 @@ describe('ERP connector errors', () => {
     const lost = new ErpUnavailableError({ reason: 'timeout', writeOutcome: 'unknown' });
     expect(lost.userMessage).toMatch(/could not confirm/);
     expect(new ErpUnavailableError().userMessage).toBe(
-      "Veyra couldn't reach the business system. Nothing was posted.",
+      "Veyrafy couldn't reach the business system. Nothing was posted.",
     );
   });
 

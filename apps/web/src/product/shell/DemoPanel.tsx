@@ -21,9 +21,9 @@ const DemoContext = createContext<DemoControls>({ available: false, open: () => 
 export const useDemo = (): DemoControls => useContext(DemoContext);
 
 const EXPECT: Record<ApiDemoScenario['expect'], { text: string; tone: 'handled' | 'attention' }> = {
-  handled: { text: 'Handled by Veyra', tone: 'handled' },
-  decision: { text: 'Veyra asks you', tone: 'attention' },
-  stopped: { text: 'Veyra stops', tone: 'attention' },
+  handled: { text: 'Handled by Veyrafy', tone: 'handled' },
+  decision: { text: 'Veyrafy asks you', tone: 'attention' },
+  stopped: { text: 'Veyrafy stops', tone: 'attention' },
 };
 
 export function DemoProvider({ children }: { children: React.ReactNode }) {
@@ -125,7 +125,7 @@ function DemoPanel({
               Demo scenarios
             </h2>
             <p className={styles.sub}>
-              Each one uploads a sample invoice. Everything after that is Veyra&rsquo;s real
+              Each one uploads a sample invoice. Everything after that is Veyrafy&rsquo;s real
               workflow.
             </p>
           </div>

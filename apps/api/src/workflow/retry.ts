@@ -53,4 +53,4 @@ export function isInternalError(error: unknown): boolean {
 }
 
 export const INTERNAL_FAILURE_REASON =
-  'Veyra hit an internal problem while processing this invoice. Nothing was posted; it can be processed again.';
+  'Veyrafy hit an internal problem while processing this invoice. Nothing was posted; it can be processed again.';

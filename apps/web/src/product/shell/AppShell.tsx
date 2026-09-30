@@ -78,7 +78,7 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
     <DemoProvider>
       <div className={styles.shell}>
         <aside className={styles.sidebar}>
-          <a href={hrefFor({ name: 'inbox' })} className={styles.brand} aria-label="Veyra inbox">
+          <a href={hrefFor({ name: 'inbox' })} className={styles.brand} aria-label="Veyrafy inbox">
             <Logo />
           </a>
           <nav aria-label="Product">
@@ -136,7 +136,7 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
             <a
               href={hrefFor({ name: 'inbox' })}
               className={styles.mobileBrand}
-              aria-label="Veyra inbox"
+              aria-label="Veyrafy inbox"
             >
               <Logo />
             </a>

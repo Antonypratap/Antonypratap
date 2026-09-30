@@ -3,7 +3,7 @@
  * on Vercel (vite.config.ts) and in the tests, so the deployed site cannot drift from the
  * reviewed policy:
  *
- * - `/api/*` is forwarded to the Veyra API host (same origin for the browser: first-party
+ * - `/api/*` is forwarded to the Veyrafy API host (same origin for the browser: first-party
  *   session cookie, `connect-src 'self'`), and that host is a real https:// one. The committed
  *   placeholder (`*.invalid`) fails the build on Vercel instead of deploying a demo that cannot
  *   reach its API.
@@ -47,7 +47,7 @@ export function vercelConfigProblems(
   const rewrites = v.rewrites ?? [];
   const api = rewrites[0];
   if (api?.source !== '/api/:path*')
-    problems.push('the first rewrite must forward /api/:path* to the Veyra API');
+    problems.push('the first rewrite must forward /api/:path* to the Veyrafy API');
   else {
     let url: URL | null = null;
     try {
@@ -62,7 +62,7 @@ export function vercelConfigProblems(
         problems.push('the /api rewrite must end with /api/:path*');
       if (url.hostname.endsWith(PLACEHOLDER_SUFFIX) && !opts.allowPlaceholder)
         problems.push(
-          'the /api rewrite still points at the placeholder host: set your Veyra API host in apps/web/vercel.json (docs/DEPLOYMENT.md "Public demo")',
+          'the /api rewrite still points at the placeholder host: set your Veyrafy API host in apps/web/vercel.json (docs/DEPLOYMENT.md "Public demo")',
         );
     }
   }

@@ -254,7 +254,7 @@ describe('ERP boundary: commit', () => {
     });
   }
 
-  it('an unsupported operation fails with UNSUPPORTED; Veyra never falls back', async () => {
+  it('an unsupported operation fails with UNSUPPORTED; Veyrafy never falls back', async () => {
     await scripted({ capabilities: ERP_CAPABILITIES.filter((c) => c !== 'goods_receipt.create') });
     const id = await h.upload('S03');
     await h.answer(id, 'CA_GRN', 'confirm', {

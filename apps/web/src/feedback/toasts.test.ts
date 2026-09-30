@@ -53,7 +53,7 @@ describe('toasts (Phase 7 UX)', () => {
     notify.online(); // the same key: the outage toast becomes "restored"
     const toasts = snapshot();
     expect(toasts.map((t) => t.message)).toEqual([
-      '3 invoices uploaded. Veyra is reading them.',
+      '3 invoices uploaded. Veyrafy is reading them.',
       'Connection restored.',
     ]);
   });
@@ -108,7 +108,7 @@ describe('toasts (Phase 7 UX)', () => {
     const polite = html.slice(html.indexOf('role="status"'), html.indexOf('role="alert"'));
     const urgent = html.slice(html.indexOf('role="alert"'));
     expect(polite).toContain('Decision recorded.');
-    expect(urgent).toContain('Veyra cannot be reached.');
+    expect(urgent).toContain('Veyrafy cannot be reached.');
     expect(html).toContain('aria-label="Dismiss notification"');
   });
 });

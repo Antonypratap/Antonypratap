@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import styles from './Struck.module.css';
 
 /**
- * Veyra's signature device: a piece of work, struck through as it is taken away.
+ * Veyrafy's signature device: a piece of work, struck through as it is taken away.
  * The line draws left to right, then the text recedes.
  */
 export function Struck({

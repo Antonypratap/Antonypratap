@@ -25,7 +25,7 @@ function Screen({ route }: { route: Route }) {
   }
 }
 
-/** The Veyra product: every screen reads the Veyra API; the server is authoritative. */
+/** The Veyrafy product: every screen reads the Veyrafy API; the server is authoritative. */
 export function ProductApp({ route }: { route: Route }) {
   return (
     <ProductDataProvider>

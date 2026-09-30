@@ -41,7 +41,7 @@ export const INITIAL_PLAN = 'ENTERPRISE';
 export class NotEntitledError extends Error {
   readonly code = 'NOT_ENTITLED';
   constructor(readonly capability: CapabilityKey) {
-    super('This is not included in your Veyra plan.');
+    super('This is not included in your Veyrafy plan.');
     this.name = 'NotEntitledError';
   }
 }

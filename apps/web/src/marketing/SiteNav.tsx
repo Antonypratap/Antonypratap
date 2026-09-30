@@ -42,7 +42,7 @@ export function SiteNav() {
   return (
     <header className={styles.header} data-scrolled={scrolled || open} data-open={open}>
       <Container className={styles.bar}>
-        <a href="#top" className={styles.brand} aria-label="Veyra home">
+        <a href="#top" className={styles.brand} aria-label="Veyrafy home">
           <Logo />
         </a>
         <nav className={styles.links} aria-label="Primary">
@@ -54,7 +54,7 @@ export function SiteNav() {
         </nav>
         <div className={styles.actions}>
           <ButtonLink href={DEMO_ENTRY_HREF} size="sm">
-            See Veyra in action
+            See Veyrafy in action
           </ButtonLink>
         </div>
         <button
@@ -90,7 +90,7 @@ export function SiteNav() {
             className={styles.sheetCta}
             onClick={() => setOpen(false)}
           >
-            See Veyra in action
+            See Veyrafy in action
           </ButtonLink>
         </Container>
       </div>

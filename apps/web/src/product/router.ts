@@ -23,7 +23,7 @@ export type ErpTab = (typeof ERP_TABS)[number];
 export const INVOICE_FILTERS = ['all', 'attention', 'handled'] as const;
 export type InvoiceFilter = (typeof INVOICE_FILTERS)[number];
 
-/** Veyra Operations (Phase 8A): the control plane, a separate surface for VEYRA_ADMIN. */
+/** Veyrafy Operations (Phase 8A): the control plane, a separate surface for VEYRA_ADMIN. */
 export const OPS_SECTIONS = [
   'overview',
   'organizations',

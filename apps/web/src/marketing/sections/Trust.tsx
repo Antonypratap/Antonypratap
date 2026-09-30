@@ -4,12 +4,12 @@ import styles from './Trust.module.css';
 const PRINCIPLES: { title: string; text: string; icon: IconName }[] = [
   {
     title: 'Your rules',
-    text: 'Veyra follows the way your team already checks and approves invoices.',
+    text: 'Veyrafy follows the way your team already checks and approves invoices.',
     icon: 'rules',
   },
   {
     title: 'Your people',
-    text: 'Decisions go to the person who owns them. Veyra never makes them.',
+    text: 'Decisions go to the person who owns them. Veyrafy never makes them.',
     icon: 'person',
   },
   {
@@ -19,7 +19,7 @@ const PRINCIPLES: { title: string; text: string; icon: IconName }[] = [
   },
   {
     title: 'Your audit trail',
-    text: 'Every step is recorded: what Veyra did, what it asked, who decided.',
+    text: 'Every step is recorded: what Veyrafy did, what it asked, who decided.',
     icon: 'audit',
   },
 ];

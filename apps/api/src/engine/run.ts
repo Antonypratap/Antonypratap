@@ -499,7 +499,7 @@ class Run {
               (!v.ok ? v.error : !b.ok ? b.error : null)?.code === 'bad_checksum'
                 ? 'The last character of a GSTIN is a check digit calculated from the others. Here it does not match.'
                 : 'The GSTIN does not have a valid state code or format.',
-              'Veyra will not add a supplier or record an invoice with an invalid GSTIN.',
+              'Veyrafy will not add a supplier or record an invoice with an invalid GSTIN.',
             ],
             corrections: [
               !v.ok
@@ -979,7 +979,7 @@ class Run {
           created: inErp.createdAt.slice(0, 10),
         }
       : {
-          at: 'another invoice in Veyra',
+          at: 'another invoice in Veyrafy',
           date: others[0]?.invoiceDate ?? null,
           total: others[0]?.totalPaise ?? null,
           created: null,
@@ -995,7 +995,7 @@ class Run {
         summary: 'Possible duplicate',
         evidence: where.created
           ? `Same invoice recorded on ${Q.dateText(where.created)}`
-          : 'Same invoice is already in Veyra',
+          : 'Same invoice is already in Veyrafy',
         headline: `Invoice ${invoiceNumber} from this supplier is already in ${where.at}.`,
         facts: [
           { label: 'Invoice number', value: invoiceNumber, tone: 'attention' },
@@ -1233,7 +1233,7 @@ class Run {
           facts: [
             { label: 'Order number on the invoice', value: poNumber ?? '', tone: 'attention' },
           ],
-          why: ['Veyra never creates an order to fill a number printed on an invoice.'],
+          why: ['Veyrafy never creates an order to fill a number printed on an invoice.'],
           corrections: [{ path: 'header.poNumber', label: 'The order number was misread' }],
           recheckLabel: 'It is in the ERP now. Check again',
         }),
@@ -1599,7 +1599,7 @@ class Run {
             { label: `${it.code} in your records`, value: it.uom },
           ],
           why: [
-            'Veyra does not convert units: the invoice unit must match the item exactly.',
+            'Veyrafy does not convert units: the invoice unit must match the item exactly.',
             `${l.uom} and ${it.uom} are different units.`,
           ],
           corrections: [

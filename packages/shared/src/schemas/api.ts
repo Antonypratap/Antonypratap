@@ -216,7 +216,7 @@ export const ApiAuditEntrySchema = z.object({
   at: z.string(),
   title: z.string(),
   detail: z.string(),
-  by: z.enum(['Veyra', 'You']),
+  by: z.enum(['Veyrafy', 'You']),
   tone: z.enum(['neutral', 'handled', 'attention']),
 });
 export type ApiAuditEntry = z.infer<typeof ApiAuditEntrySchema>;

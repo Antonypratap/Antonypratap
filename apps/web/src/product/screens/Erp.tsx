@@ -66,7 +66,7 @@ function Table({
 const ORIGIN: Record<string, string> = {
   seed: 'Existing',
   imported: 'Imported by you',
-  created_by_veyra: 'Added by Veyra',
+  created_by_veyra: 'Added by Veyrafy',
   auto_created_from_invoice: 'Created from invoice (automatic)',
   created_from_invoice_on_approval: 'Created from invoice (your approval)',
   user_confirmed_via_veyra: 'Confirmed by you',
@@ -144,8 +144,8 @@ const HEAD: Record<ErpTab, { head: string[]; numeric?: number[] }> = {
 };
 
 /**
- * The business system Veyra works with (Phase 4): reference only. There is nothing to connect,
- * no credentials and no settings here; the connection is configured where Veyra is deployed.
+ * The business system Veyrafy works with (Phase 4): reference only. There is nothing to connect,
+ * no credentials and no settings here; the connection is configured where Veyrafy is deployed.
  */
 function Connection({ connection }: { connection: ErpConnectionView | null }) {
   if (!connection) return <p className={styles.none}>Loading…</p>;
@@ -162,7 +162,7 @@ function Connection({ connection }: { connection: ErpConnectionView | null }) {
           {connectionStatusText(connection.status)}
         </StatusPill>
       </div>
-      <p className={styles.eyebrow}>What Veyra can do in it</p>
+      <p className={styles.eyebrow}>What Veyrafy can do in it</p>
       <ul className={styles.capabilities}>
         {capabilityList(connection).map((c) => (
           <li key={c.label} className={c.supported ? undefined : styles.unsupported}>
@@ -201,7 +201,7 @@ export function Erp({ tab }: { tab: ErpTab }) {
         title="ERP"
         sub={
           <>
-            Business records Veyra checks invoices against.
+            Business records Veyrafy checks invoices against.
             {connection && (
               <>
                 {' '}

@@ -73,10 +73,10 @@ ok(
   'HSTS on the public site',
 );
 
-// 2. "See Veyra in action" → demo PIN → inbox
-await page.getByRole('link', { name: 'See Veyra in action' }).first().click();
+// 2. "See Veyrafy in action" → demo PIN → inbox
+await page.getByRole('link', { name: 'See Veyrafy in action' }).first().click();
 await page.getByLabel('PIN').waitFor({ timeout: 15_000 });
-ok(new URL(page.url()).hash.startsWith('#/app'), '"See Veyra in action" opens the demo sign-in');
+ok(new URL(page.url()).hash.startsWith('#/app'), '"See Veyrafy in action" opens the demo sign-in');
 await page.getByLabel('PIN').fill('000000');
 await page.getByRole('button', { name: 'Open demo' }).click();
 ok(
@@ -213,7 +213,7 @@ ok(
 const erpInvoices = await (await api('GET', '/erp/purchase-invoices')).json();
 ok(
   Array.isArray(erpInvoices) && erpInvoices.length > 0,
-  `purchase invoices Veyra recorded in the ERP (${erpInvoices.length})`,
+  `purchase invoices Veyrafy recorded in the ERP (${erpInvoices.length})`,
 );
 
 // 7. Nothing destructive or diagnostic answers anonymous callers

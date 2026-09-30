@@ -1,5 +1,5 @@
 /**
- * Where the web app finds the Veyra API (Phase 7C, docs/DEPLOYMENT.md "Public demo").
+ * Where the web app finds the Veyrafy API (Phase 7C, docs/DEPLOYMENT.md "Public demo").
  *
  * `VITE_API_BASE_URL` is read at BUILD time and ends up in the public JavaScript: it is an
  * address, never a secret. Two forms:

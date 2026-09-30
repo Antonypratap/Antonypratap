@@ -9,7 +9,7 @@ PLAN → PLAN ENTITLEMENTS → ORGANIZATION → ORGANIZATION OVERRIDES → EFFEC
 ```
 
 The web app only reads the result, to hide what would be refused. The server enforces it on
-every route, whatever the browser does. How the Veyra team operates this day to day is in
+every route, whatever the browser does. How the Veyrafy team operates this day to day is in
 [OPERATIONS.md](OPERATIONS.md).
 
 ## 1. Capabilities (the catalogue)
@@ -19,7 +19,7 @@ The only list is `packages/shared/src/commercial.ts`.
 - **Keys are stable.** They are stored in the database and the audit trail. A key is never
   renamed or reused; a changed meaning gets a new key.
 - **Only real capabilities are registered.** A switch for a feature that does not exist would
-  promise something Veyra cannot do. The planned ones are listed in §9.
+  promise something Veyrafy cannot do. The planned ones are listed in §9.
 
 | Key | Type | What it controls | Enforced in |
 |---|---|---|---|
@@ -33,7 +33,7 @@ The only list is `packages/shared/src/commercial.ts`.
 - **LIMIT** is a whole number, or unlimited. A quota is never modelled as a boolean.
 
 **Not capabilities, ever:** validation, GST checks, duplicate detection, 3-way matching, the state
-machine, security, authorization, audit. These are Veyra's safety rules. No plan or override
+machine, security, authorization, audit. These are Veyrafy's safety rules. No plan or override
 reaches them, so a commercial setting cannot switch one off.
 
 ## 2. Plans
@@ -58,7 +58,7 @@ What a plan includes is in `plan_entitlements`, one row per capability:
 | Document storage | 5 GB | 20 GB | Unlimited |
 
 - **Existing and new deployments start on Enterprise,** so upgrading changes nothing a customer
-  could do before. Veyra Operations then assigns the real plan.
+  could do before. Veyrafy Operations then assigns the real plan.
 - **Code never asks for a plan by name.** It asks for a capability key. Changing what a plan
   includes is a data change, never a code change.
 
@@ -102,7 +102,7 @@ One service: `apps/api/src/commercial/entitlements.ts`.
 | `all(org)` | every capability resolved: plan, override, effective value, source (for Operations) |
 | `get(org, key)` | one resolved capability |
 | `can(org, key)` | available? |
-| `require(org, key)` | throws `NotEntitledError` → 403 `NOT_ENTITLED`, "This is not included in your Veyra plan." |
+| `require(org, key)` | throws `NotEntitledError` → 403 `NOT_ENTITLED`, "This is not included in your Veyrafy plan." |
 | `limit(org, key)` | the quota (null = unlimited) |
 | `requireWithin(org, key, used, adding, message)` | throws `LimitReachedError` → 403 `LIMIT_REACHED` with a business message |
 
@@ -152,7 +152,7 @@ Every commercial change is written, **in the same transaction as the change**, t
 - **Append-only:** the runtime database role has no UPDATE or DELETE on it
   (`apps/api/sql/runtime-role.sql`).
 - **Never deleted.**
-- **Only Veyra Operations can make a change** (`ops.manage`, VEYRA_ADMIN only).
+- **Only Veyrafy Operations can make a change** (`ops.manage`, VEYRA_ADMIN only).
 
 ## 8. Caching and performance
 
@@ -160,7 +160,7 @@ Every commercial change is written, **in the same transaction as the change**, t
   5 seconds (`ENTITLEMENT_CACHE_MS`). The cache key is the organization id, so nothing leaks
   across organizations.
 - **Hundreds of checks cost no query** (tested). No check runs per row, so there is no N+1.
-- **A change through Veyra Operations invalidates the cache at once** in that process.
+- **A change through Veyrafy Operations invalidates the cache at once** in that process.
 - **Another API process sees the change within 5 seconds.** That is the documented staleness
   window.
 - **Expiry is never cached** (§4).

@@ -88,7 +88,7 @@ export const TABLES: readonly TableSpec[] = [
         'GSTIN',
         'gstin',
         true,
-        '15-character GSTIN. Veyra checks the state code and check digit.',
+        '15-character GSTIN. Veyrafy checks the state code and check digit.',
         '29AAECE1234F1ZY',
         18,
       ),
@@ -357,7 +357,7 @@ export const tableSpec = (key: TableKey): TableSpec => {
 
 /** Which tables each downloadable template contains (lines travel with their headers). */
 export const TEMPLATE_FILES: Readonly<Record<string, { title: string; tables: TableKey[] }>> = {
-  'Veyra-Master-Data-Import.xlsx': {
+  'Veyrafy-Master-Data-Import.xlsx': {
     title: 'All business records',
     tables: ['vendors', 'items', 'purchaseOrders', 'purchaseOrderLines', 'grns', 'grnLines'],
   },

@@ -56,7 +56,7 @@ try {
   });
 } catch (error) {
   if (error instanceof PendingMigrationsError) log.fatal({ pending: error.pending }, error.message);
-  else log.fatal({ err: error }, 'Veyra could not start');
+  else log.fatal({ err: error }, 'Veyrafy could not start');
   process.exit(1);
 }
 
@@ -83,9 +83,9 @@ await app.warmUp().then(
 
 app.runner.start();
 await app.server.listen({ host: config.host, port: config.port });
-log.info({ ...describeConfig(config), port: config.port }, 'Veyra API started');
+log.info({ ...describeConfig(config), port: config.port }, 'Veyrafy API started');
 if (config.environment === 'development')
-  console.log(`Veyra API on http://${config.host}:${config.port}/api/v1`);
+  console.log(`Veyrafy API on http://${config.host}:${config.port}/api/v1`);
 
 let stopping = false;
 const stop = async (signal: string) => {

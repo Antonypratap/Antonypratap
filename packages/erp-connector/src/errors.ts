@@ -53,7 +53,8 @@ export abstract class ErpConnectorError extends Error {
 export class ErpNotFoundError extends ErpConnectorError {
   readonly code = 'NOT_FOUND';
   readonly retryable = false;
-  readonly userMessage = 'A record Veyra needed is not in the business system. Nothing was posted.';
+  readonly userMessage =
+    'A record Veyrafy needed is not in the business system. Nothing was posted.';
   constructor(
     readonly entity: ErpEntityType,
     readonly id: string,
@@ -161,8 +162,8 @@ export class ErpUnavailableError extends ErpConnectorError {
     this.externalReference = options.externalReference ?? null;
     this.userMessage =
       this.writeOutcome === 'unknown'
-        ? 'Veyra could not confirm whether the business system recorded this. Nothing is shown as recorded until it is confirmed.'
-        : "Veyra couldn't reach the business system. Nothing was posted.";
+        ? 'Veyrafy could not confirm whether the business system recorded this. Nothing is shown as recorded until it is confirmed.'
+        : "Veyrafy couldn't reach the business system. Nothing was posted.";
   }
 }
 
@@ -171,7 +172,7 @@ export class ErpAuthenticationError extends ErpConnectorError {
   readonly code = 'AUTHENTICATION_FAILED';
   readonly retryable = false;
   readonly userMessage =
-    'The business system refused Veyra’s connection. Nothing was posted. The connection needs attention.';
+    'The business system refused Veyrafy’s connection. Nothing was posted. The connection needs attention.';
   constructor(options: { cause?: unknown } = {}) {
     super('The business system refused the connection', options);
     this.name = 'ErpAuthenticationError';

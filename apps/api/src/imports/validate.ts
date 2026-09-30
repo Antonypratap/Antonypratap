@@ -169,7 +169,7 @@ function parseCell(col: ColumnSpec, cell: Cell | undefined, date1904: boolean): 
     return {
       ok: false,
       message:
-        'is a formula with no saved value. Veyra never calculates formulas: paste the value instead.',
+        'is a formula with no saved value. Veyrafy never calculates formulas: paste the value instead.',
     };
   if (!cell || cell.kind === 'empty' || cell.text.trim() === '') {
     return col.required ? { ok: false, message: 'is missing.' } : { ok: true, value: null };
@@ -326,7 +326,7 @@ export function checkImport(
       const key = detectTable(s.name, s.rows);
       if (!key) {
         if (s.rows.some((r) => r.cells.some((c) => c.text.trim() !== '')))
-          notices.push(`“${s.source}” was not read: it is not one of the Veyra template sheets.`);
+          notices.push(`“${s.source}” was not read: it is not one of the Veyrafy template sheets.`);
         continue;
       }
       const already = found.get(key);
@@ -474,7 +474,7 @@ export function checkImport(
           'vendors',
           r,
           'Vendor code',
-          `Vendor ${code} already exists with different details. Veyra does not change existing records.`,
+          `Vendor ${code} already exists with different details. Veyrafy does not change existing records.`,
         );
       continue;
     }
@@ -508,7 +508,7 @@ export function checkImport(
         'items',
         r,
         'Item code',
-        `Item ${code} already exists with different details. Veyra does not change existing records.`,
+        `Item ${code} already exists with different details. Veyrafy does not change existing records.`,
       );
   }
   const itemUom = (code: string): string | null => {
@@ -627,7 +627,7 @@ export function checkImport(
           'purchaseOrders',
           r,
           'PO number',
-          `Purchase order ${po} already exists with different details. Veyra does not change existing records.`,
+          `Purchase order ${po} already exists with different details. Veyrafy does not change existing records.`,
         );
     }
   }
@@ -764,7 +764,7 @@ export function checkImport(
           'grns',
           r,
           'GRN number',
-          `Goods receipt ${grn} already exists with different details. Veyra does not change existing records.`,
+          `Goods receipt ${grn} already exists with different details. Veyrafy does not change existing records.`,
         );
     }
   }

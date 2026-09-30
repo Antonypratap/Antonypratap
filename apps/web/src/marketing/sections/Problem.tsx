@@ -74,7 +74,7 @@ export function Problem() {
               })}
             </ul>
             <div className={styles.handled}>
-              <StatusPill status="handled">5 handled by Veyra</StatusPill>
+              <StatusPill status="handled">5 handled by Veyrafy</StatusPill>
             </div>
           </div>
         </div>

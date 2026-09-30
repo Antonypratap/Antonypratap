@@ -1,4 +1,4 @@
-/** The Veyra design system: tokens (tokens.css), base styles (base.css) and components. */
+/** The Veyrafy design system: tokens (tokens.css), base styles (base.css) and components. */
 export { Button, ButtonLink } from './components/Button';
 export { Card } from './components/Card';
 export { Field } from './components/Field';

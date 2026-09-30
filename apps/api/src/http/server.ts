@@ -100,7 +100,7 @@ export interface ServerOptions {
   trustProxy?: number;
   /** Readiness of the instance's dependencies (GET /api/v1/health/ready). */
   readiness?: () => Promise<ReadinessReport>;
-  /** Veyra Operations' commercial actions (Phase 8A). Absent: built on the Veyra's own. */
+  /** Veyra Operations' commercial actions (Phase 8A). Absent: built on the Veyrafy's own. */
   commercial?: CommercialAdmin;
   /** Sign-in, sessions and browser origins (Phase 6C). */
   auth: {
@@ -375,7 +375,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     // Veyra's operators belong to the platform organization, not to the customer's.
     organization:
       auth.user.organizationId === t.PLATFORM_ORGANIZATION_ID
-        ? { id: t.PLATFORM_ORGANIZATION_ID, name: 'Veyra Operations' }
+        ? { id: t.PLATFORM_ORGANIZATION_ID, name: 'Veyrafy Operations' }
         : { id: veyra.organizationId, name: veyra.organizationName },
     csrfToken: auth.csrfToken,
     expiresAt: auth.expiresAt,
@@ -924,7 +924,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
         : kind === 'decisions'
           ? await decisionsTable(present)
           : await auditTable(present);
-    const file = `Veyra-${kind}-${veyra.today()}`;
+    const file = `Veyrafy-${kind}-${veyra.today()}`;
     return m?.[2] === 'csv'
       ? download(reply, `${file}.csv`, 'text/csv; charset=utf-8', tableCsv(table))
       : download(reply, `${file}.xlsx`, XLSX, tableXlsx(table));

@@ -602,7 +602,7 @@ const OPERATION: Record<string, string> = {
 /** One audit row in plain language. State changes and bookkeeping rows are not shown. */
 function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
   const d = JSON.parse(e.detailJson) as Record<string, unknown>;
-  const by = e.actorType === 'user' ? ('You' as const) : ('Veyra' as const);
+  const by = e.actorType === 'user' ? ('You' as const) : ('Veyrafy' as const);
   const make = (
     title: string,
     detail: string,
@@ -704,13 +704,13 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
     case 'erp.unavailable':
       return make(
         'ERP unavailable',
-        "Veyra couldn't reach your business system. Nothing was posted; it will try again.",
+        "Veyrafy couldn't reach your business system. Nothing was posted; it will try again.",
         'attention',
       );
     case 'erp.reconciliation_required':
       return make(
         'ERP transaction outcome requires reconciliation',
-        `Veyra could not confirm whether your business system recorded the ${OPERATION[s('operation')] ?? 'transaction'}. Nothing is shown as recorded until it is confirmed.`,
+        `Veyrafy could not confirm whether your business system recorded the ${OPERATION[s('operation')] ?? 'transaction'}. Nothing is shown as recorded until it is confirmed.`,
         'attention',
       );
     case 'erp.reconciled':
@@ -733,7 +733,7 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
           at: e.createdAt,
           title: 'Ready for payment',
           detail: 'Verified. Paying stays with your team.',
-          by: 'Veyra',
+          by: 'Veyrafy',
           tone: 'handled',
         },
       ];
@@ -784,7 +784,7 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
       );
     }
     case 'invoice.failed':
-      return make("Veyra couldn't finish", plainFailure(s('reason')), 'attention');
+      return make("Veyrafy couldn't finish", plainFailure(s('reason')), 'attention');
     default:
       return [];
   }

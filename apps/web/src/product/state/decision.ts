@@ -8,9 +8,9 @@ import { inr } from '../format';
 
 type Kind = ApiQuestion['kind'];
 
-/** The line above a question: what kind of help Veyra needs. */
+/** The line above a question: what kind of help Veyrafy needs. */
 export const ASK_LABEL: Record<Kind, string> = {
-  MISSING_DATA: 'Veyra needs you to confirm',
+  MISSING_DATA: 'Veyrafy needs you to confirm',
   AMBIGUOUS_MATCH: 'Your decision is needed',
   BUSINESS_DECISION: 'Your decision is needed',
   CREATION_APPROVAL: 'Your approval is needed',
@@ -20,12 +20,12 @@ export const ASK_LABEL: Record<Kind, string> = {
 /** What happens after the decision, in one sentence. */
 export const AFTER_DECISION: Record<Kind, string> = {
   MISSING_DATA:
-    'Veyra then checks the whole invoice again. It is recorded only if every check passes.',
+    'Veyrafy then checks the whole invoice again. It is recorded only if every check passes.',
   AMBIGUOUS_MATCH:
-    'Veyra then checks the invoice against the one you choose. Nothing is linked by name alone.',
-  BUSINESS_DECISION: 'Veyra then checks the invoice again with your decision.',
+    'Veyrafy then checks the invoice against the one you choose. Nothing is linked by name alone.',
+  BUSINESS_DECISION: 'Veyrafy then checks the invoice again with your decision.',
   CREATION_APPROVAL:
-    'Veyra then checks the invoice again. What you approve is written to your ERP only with the invoice.',
+    'Veyrafy then checks the invoice again. What you approve is written to your ERP only with the invoice.',
   VALIDATION_FAILURE:
     'There is no override: correct what was misread, fix the record and check again, or reject.',
 };

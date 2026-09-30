@@ -23,7 +23,7 @@ export function connectionIdentity(c: ErpConnectionView): string {
     .join(' · ');
 }
 
-/** What the business system lets Veyra do, supported first. */
+/** What the business system lets Veyrafy do, supported first. */
 export function capabilityList(c: ErpConnectionView): { label: string; supported: boolean }[] {
   return [
     ...c.capabilities.filter((x) => x.supported),

@@ -86,11 +86,11 @@ export const notify = {
     show(
       'upload',
       'success',
-      `${plural(n, 'Invoice', 'invoices')} uploaded. Veyra is reading ${n === 1 ? 'it' : 'them'}.`,
+      `${plural(n, 'Invoice', 'invoices')} uploaded. Veyrafy is reading ${n === 1 ? 'it' : 'them'}.`,
     ),
-  answered: () => show('answer', 'success', 'Decision recorded. Veyra is continuing.'),
+  answered: () => show('answer', 'success', 'Decision recorded. Veyrafy is continuing.'),
   rejected: () => show('reject', 'info', 'Invoice rejected. Nothing was recorded in your ERP.'),
-  reprocessing: () => show('reprocess', 'info', 'Veyra is reading the invoice again.'),
+  reprocessing: () => show('reprocess', 'info', 'Veyrafy is reading the invoice again.'),
   importChecked: (ok: boolean) =>
     ok
       ? show('import', 'success', 'File checked. Review the preview, then confirm the import.')
@@ -99,7 +99,7 @@ export const notify = {
   signedIn: () => show('session', 'success', 'Signed in.'),
   signedOut: () => show('session', 'info', 'You have signed out.'),
   offline: () =>
-    show('network', 'error', 'Veyra cannot be reached. It will keep trying; your work is saved.'),
+    show('network', 'error', 'Veyrafy cannot be reached. It will keep trying; your work is saved.'),
   online: () => show('network', 'success', 'Connection restored.'),
   processed: (ready: number, attention: number) => {
     if (ready > 0 && attention > 0)

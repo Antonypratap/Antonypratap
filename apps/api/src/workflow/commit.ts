@@ -265,7 +265,7 @@ export async function executeCommit(
     const fresh = await v.engine(invoiceId);
     if (!fresh.plan || canonical(fresh.plan) !== canonical(plan)) {
       await backToMatching(
-        'Your records changed since the invoice was checked, so Veyra is checking it again.',
+        'Your records changed since the invoice was checked, so Veyrafy is checking it again.',
       );
       return;
     }
@@ -573,7 +573,7 @@ export async function executeCommit(
   } catch (error) {
     if (error instanceof ErpConflictError) {
       await backToMatching(
-        'A record Veyra was about to create now exists in your ERP. Veyra is checking again.',
+        'A record Veyrafy was about to create now exists in your ERP. Veyrafy is checking again.',
         { entity: error.entity, existingId: error.existingId },
       );
       return;

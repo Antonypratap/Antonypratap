@@ -23,7 +23,7 @@ export function Audit({ id }: { id: string | null }) {
     <div className={styles.page}>
       <PageHeader
         title="Audit"
-        sub="What happened to each invoice, and who did it. Veyra does the checking; you make the decisions."
+        sub="What happened to each invoice, and who did it. Veyrafy does the checking; you make the decisions."
         aside={canExport ? <ExportLink href={exportUrl('audit.xlsx')} /> : undefined}
       />
       {selected === null && !showRecords ? (

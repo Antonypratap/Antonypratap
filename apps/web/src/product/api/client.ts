@@ -20,7 +20,7 @@ import { csrfHeaders, sessionEnded } from '../../access/session';
 import { API, API_CREDENTIALS } from '../../api-endpoint';
 
 /**
- * The only way the product talks to Veyra: the REST API under /api/v1. Every response is
+ * The only way the product talks to Veyrafy: the REST API under /api/v1. Every response is
  * validated against the shared contract. The browser sends what the user chose and typed;
  * the server decides everything else (status, result, ERP records).
  */
@@ -46,7 +46,7 @@ const ErrorBody = z.object({
   }),
 });
 
-const UNREACHABLE = 'Veyra could not be reached. Check your connection; it will keep trying.';
+const UNREACHABLE = 'Veyrafy could not be reached. Check your connection; it will keep trying.';
 const GATEWAY = new Set([502, 503, 504]);
 
 export async function request<S extends z.ZodType>(
@@ -73,7 +73,7 @@ export async function request<S extends z.ZodType>(
   if (res.status === 401) sessionEnded();
   if (!res.ok) {
     const parsed = ErrorBody.safeParse(body);
-    // A gateway answering for an API that is down (502/503/504 without a Veyra error body): the
+    // A gateway answering for an API that is down (502/503/504 without a Veyrafy error body): the
     // same as no connection at all.
     if (!parsed.success && GATEWAY.has(res.status))
       throw new ApiError(res.status, 'OFFLINE', UNREACHABLE);
@@ -169,7 +169,7 @@ export const documentUrl = (documentId: string): string =>
 
 /** Downloadable business-record templates (served by the API, generated on request). */
 export const TEMPLATES: readonly { file: string; title: string }[] = [
-  { file: 'Veyra-Master-Data-Import.xlsx', title: 'All business records (one workbook)' },
+  { file: 'Veyrafy-Master-Data-Import.xlsx', title: 'All business records (one workbook)' },
   { file: 'Vendors.xlsx', title: 'Vendors' },
   { file: 'Items.xlsx', title: 'Items' },
   { file: 'PurchaseOrders.xlsx', title: 'Purchase orders' },

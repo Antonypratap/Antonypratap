@@ -364,7 +364,7 @@ describe('the whole upload is checked first, and imports are atomic and repeatab
     changed[4] = 'New address';
     const preview = await check(workbook({ vendors: [changed] }));
     expect(preview.errors.map((e) => e.message)).toEqual([
-      'Vendor SUP-01 already exists with different details. Veyra does not change existing records.',
+      'Vendor SUP-01 already exists with different details. Veyrafy does not change existing records.',
     ]);
     expect((await app.veyra.erp.listVendors())[0]?.address).toBe('Bengaluru');
   });
@@ -375,10 +375,10 @@ describe('the whole upload is checked first, and imports are atomic and repeatab
       bytes: readFileSync(new URL('../test/fixtures/excel-style.xlsx', import.meta.url)),
     });
     expect(preview.errors.map((e) => `${e.table} row ${e.row}: ${e.message}`)).toEqual([
-      'Goods receipt lines row 2: Accepted is a formula with no saved value. Veyra never calculates formulas: paste the value instead.',
+      'Goods receipt lines row 2: Accepted is a formula with no saved value. Veyrafy never calculates formulas: paste the value instead.',
     ]);
     expect(preview.notices).toContain(
-      '“purchasing.xlsx › Notes” was not read: it is not one of the Veyra template sheets.',
+      '“purchasing.xlsx › Notes” was not read: it is not one of the Veyrafy template sheets.',
     );
     expect(preview.tables.map((t) => [t.label, t.rows])).toEqual([
       ['Vendors', 2],
@@ -393,9 +393,9 @@ describe('the whole upload is checked first, and imports are atomic and repeatab
   it('accepts CSV, skips template example rows, and refuses what is not a spreadsheet', async () => {
     const csv = await check(fixture('Demo-Vendors.csv'));
     expect(csv.tables).toEqual([expect.objectContaining({ label: 'Vendors', rows: 7, ready: 7 })]);
-    const template = await check(fixture('templates/Veyra-Master-Data-Import.xlsx'));
+    const template = await check(fixture('templates/Veyrafy-Master-Data-Import.xlsx'));
     expect(template.notices).toContain(
-      '1 example row on Veyra-Master-Data-Import.xlsx › Vendors skipped.',
+      '1 example row on Veyrafy-Master-Data-Import.xlsx › Vendors skipped.',
     );
     expect(template.errors.map((e) => e.message)).toEqual([
       'There are no records to import in this upload.',
@@ -511,7 +511,7 @@ describe('exports', () => {
       expect.arrayContaining([
         'Business records · You · Business records imported',
         'APX-7790 · You · Confirmed goods receipt',
-        'APX-7790 · Veyra · Ready for payment',
+        'APX-7790 · Veyrafy · Ready for payment',
       ]),
     );
     expect(
@@ -521,14 +521,14 @@ describe('exports', () => {
 });
 
 describe('audit and history', () => {
-  it('import actions appear in the audit trail as You and Veyra, and in the import history', async () => {
+  it('import actions appear in the audit trail as You and Veyrafy, and in the import history', async () => {
     const preview = await check(fixture('Demo-Business-Records.xlsx'));
     await confirm(preview.id);
     const trail = await get<ApiAuditEntry[]>('/api/v1/audit?scope=records');
     expect(trail.map((e) => `${e.by}: ${e.title}`)).toEqual([
       'You: Business records uploaded',
       'You: Business records imported',
-      'Veyra: 39 records added',
+      'Veyrafy: 39 records added',
     ]);
     expect(trail[2]?.detail).toBe(
       '7 vendors, 7 items, 13 purchase orders, 12 goods receipts added to your business records.',

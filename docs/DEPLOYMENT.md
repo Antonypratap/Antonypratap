@@ -1,6 +1,6 @@
-# Deploying Veyra
+# Deploying Veyrafy
 
-How to run Veyra as a hosted application: prerequisites, configuration, build, database
+How to run Veyrafy as a hosted application: prerequisites, configuration, build, database
 migrations, startup, health, shutdown, storage, logs, backups and rollback. What is **not**
 production-ready yet is in [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md); design background is
 in [ARCHITECTURE §18–20](ARCHITECTURE.md). The threat model, the security controls and what each
@@ -8,18 +8,18 @@ deployment must provide are in [SECURITY.md](SECURITY.md); work through its **Be
 Customer** checklist before real customer data goes in.
 
 > **Read this first.** Every API request except the health probes and sign-in needs a signed-in
-> session; roles are enforced by the server (SECURITY.md §4–7). What Veyra does **not** provide
+> session; roles are enforced by the server (SECURITY.md §4–7). What Veyrafy does **not** provide
 > itself: TLS (the reverse proxy), keeping PostgreSQL off the internet, encrypted backups,
 > multi-factor authentication. The demo PIN exists only in demo environments and never in
 > production.
 
 ## 1. Prerequisites
 
-- **PostgreSQL 14 or newer** (16 recommended) for the Veyra application database. A managed
+- **PostgreSQL 14 or newer** (16 recommended) for the Veyrafy application database. A managed
   service (AWS RDS, DigitalOcean Managed PostgreSQL, …) or your own server. Staging and production
   each get their **own** database.
 - A Linux VM or container host with **Node.js ≥ 22.12** and `npm`.
-- A **persistent disk** mounted for Veyra's data (for example `/var/lib/veyra`). It holds the
+- A **persistent disk** mounted for Veyrafy's data (for example `/var/lib/veyra`). It holds the
   uploaded documents and, while it is the ERP, the fake ERP's SQLite file. It must survive restarts
   and redeploys; a container's own filesystem is not enough.
 - A reverse proxy for TLS and access control (Caddy, Nginx, a cloud load balancer, …).
@@ -48,7 +48,7 @@ All configuration comes from environment variables, read and validated once at s
 
 - **`DATABASE_URL`**: `postgres://veyra_app:password@host:5432/veyra?sslmode=verify-full`, the
   least-privilege runtime role (SECURITY.md §13). It is a **secret**: keep it in the platform's
-  secret store. Veyra never prints, logs or returns it; a malformed URL is reported by name only.
+  secret store. Veyrafy never prints, logs or returns it; a malformed URL is reported by name only.
   In production a database on another host must use TLS (`sslmode=verify-full` or `require`);
   startup refuses otherwise unless `VEYRA_DB_REQUIRE_TLS=false` is set explicitly (only on a
   private network; a documented risk).
@@ -67,7 +67,7 @@ All configuration comes from environment variables, read and validated once at s
   - `VEYRA_DB_CONNECT_TIMEOUT_MS` (default 5 s) bounds a connection attempt.
   - `VEYRA_DB_STATEMENT_TIMEOUT_MS` (default 30 s) cancels a runaway statement.
   - Keep `processes × VEYRA_DB_POOL_MAX` below the server's `max_connections`.
-- **Development without `DATABASE_URL`:** Veyra runs PostgreSQL **embedded in the process** (PGlite,
+- **Development without `DATABASE_URL`:** Veyrafy runs PostgreSQL **embedded in the process** (PGlite,
   stored in `<VEYRA_DATA_DIR>/pgdata`). It is the same SQL, schema and migrations, with nothing to
   install, so `npm run demo` works out of the box. It is refused outside development. Point
   `DATABASE_URL` at a real server to develop against one.
@@ -97,7 +97,7 @@ npm run build -w @veyra/web     # → apps/web/dist (static files)
 
 ## 4. Database migrations
 
-The Veyra application database is **PostgreSQL**. Migrations are the versioned SQL files in
+The Veyrafy application database is **PostgreSQL**. Migrations are the versioned SQL files in
 `apps/api/drizzle/`:
 
 - Each applies once, in order, inside a transaction.
@@ -131,11 +131,11 @@ The Veyra application database is **PostgreSQL**. Migrations are the versioned S
   run it in a quiet window.
 
   If this step is skipped, the API refuses to start and names the pending migrations. Nothing in
-  Veyra resets or deletes production data (`/dev/reset` does not exist in production).
+  Veyrafy resets or deletes production data (`/dev/reset` does not exist in production).
 
 ### Moving an existing SQLite database (once)
 
-Veyra used SQLite (`veyra.db`) before Phase 6A. To carry an existing installation over:
+Veyrafy used SQLite (`veyra.db`) before Phase 6A. To carry an existing installation over:
 
 1. Stop the old version. Keep `veyra.db`, `fake_erp.db` and the `uploads/` folder where they are.
 2. Create the PostgreSQL database and run `npm run db:migrate -w @veyra/api` against it.
@@ -159,7 +159,7 @@ What the import does:
   - invoices by state, questions by status, ERP writes by status;
   - audit events per invoice, invoice ↔ document, the order of answers, jobs by status.
 
-Any difference, or any value it would have to reinterpret (such as a timestamp not in Veyra's
+Any difference, or any value it would have to reinterpret (such as a timestamp not in Veyrafy's
 format), rolls everything back and names the problem. The report prints the counts per table on
 both sides.
 
@@ -331,7 +331,7 @@ document access are in `security_events` (SECURITY.md §15), not in logs.
 
 | What | Where | How |
 |---|---|---|
-| Veyra application database (all workflow data and the audit trail) | PostgreSQL | managed backups with point-in-time recovery, plus `pg_dump` |
+| Veyrafy application database (all workflow data and the audit trail) | PostgreSQL | managed backups with point-in-time recovery, plus `pg_dump` |
 | Documents | `VEYRA_STORAGE_DIR` (default `<VEYRA_DATA_DIR>/uploads`) | `rsync` to another machine or bucket |
 | Fake ERP database (while it is the ERP) | `<VEYRA_DATA_DIR>/fake_erp.db` (SQLite) | `sqlite3 … ".backup …"` |
 | Configuration and secrets | your secret store / `/etc/veyra/*.env` | handled separately, never with the data |
@@ -351,7 +351,7 @@ rsync -a /var/lib/veyra/uploads/ backup-host:/backups/veyra-uploads/
 sqlite3 /var/lib/veyra/fake_erp.db ".backup '/backups/fake_erp-$(date -u +%Y%m%dT%H%M%SZ).db'"
 ```
 
-Copy backups off the server. **Veyra does not encrypt backups; the operator must.** Write dumps
+Copy backups off the server. **Veyrafy does not encrypt backups; the operator must.** Write dumps
 and document copies to encrypted storage, or encrypt them before they leave the server (for
 example `age -r <recipient> -o dump.age dump`), and confirm the database provider's snapshots are
 encrypted. Only a backup role or account may read them, not the application's credentials. The
@@ -403,7 +403,7 @@ An invoice whose document is missing answers "not available" when opened; restor
 - **Production:** no `/dev/*` endpoints (reset, demo scenarios), no demo sign-in, no demo seed and
   no fixture extractor. These are enforced by the server.
 - **Access:** every route but the health probes and sign-in needs a session; each role gets only
-  its permissions; state-changing requests need the session's CSRF token and one of Veyra's
+  its permissions; state-changing requests need the session's CSRF token and one of Veyrafy's
   origins (SECURITY.md §6–7).
 
 ## 13. Test database
@@ -428,7 +428,7 @@ Without `TEST_DATABASE_URL` the API tests fail at once with that instruction. CI
 The target is `https://veyra-demo.vercel.app`:
 
 1. The landing page.
-2. **See Veyra in action**.
+2. **See Veyrafy in action**.
 3. The demo PIN.
 4. `/app/inbox`.
 5. The demo scenarios, questions, audit trail and ERP demo data.
@@ -554,7 +554,7 @@ VEYRA_DEMO_URL=https://veyra-demo.vercel.app/ VEYRA_DEMO_PIN=… RESET=1 node sc
 
 It walks the whole journey and exits non-zero on any failure:
 
-- landing, **See Veyra in action**, a wrong PIN, the right PIN, `/app/inbox`, and a refresh on
+- landing, **See Veyrafy in action**, a wrong PIN, the right PIN, `/app/inbox`, and a refresh on
   `/app/inbox`;
 - the seven scenarios, answering the goods-receipt question, the audit trail and the ERP data;
 - that anonymous callers cannot reset or read diagnostics, and a foreign origin cannot sign in;

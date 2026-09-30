@@ -73,12 +73,12 @@ export function ErpData() {
           </h2>
           <p className={styles.sub}>
             Bring in vendors, items, purchase orders and goods receipts. Use this when your ERP
-            isn&rsquo;t connected: Veyra checks invoices against these records.
+            isn&rsquo;t connected: Veyrafy checks invoices against these records.
           </p>
         </div>
         {caps && !canImport && (
           <p className={styles.note} data-testid="import-unavailable">
-            Importing business records is not included in your Veyra subscription. Your Veyra
+            Importing business records is not included in your Veyrafy subscription. Your Veyrafy
             contact can add it.
           </p>
         )}
@@ -104,7 +104,7 @@ export function ErpData() {
             <li>
               <span className={styles.stepTitle}>Upload it</span>
               <span className={styles.note}>
-                Excel (.xlsx) or CSV. Veyra checks the whole upload before anything is imported.
+                Excel (.xlsx) or CSV. Veyrafy checks the whole upload before anything is imported.
               </span>
               <span>
                 <button
@@ -151,7 +151,7 @@ export function ErpData() {
         </h2>
         {caps && !canExport && (
           <p className={styles.note} data-testid="export-unavailable">
-            Exports are not included in your Veyra subscription.
+            Exports are not included in your Veyrafy subscription.
           </p>
         )}
         {canExport && (

@@ -20,7 +20,7 @@ import { opsApi } from './api';
 import styles from './Ops.module.css';
 
 /**
- * Veyra Operations (Phase 8A): the Veyra team's control plane, separate from the customer
+ * Veyrafy Operations (Phase 8A): the Veyrafy team's control plane, separate from the customer
  * application. The server allows it to VEYRA_ADMIN only; this page only presents what the server
  * returns. Commercial changes always carry a reason and are audited by the server.
  */
@@ -82,18 +82,18 @@ export function OpsApp({ route }: { route: OpsRoute }) {
       <div className={styles.denied}>
         <Logo />
         <h1>Access denied</h1>
-        <p>Veyra Operations is for the Veyra team. Your account is a customer account.</p>
+        <p>Veyrafy Operations is for the Veyrafy team. Your account is a customer account.</p>
         <a href={hrefFor({ name: 'inbox' })}>Go to your inbox</a>
       </div>
     );
   return (
     <div className={styles.shell}>
       <aside className={styles.sidebar}>
-        <a href={href('overview')} className={styles.brand} aria-label="Veyra Operations">
+        <a href={href('overview')} className={styles.brand} aria-label="Veyrafy Operations">
           <Logo />
           <span className={styles.brandTag}>Operations</span>
         </a>
-        <nav aria-label="Veyra Operations">
+        <nav aria-label="Veyrafy Operations">
           <ul className={styles.nav}>
             {NAV.map((n) => (
               <li key={n.section}>

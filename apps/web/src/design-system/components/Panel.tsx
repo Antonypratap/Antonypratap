@@ -2,7 +2,7 @@ import type { HTMLAttributes, ReactNode } from 'react';
 import styles from './Panel.module.css';
 
 /**
- * A product surface: the frame every piece of Veyra UI sits in, on the site and in the app.
+ * A product surface: the frame every piece of Veyrafy UI sits in, on the site and in the app.
  * `title`/`meta` render a quiet header bar.
  */
 export function Panel({

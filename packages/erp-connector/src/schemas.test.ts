@@ -41,7 +41,7 @@ describe('VendorSchema', () => {
     expect(ok(VendorSchema.safeParse({ ...vendor, gstin: '29AAGCM4455J1Z5' }))).toBe(false);
   });
 
-  it('records created by Veyra reference their invoice; seed records do not', () => {
+  it('records created by Veyrafy reference their invoice; seed records do not', () => {
     expect(ok(VendorSchema.safeParse({ ...vendor, origin: 'created_by_veyra' }))).toBe(false);
     expect(ok(VendorSchema.safeParse({ ...vendor, sourceInvoiceId: INV }))).toBe(false);
     // Imported records name their import, and only they do.
@@ -145,7 +145,7 @@ describe('GrnSchema', () => {
     expect(ok(GrnSchema.safeParse(over))).toBe(false);
   });
 
-  it('GRNs via Veyra must name the confirming user and invoice', () => {
+  it('GRNs via Veyrafy must name the confirming user and invoice', () => {
     expect(ok(GrnSchema.safeParse({ ...grn, origin: 'user_confirmed_via_veyra' }))).toBe(false);
     expect(
       ok(

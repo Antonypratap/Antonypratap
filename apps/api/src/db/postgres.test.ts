@@ -244,7 +244,7 @@ describe('timestamps and business dates', () => {
 });
 
 describe('audit trail', () => {
-  it('is listed in the order it was written, Veyra and You told apart', async () => {
+  it('is listed in the order it was written, Veyrafy and You told apart', async () => {
     const h = await harness();
     const id = await h.upload('S03');
     await h.answer(id, 'CA_GRN', 'confirm', {
@@ -261,10 +261,10 @@ describe('audit trail', () => {
     const shown = await new Presenter(h.veyra).audit(id);
     expect(shown.map((e) => `${e.by}: ${e.title}`).slice(0, 2)).toEqual([
       'You: Uploaded invoice',
-      'Veyra: Read invoice',
+      'Veyrafy: Read invoice',
     ]);
     expect(shown.some((e) => e.by === 'You' && e.title === 'Confirmed goods receipt')).toBe(true);
-    expect(shown.at(-1)).toMatchObject({ by: 'Veyra', title: 'Ready for payment' });
+    expect(shown.at(-1)).toMatchObject({ by: 'Veyrafy', title: 'Ready for payment' });
   });
 
   it('is transactional: a failed operation leaves no audit row behind', async () => {

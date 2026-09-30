@@ -4,7 +4,7 @@
  * preview` sends them too, so the production build is tested under the same policy.
  *
  * The app is scripts and styles from its own origin only: no inline script, no eval, no third-
- * party origins, and it talks only to the Veyra API: /api/v1 on the same origin by default.
+ * party origins, and it talks only to the Veyrafy API: /api/v1 on the same origin by default.
  */
 /**
  * The CSP. `apiOrigin`: the API's origin when VITE_API_BASE_URL points at another origin

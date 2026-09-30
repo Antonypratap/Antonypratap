@@ -162,7 +162,7 @@ describe('stage 1: the invoice on its own', () => {
     expect(unreadable.questions.map((q) => q.subjectKey)).toEqual(['header.placeOfSupply']);
   });
 
-  it('duplicates: the ERP and other Veyra invoices both count; a match is asked, not rejected', async () => {
+  it('duplicates: the ERP and other Veyrafy invoices both count; a match is asked, not rejected', async () => {
     const other: OtherInvoice = {
       id: 'x',
       state: 'NEEDS_INPUT',
