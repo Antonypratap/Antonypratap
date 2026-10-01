@@ -1,0 +1,206 @@
+.panel {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.zone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-5);
+  padding: var(--space-8);
+  border: 2px dashed var(--color-line-strong);
+  border-radius: 1.25rem;
+  background: var(--color-surface-raised);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+.zone:hover {
+  border-color: var(--color-accent-line);
+  background: var(--color-surface);
+}
+.panel[data-compact='true'] .zone {
+  padding: var(--space-4) var(--space-5);
+  border-width: 1.5px;
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 999px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.panel[data-compact='true'] .icon {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.copy {
+  display: grid;
+  flex: 1 1 16rem;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--color-ink);
+}
+.panel[data-compact='true'] .title {
+  font-size: 1.0625rem;
+}
+
+.hint {
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--color-ink-3);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+  padding: 0 var(--space-2);
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-3);
+}
+.sourcesLabel {
+  font-weight: var(--weight-medium);
+}
+.source {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 2rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--color-accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--color-accent-line);
+  text-underline-offset: 3px;
+}
+.source:hover {
+  color: var(--color-accent-hover);
+}
+
+.items {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 0 0 1px var(--color-line);
+  background: var(--color-line);
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  font-size: var(--text-small);
+}
+.itemMark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 999px;
+  border: 2px solid var(--color-bright);
+  color: #ffffff;
+}
+.item[data-state='uploading'] .itemMark {
+  border-right-color: transparent;
+  animation: spin 0.9s linear infinite;
+}
+.item[data-state='added'] .itemMark {
+  border: 0;
+  background: var(--color-accent);
+}
+.item[data-state='refused'] .itemMark {
+  border: 0;
+  background: var(--color-attention-strong);
+}
+.itemName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.itemState {
+  flex-shrink: 1;
+  min-width: 0;
+  color: var(--color-ink-3);
+  text-align: right;
+}
+.item[data-state='refused'] .itemState {
+  color: var(--color-attention);
+}
+.itemState a {
+  color: var(--color-accent);
+}
+
+@media (pointer: fine) {
+  .phoneOnly {
+    display: none;
+  }
+}
+@media (pointer: coarse) {
+  .desktopOnly {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .zone {
+    padding: var(--space-5);
+  }
+  .actions {
+    width: 100%;
+  }
+  .actions > * {
+    flex: 1 1 10rem;
+  }
+  .item {
+    flex-wrap: wrap;
+  }
+  .itemState {
+    flex-basis: 100%;
+    padding-left: calc(1.375rem + var(--space-3));
+    text-align: left;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .item[data-state='uploading'] .itemMark {
+    animation: none;
+  }
+}

@@ -8,6 +8,7 @@ import { api } from '../api/client';
 import { useProductData } from '../state/data';
 import styles from './AppShell.module.css';
 import { DemoProvider, DemoTrigger } from './DemoPanel';
+import { UploadsProvider, useUploads } from '../upload/Uploads';
 
 type Section = 'inbox' | 'questions' | 'invoices' | 'erp' | 'audit';
 
@@ -59,6 +60,23 @@ export function sectionOf(route: Route): Section {
   }
 }
 
+/** Upload from any screen (files can also be dropped or pasted anywhere). */
+function TopbarUpload() {
+  const uploads = useUploads();
+  if (!uploads.enabled) return null;
+  return (
+    <button
+      type="button"
+      className={styles.uploadButton}
+      onClick={uploads.chooseFiles}
+      disabled={uploads.busy}
+    >
+      <Icon name="upload" size={16} />
+      <span className={styles.uploadLabel}>{uploads.busy ? 'Uploading…' : 'Upload'}</span>
+    </button>
+  );
+}
+
 /** The website, from a client address; the local homepage in development. */
 function websiteHref(): string {
   return classifyHost(window.location.hostname).kind === 'development' ? '#top' : WEBSITE_ADDRESS;
@@ -82,118 +100,125 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
 
   return (
     <DemoProvider>
-      <div className={styles.shell}>
-        <aside className={styles.sidebar}>
-          <a href={hrefFor({ name: 'inbox' })} className={styles.brand} aria-label="Veyrafy inbox">
-            <Logo />
-          </a>
-          <nav aria-label="Product">
-            <ul className={styles.nav}>
-              {nav.map((item) => (
-                <li key={item.key}>
-                  <a
-                    href={hrefFor(item.route)}
-                    className={styles.navItem}
-                    aria-current={(active ?? sectionOf(route)) === item.key ? 'page' : undefined}
-                  >
-                    <Icon name={item.icon} size={18} />
-                    <span className={styles.navLabel}>{item.label}</span>
-                    {(item.key === 'inbox' || item.key === 'questions') && waiting > 0 && (
-                      <span className={styles.count} aria-label={`${waiting} waiting`}>
-                        {waiting}
-                      </span>
-                    )}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </nav>
-          <div className={styles.sidebarFoot}>
-            {me && <p className={styles.organization}>{me.organization.name}</p>}
-            {me?.demoSignIn && (
-              <p className={styles.demoNote}>Demo workspace. Sample ERP; no payments are made.</p>
-            )}
-            {hasData && may('demo.manage') && (
-              <button
-                type="button"
-                className={styles.siteLink}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      'Reset the demo? This clears every invoice and restores the sample ERP.',
-                    )
-                  )
-                    void api.resetDemo().then(() => refresh());
-                }}
-              >
-                Reset demo
-              </button>
-            )}
-            <button type="button" className={styles.siteLink} onClick={() => void signOut()}>
-              Sign out
-            </button>
-            <a href={websiteHref()} className={styles.siteLink}>
-              veyrafy.com
-            </a>
-          </div>
-        </aside>
-
-        <div className={styles.main}>
-          <header className={styles.topbar}>
+      <UploadsProvider enabled={may('documents.upload')}>
+        <div className={styles.shell}>
+          <aside className={styles.sidebar}>
             <a
               href={hrefFor({ name: 'inbox' })}
-              className={styles.mobileBrand}
+              className={styles.brand}
               aria-label="Veyrafy inbox"
             >
-              <Logo />
+              <Logo tone="inverse" />
             </a>
-            <label className={styles.search}>
-              <Icon name="search" size={16} />
-              <span className="visually-hidden">Search</span>
-              <input
-                type="search"
-                placeholder="Search invoices and suppliers"
-                disabled
-                title="Search arrives in a later version"
-              />
-            </label>
-            {may('demo.manage') && <DemoTrigger className={styles.demoButton} />}
-            <span
-              className={styles.user}
-              title={
-                me
-                  ? `${me.user.name} (${me.user.role.toLowerCase()}) · ${me.organization.name}`
-                  : undefined
-              }
-            >
-              {initials}
-            </span>
-          </header>
-          <main
-            className={styles.content}
-            key={route.name === 'invoice' ? `invoice-${route.id}` : route.name}
-          >
-            {children}
-          </main>
-        </div>
+            <nav aria-label="Product">
+              <ul className={styles.nav}>
+                {nav.map((item) => (
+                  <li key={item.key}>
+                    <a
+                      href={hrefFor(item.route)}
+                      className={styles.navItem}
+                      aria-current={(active ?? sectionOf(route)) === item.key ? 'page' : undefined}
+                    >
+                      <Icon name={item.icon} size={18} />
+                      <span className={styles.navLabel}>{item.label}</span>
+                      {(item.key === 'inbox' || item.key === 'questions') && waiting > 0 && (
+                        <span className={styles.count} aria-label={`${waiting} waiting`}>
+                          {waiting}
+                        </span>
+                      )}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+            <div className={styles.sidebarFoot}>
+              {me && <p className={styles.organization}>{me.organization.name}</p>}
+              {me?.demoSignIn && (
+                <p className={styles.demoNote}>Demo workspace. Sample ERP; no payments are made.</p>
+              )}
+              {hasData && may('demo.manage') && (
+                <button
+                  type="button"
+                  className={styles.siteLink}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        'Reset the demo? This clears every invoice and restores the sample ERP.',
+                      )
+                    )
+                      void api.resetDemo().then(() => refresh());
+                  }}
+                >
+                  Reset demo
+                </button>
+              )}
+              <button type="button" className={styles.siteLink} onClick={() => void signOut()}>
+                Sign out
+              </button>
+              <a href={websiteHref()} className={styles.siteLink}>
+                veyrafy.com
+              </a>
+            </div>
+          </aside>
 
-        <nav className={styles.tabbar} aria-label="Product (mobile)">
-          {nav.map((item) => (
-            <a
-              key={item.key}
-              href={hrefFor(item.route)}
-              className={styles.tab}
-              aria-current={sectionOf(route) === item.key ? 'page' : undefined}
-            >
-              <span className={styles.tabIcon}>
-                <Icon name={item.icon} size={20} />
-                {item.key === 'inbox' && waiting > 0 && <span className={styles.tabDot} />}
+          <div className={styles.main}>
+            <header className={styles.topbar}>
+              <a
+                href={hrefFor({ name: 'inbox' })}
+                className={styles.mobileBrand}
+                aria-label="Veyrafy inbox"
+              >
+                <Logo />
+              </a>
+              <label className={styles.search}>
+                <Icon name="search" size={16} />
+                <span className="visually-hidden">Search</span>
+                <input
+                  type="search"
+                  placeholder="Search invoices and suppliers"
+                  disabled
+                  title="Search arrives in a later version"
+                />
+              </label>
+              {may('demo.manage') && <DemoTrigger className={styles.demoButton} />}
+              <TopbarUpload />
+              <span
+                className={styles.user}
+                title={
+                  me
+                    ? `${me.user.name} (${me.user.role.toLowerCase()}) · ${me.organization.name}`
+                    : undefined
+                }
+              >
+                {initials}
               </span>
-              {item.label}
-            </a>
-          ))}
-        </nav>
-      </div>
+            </header>
+            <main
+              className={styles.content}
+              key={route.name === 'invoice' ? `invoice-${route.id}` : route.name}
+            >
+              {children}
+            </main>
+          </div>
+
+          <nav className={styles.tabbar} aria-label="Product (mobile)">
+            {nav.map((item) => (
+              <a
+                key={item.key}
+                href={hrefFor(item.route)}
+                className={styles.tab}
+                aria-current={sectionOf(route) === item.key ? 'page' : undefined}
+              >
+                <span className={styles.tabIcon}>
+                  <Icon name={item.icon} size={20} />
+                  {item.key === 'inbox' && waiting > 0 && <span className={styles.tabDot} />}
+                </span>
+                {item.label}
+              </a>
+            ))}
+          </nav>
+        </div>
+      </UploadsProvider>
     </DemoProvider>
   );
 }

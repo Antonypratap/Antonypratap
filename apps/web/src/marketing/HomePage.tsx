@@ -1,4 +1,3 @@
-import '@fontsource-variable/bricolage-grotesque';
 import styles from './HomePage.module.css';
 import { SiteNav } from './SiteNav';
 import { BuiltForIndia } from './sections/BuiltForIndia';

@@ -62,12 +62,6 @@
   gap: var(--space-3);
   margin-top: var(--space-8);
 }
-.primary {
-  background: var(--color-accent);
-}
-.primary:hover {
-  background: var(--color-accent-hover);
-}
 
 .principles {
   display: flex;

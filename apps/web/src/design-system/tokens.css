@@ -1,25 +1,27 @@
 /*
- * Veyra design tokens. One source of truth for the marketing site and the product UI.
- * Neutral, warm-leaning greys; one restrained accent (settled green = handled);
- * one attention colour (amber = needs a person). Precision over decoration.
+ * Veyrafy design tokens: the one theme of the website, the product and Veyrafy Operations.
+ * A warm cream canvas; one brand green (settled green = handled, and the primary action);
+ * one attention colour (amber = needs a person); a deep green-black for dark surfaces.
+ * Headings use the display face, text uses Inter. Precision over decoration.
  */
 :root {
   /* Typeface */
   --font-sans:
     'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Bricolage Grotesque Variable', var(--font-sans);
 
   /* Colour: surfaces */
-  --color-canvas: #fbfbf9;
+  --color-canvas: #f6f1e7;
   --color-surface: #ffffff;
-  --color-surface-sunken: #f4f4f1;
-  --color-surface-raised: #ffffff;
-  --color-line: #e7e6e1;
-  --color-line-strong: #d7d6cf;
+  --color-surface-sunken: #efe8da;
+  --color-surface-raised: #fbf9f4;
+  --color-line: #e6dece;
+  --color-line-strong: #d9cfba;
 
   /* Colour: text */
   --color-ink: #0d0f12;
   --color-ink-2: #3b4048;
-  --color-ink-3: #686e77;
+  --color-ink-3: #5f656e;
   --color-ink-4: #9a9fa6;
 
   /* Colour: accent (handled / primary action) */
@@ -27,11 +29,14 @@
   --color-accent-hover: #0f4a38;
   --color-accent-soft: #e9f2ee;
   --color-accent-line: #c5ddd3;
+  /* The brand's bright green (the logo's check): highlights and progress, never text. */
+  --color-bright: #03a874;
 
   /* Colour: attention (a decision is needed) */
   --color-attention: #9a5a0b;
   --color-attention-soft: #fbf2e4;
   --color-attention-line: #efd8b4;
+  --color-attention-strong: #c47a12;
 
   /* Colour: error (something did not work) */
   --color-error: #a3261d;
@@ -39,14 +44,14 @@
   --color-error-line: #f0cdc8;
 
   /* Colour: inverse (dark) surfaces */
-  --color-inverse: #0c0e11;
-  --color-inverse-2: #16191e;
-  --color-inverse-line: #262a31;
-  --color-inverse-ink: #f3f3f0;
-  --color-inverse-ink-2: #a3a8b0;
-  --color-inverse-ink-3: #6f757e;
-  --color-inverse-accent: #8fd4b6;
-  --color-inverse-attention: #f0b766;
+  --color-inverse: #0f1a16;
+  --color-inverse-2: #16241f;
+  --color-inverse-line: #24362f;
+  --color-inverse-ink: #f3f1ea;
+  --color-inverse-ink-2: #b9c2bd;
+  --color-inverse-ink-3: #8f9a95;
+  --color-inverse-accent: #5fd3a6;
+  --color-inverse-attention: #f0b44c;
 
   /* Type scale */
   --text-display: clamp(2.875rem, 1.55rem + 4.6vw, 5.25rem);

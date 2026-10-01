@@ -1,4 +1,5 @@
 @import '@fontsource-variable/inter/opsz.css';
+@import '@fontsource-variable/bricolage-grotesque';
 @import './tokens.css';
 
 *,
@@ -113,4 +114,9 @@ svg {
     transition-duration: 0.01ms !important;
     transition-delay: 0ms !important;
   }
+}
+
+/* Headings speak in the brand's display face, everywhere (website, product, operations). */
+h1 {
+  font-family: var(--font-display);
 }

@@ -3,6 +3,9 @@ import type { SVGProps } from 'react';
 /** A small, consistent line-icon set (1.5px strokes on a 20px grid). */
 const PATHS = {
   check: 'M4.5 10.5l3.5 3.5 7.5-8',
+  upload: 'M10 13V3.75M6.25 7.5 10 3.75l3.75 3.75M3.5 12.5v3.75h13V12.5',
+  camera: 'M3 6.5h3l1.5-2h5l1.5 2h3v9.5H3zM10 13.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+  spreadsheet: 'M3.5 3.5h13v13h-13zM3.5 8h13M3.5 12.5h13M8 3.5v13',
   attention: 'M10 6.5v4.25M10 13.6v.15M10 2.75l7.5 13.5h-15z',
   arrowRight: 'M4 10h11M11 5.5 15.5 10 11 14.5',
   inbox: 'M3 11.5 5.25 4.5h9.5L17 11.5M3 11.5V16h14v-4.5M3 11.5h4l1 2h4l1-2h4',

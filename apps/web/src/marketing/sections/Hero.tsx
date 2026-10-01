@@ -23,7 +23,7 @@ export function Hero() {
             and GST, then records it in your ERP. Your team only sees the decisions.
           </p>
           <div className={styles.ctas}>
-            <ButtonLink href={demoEntryHref()} size="lg" arrow className={styles.primary}>
+            <ButtonLink href={demoEntryHref()} size="lg" arrow>
               See Veyrafy in action
             </ButtonLink>
             <ButtonLink href={CONTACT_PHONE_HREF} size="lg" variant="secondary">

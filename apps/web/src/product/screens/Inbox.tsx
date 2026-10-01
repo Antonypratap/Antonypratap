@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Icon, Struck } from '../../design-system';
-import { UploadButton } from '../components/UploadButton';
+import { AddInvoices } from '../components/AddInvoices';
 import { useDemo } from '../shell/DemoPanel';
 import { greetingFor, inr } from '../format';
 import { hrefFor } from '../router';
@@ -44,8 +44,9 @@ export function Inbox() {
                   : 'Nothing needs you right now.'}
           </p>
         </div>
-        {canUpload && <UploadButton />}
       </header>
+
+      {canUpload && <AddInvoices compact={invoices.length > 0} />}
 
       <section className={styles.week} aria-label="Invoices">
         <div className={styles.needs} data-zero={needsYou === 0}>
