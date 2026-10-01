@@ -77,7 +77,7 @@ ok(
 // 2. The demo address opens its sign-in directly (no marketing site) → demo PIN → inbox
 await page.getByLabel('PIN').waitFor({ timeout: 15_000 });
 ok(
-  !(await page.getByText('Invoices, handled.').count()),
+  !(await page.getByText('Every invoice checked').count()),
   'the demo address opens the demo sign-in, not the marketing site',
 );
 await page.getByLabel('PIN').fill('000000');

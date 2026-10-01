@@ -49,7 +49,7 @@ function Control() {
       <p className={styles.controlQuestion}>Accept 90 units instead of 100?</p>
       <div className={styles.controlActions}>
         <span className={styles.accept}>Accept 90 units</span>
-        <span className={styles.ask}>Ask the supplier</span>
+        <span className={styles.ask}>Hold for review</span>
       </div>
       <p className={styles.controlNote}>Veyrafy waits for your answer.</p>
     </div>

@@ -119,7 +119,7 @@ describe('what each address renders', () => {
 
   it('the website: marketing, Client login, Request access, demo link', () => {
     const home = render(WEBSITE);
-    expect(home).toContain('Invoices, handled.');
+    expect(home).toContain('Every invoice checked');
     expect(home).toContain('href="#/login"');
     expect(home).toContain('Client login');
     expect(home).toContain('href="#/request-access"');
@@ -137,7 +137,7 @@ describe('what each address renders', () => {
       const html = render(WEBSITE, hash);
       expect(html, hash).toContain('Client login');
       expect(html, hash).not.toMatch(SIGN_IN);
-      expect(html, hash).not.toContain('Invoices, handled.');
+      expect(html, hash).not.toContain('Every invoice checked');
     }
   });
 
@@ -157,14 +157,14 @@ describe('what each address renders', () => {
   it('a client address never renders the marketing site', () => {
     for (const hash of ['', '#top', '#product', '#/login'])
       expect(render({ kind: 'client', slug: 'toit' }, hash), hash).not.toContain(
-        'Invoices, handled.',
+        'Every invoice checked',
       );
   });
 
   it('an unknown address: a controlled "not set up" page, nothing else', () => {
     const html = render({ kind: 'unknown' });
     expect(html).toContain('This Veyrafy address isn’t set up.');
-    expect(html).not.toContain('Invoices, handled.');
+    expect(html).not.toContain('Every invoice checked');
     expect(html).not.toMatch(SIGN_IN);
   });
 

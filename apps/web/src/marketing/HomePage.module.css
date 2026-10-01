@@ -1,0 +1,29 @@
+/*
+ * The website's warm theme. It re-points the shared colour tokens for the homepage only, so the
+ * product keeps its own look. Headings use the display face; body text stays Inter.
+ */
+.site {
+  --color-canvas: #f6f1e7;
+  --color-surface-sunken: #efe8da;
+  --color-line: #e6dece;
+  --color-line-strong: #d9cfba;
+  --color-ink-3: #5f656e;
+  --site-cream-raised: #fbf9f4;
+  --site-bright: #03a874;
+  --site-amber: #c47a12;
+  --site-dark: #0f1a16;
+  --site-dark-raised: #16241f;
+  --site-dark-line: #24362f;
+  --site-dark-ink: #f3f1ea;
+  --site-dark-ink-2: #b9c2bd;
+  --site-dark-accent: #5fd3a6;
+  --site-dark-amber: #f0b44c;
+  --font-display: 'Bricolage Grotesque Variable', var(--font-sans);
+
+  min-height: 100vh;
+  background: var(--color-canvas);
+}
+
+.site :is(h1, h2, h3) {
+  font-family: var(--font-display);
+}

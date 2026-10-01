@@ -2,7 +2,7 @@
   position: sticky;
   top: env(safe-area-inset-top, 0px);
   z-index: 50;
-  background: rgb(251 251 249 / 0);
+  background: rgb(246 241 231 / 0);
   border-bottom: 1px solid transparent;
   transition:
     background-color var(--duration-base) var(--ease-out),
@@ -10,7 +10,7 @@
 }
 
 .header[data-scrolled='true'] {
-  background: rgb(251 251 249 / 0.86);
+  background: rgb(246 241 231 / 0.88);
   border-bottom-color: var(--color-line);
   backdrop-filter: saturate(1.4) blur(14px);
   -webkit-backdrop-filter: saturate(1.4) blur(14px);

@@ -60,7 +60,7 @@ page.on('response', async (r) => {
 // Homepage: public, no product code needed.
 let t0 = Date.now();
 await page.goto(base, { waitUntil: 'load' });
-await page.getByRole('heading', { name: 'Invoices, handled.' }).waitFor();
+await page.getByRole('heading', { name: 'Every invoice checked before you pay.' }).waitFor();
 const homepage = {
   msToContent: Date.now() - t0,
   assetsKb: scripts.reduce((a, s) => a + s.kb, 0),

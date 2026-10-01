@@ -1,0 +1,95 @@
+.section {
+  padding-block: var(--section-y);
+  border-top: 1px solid var(--color-line);
+}
+
+.inner {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr);
+  align-items: start;
+  gap: clamp(2.5rem, 1rem + 4vw, 4.5rem);
+}
+
+.copy {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-5);
+}
+
+.eyebrow {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.title {
+  font-size: clamp(2.125rem, 1.3rem + 2.6vw, 3.375rem);
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+}
+
+.lede {
+  font-size: 1.125rem;
+  line-height: 1.6;
+  color: var(--color-ink-2);
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.75rem;
+  font-weight: var(--weight-semibold);
+  color: var(--color-accent);
+}
+.link:hover {
+  color: var(--color-accent-hover);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--space-3);
+}
+
+.tile {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  border-radius: 1.125rem;
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
+}
+
+.tick {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin-bottom: var(--space-1);
+  border-radius: 0.75rem;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.tileTitle {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+.tileBody {
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: var(--color-ink-3);
+}
+
+@media (max-width: 960px) {
+  .inner {
+    grid-template-columns: 1fr;
+  }
+}
