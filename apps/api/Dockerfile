@@ -10,7 +10,8 @@
 #
 # Configuration comes only from the environment at run time (.env.example); the image holds no
 # secret and no data. VEYRA_DATA_DIR must be a PERSISTENT volume (uploaded documents and the fake
-# ERP's SQLite file): mount one at /var/lib/veyra.
+# ERP's SQLite file): mount one at /var/lib/veyra through the platform (Railway: Settings → Volumes;
+# `docker run -v …` locally). The image declares no VOLUME, which Railway does not accept.
 
 # The full image has python3, make and g++, for native modules without a prebuilt binary for the
 # platform (better-sqlite3, @node-rs/argon2). The runtime image below is the slim one.
@@ -25,12 +26,9 @@ COPY packages/fake-erp/package.json packages/fake-erp/
 COPY packages/india-tax/package.json packages/india-tax/
 COPY packages/shared/package.json packages/shared/
 # Exactly the lockfile. The API runs its TypeScript through tsx (a root dev dependency), so dev
-# dependencies are installed. A build behind a TLS-inspecting proxy can pass its CA bundle as the
-# optional secret `npm_ca`; it is not kept in the image.
+# dependencies are installed. No build-time secret mount: Railway's builder rejects it.
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-RUN --mount=type=secret,id=npm_ca,required=false \
-  if [ -s /run/secrets/npm_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/npm_ca; fi; \
-  npm ci --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 COPY tsconfig.base.json ./
 COPY packages packages
 COPY apps/api apps/api
@@ -51,7 +49,6 @@ COPY --from=build --chown=root:root /srv/veyra /srv/veyra
 # is writable, by the unprivileged `node` user.
 RUN mkdir -p /var/lib/veyra && chown node:node /var/lib/veyra
 USER node
-VOLUME ["/var/lib/veyra"]
 EXPOSE 8787
 # Liveness only (no dependency checked); platforms should probe /api/v1/health/ready for traffic.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s \
