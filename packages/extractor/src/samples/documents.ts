@@ -38,7 +38,8 @@ export interface SampleInvoice {
   twoPages?: boolean;
 }
 
-export type SampleKind = 'text-pdf' | 'scanned-pdf' | 'jpeg' | 'png' | 'blurry-jpeg';
+export type SampleKind =
+  'text-pdf' | 'scanned-pdf' | 'office-scan-pdf' | 'jpeg' | 'png' | 'blurry-jpeg';
 
 /** Who the invoice is billed and shipped to. */
 export interface SampleBuyer {
@@ -326,6 +327,27 @@ export const DOCUMENT_SAMPLES: readonly DocumentSample[] = [
       },
     ],
     expect: { state: 'NEEDS_INPUT', firstQuestion: 'CA_GRN' },
+  },
+  {
+    file: 'D14-office-scan.pdf',
+    kind: 'office-scan-pdf',
+    title:
+      'Office scanner PDF (600 dpi, 1-bit CCITT G4, as Epson Scan 2 writes it): decoded and read by OCR',
+    invoices: [
+      {
+        vendor: SHAKTI,
+        number: 'SSS/26-27/0545',
+        date: '27/09/2026',
+        po: 'PO-2026-0110',
+        placeOfSupply: KA,
+        lines: [{ ...ROD, qty: '100.000', rate: '62.50', taxable: '6,250.00' }],
+        taxable: '6,250.00',
+        cgst: '562.50',
+        sgst: '562.50',
+        total: '7,375.00',
+      },
+    ],
+    expect: { state: 'NEEDS_INPUT' },
   },
   {
     file: 'D11-two-invoices.pdf',

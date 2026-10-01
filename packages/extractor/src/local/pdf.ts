@@ -1,5 +1,8 @@
+import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join, sep } from 'node:path';
 import { ExtractorError } from '../extractor';
-import { encodePng, grayFromPdfImage, removeRules } from './image';
+import { downscale, encodePng, grayFromPdfImage, ocrScaleFactor, removeRules } from './image';
 import { textRunsToSegments, wordsToSegments, type PageText } from './layout';
 import { LIMITS } from './limits';
 import type { OcrEngine } from './ocr';
@@ -17,7 +20,7 @@ interface PdfPage {
     items: { str?: string; transform?: number[]; width?: number; height?: number }[];
   }>;
   getOperatorList(): Promise<{ fnArray: number[]; argsArray: unknown[][] }>;
-  objs: { get(name: string, callback: (img: PdfImage) => void): void };
+  objs: { get(name: string, callback: (img: PdfImage | null) => void): void };
   cleanup(): void;
 }
 
@@ -33,6 +36,21 @@ interface PdfJs {
   };
   OPS: { paintImageXObject: number; paintInlineImageXObject: number };
 }
+
+/**
+ * pdf.js's WebAssembly image decoders (CCITT fax and JBIG2 for 1-bit office scans, OpenJPEG for
+ * JPEG 2000), shipped inside the `pdfjs-dist` package. Without this directory pdf.js cannot
+ * decode those page images and a scanned PDF reads as "no image". Resolved from
+ * the installed package, so it is wherever the extractor runs (dev, tests, the API image).
+ */
+export const PDFJS_WASM_DIR: string =
+  join(dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json')), 'wasm') + sep;
+
+/** The decoders the extractor relies on; checked by a test and by `pdfDecodersAvailable`. */
+export const PDFJS_WASM_FILES = ['jbig2.wasm', 'openjpeg.wasm'] as const;
+
+export const pdfDecodersAvailable = (): boolean =>
+  PDFJS_WASM_FILES.every((f) => existsSync(join(PDFJS_WASM_DIR, f)));
 
 let pdfjs: Promise<PdfJs> | null = null;
 /** Loads pdf.js once per process (about a second on first use; see warmUp). */
@@ -61,6 +79,7 @@ export async function readPdf(
     disableAutoFetch: true,
     stopAtErrors: true,
     maxImageSize: LIMITS.maxImagePixels,
+    wasmUrl: PDFJS_WASM_DIR,
     verbosity: 0,
   });
   try {
@@ -107,13 +126,22 @@ export async function readPdf(
           pages.push({ page: n, segments: textRunsToSegments(runs) });
           continue;
         }
-        const image = await largestImage(lib, page);
+        const { image, undecodable } = await largestImage(lib, page);
         if (!image) {
-          warnings.push(`Page ${n} has no text and no image to read.`);
+          warnings.push(
+            undecodable > 0
+              ? `Page ${n} is a scan whose image could not be decoded.`
+              : `Page ${n} has no text and no image to read.`,
+          );
           pages.push({ page: n, segments: [] });
           continue;
         }
-        const lines = await ocr.recognize(encodePng(removeRules(grayFromPdfImage(image))));
+        // A page image's resolution follows from the page size: 600-dpi scans are halved.
+        const { width: pageWidthPt } = page.getViewport({ scale: 1 });
+        const dpi = pageWidthPt > 0 ? image.width / (pageWidthPt / 72) : NaN;
+        const lines = await ocr.recognize(
+          encodePng(removeRules(downscale(grayFromPdfImage(image), ocrScaleFactor(dpi)))),
+        );
         pages.push({ page: n, segments: wordsToSegments(lines, n) });
         warnings.push(`Page ${n} is a scan: read by OCR.`);
       } finally {
@@ -132,21 +160,30 @@ export async function readPdf(
   }
 }
 
-/** The largest image painted on a page: for a scan, the page itself. */
-async function largestImage(lib: PdfJs, page: PdfPage): Promise<PdfImage | null> {
+/**
+ * The largest image painted on a page (for a scan, the page itself), and how many painted images
+ * pdf.js could not decode (so "no image" and "an image we cannot decode" are told apart).
+ */
+async function largestImage(
+  lib: PdfJs,
+  page: PdfPage,
+): Promise<{ image: PdfImage | null; undecodable: number }> {
   const ops = await page.getOperatorList();
   let best: PdfImage | null = null;
+  let undecodable = 0;
   for (let i = 0; i < ops.fnArray.length; i++) {
     const fn = ops.fnArray[i];
     let img: PdfImage | null = null;
     if (fn === lib.OPS.paintImageXObject) {
       const name = ops.argsArray[i]?.[0];
       if (typeof name === 'string')
-        img = await new Promise<PdfImage>((resolve) => page.objs.get(name, resolve));
+        img = await new Promise<PdfImage | null>((resolve) => page.objs.get(name, resolve));
+      if (!img?.data) undecodable++;
     } else if (fn === lib.OPS.paintInlineImageXObject) {
       img = (ops.argsArray[i]?.[0] as PdfImage | undefined) ?? null;
+      if (!img?.data) undecodable++;
     }
     if (img?.data && (!best || img.width * img.height > best.width * best.height)) best = img;
   }
-  return best;
+  return { image: best, undecodable };
 }

@@ -6,6 +6,7 @@ import { DOCUMENT_SAMPLES, BUYER, type DocumentSample } from '../samples/documen
 import { checkImageSize, imageSize } from './image';
 import type { PageText, Segment } from './layout';
 import { LocalDocumentExtractor, sniffDocument } from './local-extractor';
+import { PDFJS_WASM_DIR, PDFJS_WASM_FILES, pdfDecodersAvailable } from './pdf';
 import { OLLAMA_MAX_CONFIDENCE_BP, OllamaAssist } from './ollama';
 import { parseAmount, parseDate, parseInvoice } from './parse';
 
@@ -132,6 +133,35 @@ describe('parser: never guesses', () => {
   it('a document with no readable text is refused as malformed', () => {
     expect(() => parseInvoice([{ page: 1, segments: [] }])).toThrow(/No text could be read/);
   });
+});
+
+describe('scanned PDFs from office scanners', () => {
+  it('pdf.js image decoders (CCITT/JBIG2, JPEG 2000) are installed where the extractor runs', () => {
+    expect(pdfDecodersAvailable()).toBe(true);
+    for (const f of PDFJS_WASM_FILES)
+      expect(readFileSync(`${PDFJS_WASM_DIR}${f}`).subarray(0, 4)).toEqual(
+        Buffer.from([0x00, 0x61, 0x73, 0x6d]),
+      );
+  });
+
+  it('a 600-dpi 1-bit CCITT G4 scan (Epson Scan 2 format) is decoded and read, never "No text could be read"', async () => {
+    const pdf = readFileSync(new URL('D14-office-scan.pdf', DOCS)).toString('latin1');
+    expect(pdf).toMatch(/\/Filter \/CCITTFaxDecode \/DecodeParms << \/K -1 .*\/BlackIs1 true/);
+    expect(pdf).toMatch(/\/Width 49\d\d \/Height 70\d\d .*\/BitsPerComponent 1/);
+    const r = await read('D14-office-scan.pdf');
+    expect(r.warnings).toContain('Page 1 is a scan: read by OCR.');
+    expect(r.header.vendorGstin.value).toBe('29AAFCS5678K1ZK');
+    expect(r.header.invoiceNumber.value).toBe('SSS/26-27/0545');
+    expect(r.header.poNumber.value).toBe('PO-2026-0110');
+    expect(r.header.cgstPaise).toMatchObject({ value: 56_250 });
+    expect(r.header.totalPaise).toMatchObject({ value: 737_500 });
+    expect(r.lines).toHaveLength(1);
+    expect(r.lines[0]).toMatchObject({
+      qtyMilli: { value: 100_000 },
+      unitPricePaise: { value: 6250 },
+      taxablePaise: { value: 625_000 },
+    });
+  }, 60_000);
 });
 
 describe('document safety', () => {

@@ -2,8 +2,10 @@
  * Renders the synthetic invoices in `samples/documents.ts` to real documents with headless
  * Chromium (used by `npm run fixtures:documents` and by the API benchmarks, docs/PERFORMANCE.md).
  */
+import { PNG } from 'pngjs';
 import type { Browser } from 'playwright-core';
 import { BUYER, type DocumentSample, type SampleInvoice } from '../samples/documents';
+import { encodeCcittG4 } from './ccitt';
 
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -136,6 +138,11 @@ export function scannedPdf(jpeg: Buffer): Buffer {
     ]),
     `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
   ];
+  return writePdf(objects);
+}
+
+/** A minimal PDF file from its objects (numbered from 1; object 1 is the catalog). */
+function writePdf(objects: readonly (string | Buffer)[]): Buffer {
   const parts: Buffer[] = [Buffer.from('%PDF-1.4\n')];
   const offsets: number[] = [];
   let at = parts[0]?.length ?? 0;
@@ -161,11 +168,40 @@ export function scannedPdf(jpeg: Buffer): Buffer {
   return Buffer.concat(parts);
 }
 
+/**
+ * A PDF as an office scanner writes it (Epson Scan 2, 1-bit "text" mode): one A4 page holding one
+ * bilevel image, CCITT G4 compressed, `/BlackIs1 true` with ink coded as the CCITT "white" colour,
+ * exactly the parameters of the real scans this reproduces. `ink`: one byte per pixel, 1 = ink.
+ */
+export function officeScanPdf(ink: Uint8Array, width: number, height: number): Buffer {
+  const coded = encodeCcittG4(
+    ink.map((v) => (v ? 0 : 1)),
+    width,
+    height,
+  );
+  const content = 'q 595 0 0 842 0 0 cm /Im1 Do Q';
+  return writePdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im1 4 0 R >> >> /Contents 5 0 R >>',
+    Buffer.concat([
+      Buffer.from(
+        `<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceGray /BitsPerComponent 1 /Filter /CCITTFaxDecode /DecodeParms << /K -1 /Columns ${width} /Rows ${height} /BlackIs1 true >> /Length ${coded.length} >>\nstream\n`,
+      ),
+      Buffer.from(coded),
+      Buffer.from('\nendstream'),
+    ]),
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+  ]);
+}
+
 /** One sample as the bytes of its kind (text PDF, photo, scan). */
 export async function renderSample(browser: Browser, sample: DocumentSample): Promise<Buffer> {
+  // An office scan is one A4 page at 600 dpi: 794 × 1123 CSS pixels × 6.25.
+  const office = sample.kind === 'office-scan-pdf';
   const page = await browser.newPage({
-    viewport: { width: 800, height: 1100 },
-    deviceScaleFactor: 2,
+    viewport: office ? { width: 794, height: 1123 } : { width: 800, height: 1100 },
+    deviceScaleFactor: office ? 600 / 96 : 2,
   });
   try {
     await page.setContent(pageHtml(sample), { waitUntil: 'load' });
@@ -185,6 +221,19 @@ export async function renderSample(browser: Browser, sample: DocumentSample): Pr
         return await shot('jpeg', 60);
       case 'scanned-pdf':
         return scannedPdf(await shot('jpeg', 80));
+      case 'office-scan-pdf': {
+        const png = PNG.sync.read(await page.screenshot({ type: 'png' }));
+        const ink = new Uint8Array(png.width * png.height);
+        for (let i = 0; i < ink.length; i++) {
+          const luma =
+            (299 * (png.data[i * 4] ?? 255) +
+              587 * (png.data[i * 4 + 1] ?? 255) +
+              114 * (png.data[i * 4 + 2] ?? 255)) /
+            1000;
+          ink[i] = luma < 160 ? 1 : 0;
+        }
+        return officeScanPdf(ink, png.width, png.height);
+      }
     }
   } finally {
     await page.close();

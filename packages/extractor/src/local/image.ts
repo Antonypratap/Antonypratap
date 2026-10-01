@@ -114,6 +114,38 @@ export function grayFromPdfImage(img: {
   return { width, height, data };
 }
 
+/** The resolution OCR reads best at; Tesseract's models are trained on text of about this size. */
+export const OCR_TARGET_DPI = 300;
+
+/**
+ * Reduces an image by a whole factor, averaging each k×k block (a 1-bit scan becomes smooth
+ * greyscale). Used to bring high-resolution scans (600 dpi office scanners) down to about
+ * `OCR_TARGET_DPI`: measured on a real 600-dpi scan, OCR read more of the page correctly, in half
+ * the time. It only averages existing pixels; nothing is sharpened, moved or invented.
+ */
+export function downscale(img: Gray, k: number): Gray {
+  if (!Number.isInteger(k) || k < 2) return img;
+  const W = Math.floor(img.width / k);
+  const H = Math.floor(img.height / k);
+  const out = new Uint8Array(W * H);
+  const area = k * k;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      let sum = 0;
+      for (let dy = 0; dy < k; dy++) {
+        const row = (y * k + dy) * img.width + x * k;
+        for (let dx = 0; dx < k; dx++) sum += img.data[row + dx] ?? 255;
+      }
+      out[y * W + x] = Math.round(sum / area);
+    }
+  return { width: W, height: H, data: out };
+}
+
+/** The whole reduction factor that brings a scan of `dpi` closest to OCR_TARGET_DPI from above. */
+export function ocrScaleFactor(dpi: number): number {
+  return Number.isFinite(dpi) ? Math.max(1, Math.floor(dpi / OCR_TARGET_DPI)) : 1;
+}
+
 /**
  * Removes table rules (long straight dark lines) so they do not merge with the text they frame.
  * Deterministic, and it only ever turns line pixels white: it never adds or moves ink.

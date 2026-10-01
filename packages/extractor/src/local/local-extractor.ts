@@ -66,10 +66,14 @@ export class LocalDocumentExtractor implements Extractor {
    * Reads nothing and changes nothing about how documents are read.
    */
   async warmUp(options: { ocr: boolean }): Promise<void> {
-    const [{ loadPdfJs }, { renderPdf }] = await Promise.all([
+    const [{ loadPdfJs, pdfDecodersAvailable }, { renderPdf }] = await Promise.all([
       import('./pdf'),
       import('../fixture/document'),
     ]);
+    // Scanned PDFs need pdf.js's image decoders; a missing install must be loud at start-up, not
+    // a scan that silently reads as blank.
+    if (!pdfDecodersAvailable())
+      throw new ExtractorError('OCR_UNAVAILABLE', 'The PDF image decoders are not installed.');
     await Promise.all([loadPdfJs(), options.ocr ? this.#ocr.warmUp?.() : undefined]);
     // One tiny generated text PDF (no document of anyone's): pdf.js sets up its worker and
     // compiles its hot paths on the first document it reads. The result is discarded.
