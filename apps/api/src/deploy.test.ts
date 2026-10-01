@@ -20,7 +20,13 @@ describe('API container image', () => {
 
   it('runs as an unprivileged user, Node receiving SIGTERM directly, data on a volume', () => {
     expect(dockerfile).toMatch(/^USER node$/m);
-    expect(dockerfile).toMatch(/^VOLUME \["\/var\/lib\/veyra"\]$/m);
+    // The data directory belongs to `node`; the platform mounts the volume there (Railway rejects
+    // a VOLUME instruction, and a build-time secret mount).
+    expect(dockerfile).toMatch(
+      /^RUN mkdir -p \/var\/lib\/veyra && chown node:node \/var\/lib\/veyra$/m,
+    );
+    expect(dockerfile).not.toMatch(/^VOLUME\b/m);
+    expect(dockerfile).not.toMatch(/--mount=/);
     expect(dockerfile).toMatch(/^CMD \["node", "--import", "tsx", "apps\/api\/src\/main\.ts"\]$/m);
   });
 
