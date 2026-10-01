@@ -22,6 +22,13 @@ export { OllamaAssist, OLLAMA_MAX_CONFIDENCE_BP, type OllamaOptions } from './lo
 export { TesseractOcr, type OcrEngine, type OcrLine, type OcrWord } from './local/ocr';
 export { DemoRoutedExtractor } from './routed';
 export {
+  AI_CONFIDENCE_BP,
+  GeminiExtractor,
+  toExtraction,
+  type AiReading,
+  type GeminiOptions,
+} from './ai/gemini';
+export {
   BUYER,
   DOCUMENT_SAMPLES,
   type DocumentSample,

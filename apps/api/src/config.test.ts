@@ -145,6 +145,24 @@ describe('configuration (Phase 6)', () => {
     );
   });
 
+  it('the AI reader: off by default, needs its key, and production needs the client agreement', () => {
+    const demo = { ...STAGING, VEYRA_DEMO: 'true', VEYRA_DEMO_PIN: '550912' };
+    expect(loadConfig(demo, defaults).ai).toBeNull();
+    const key = 'AIzaFakeKeyForTests0123456789';
+    const on = loadConfig({ ...demo, VEYRA_AI_READER: 'gemini', GEMINI_API_KEY: key }, defaults);
+    expect(on.ai).toMatchObject({ provider: 'gemini', model: 'gemini-2.5-pro' });
+    expect(String(on.ai?.apiKey)).not.toContain(key);
+    expect(JSON.stringify(describeConfig(on))).not.toContain(key);
+    expect(problems({ ...demo, VEYRA_AI_READER: 'gemini' }).problems).toContain(
+      'GEMINI_API_KEY is required when VEYRA_AI_READER is gemini',
+    );
+    expect(
+      problems({ ...PRODUCTION, VEYRA_AI_READER: 'gemini', GEMINI_API_KEY: key }).problems,
+    ).toContain(
+      'VEYRA_AI_READER sends invoices to Google: set VEYRA_AI_ALLOW_PRODUCTION=true only once the client has agreed',
+    );
+  });
+
   it('the demo is a brewery unless VEYRA_DEMO_BUSINESS chooses manufacturing', () => {
     const demo = { ...STAGING, VEYRA_DEMO: 'true', VEYRA_DEMO_PIN: '550912' };
     expect(loadConfig(demo, defaults).demoBusiness).toBe('brewery');

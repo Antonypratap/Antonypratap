@@ -104,6 +104,14 @@ That is all. The website never connects to a database, so **do not** give it `DA
 The demo's sample business is a fictional brewery (DEMO.md §10). Nothing needs to be set for it;
 `VEYRA_DEMO_BUSINESS=manufacturing` would switch back to the older steel and parts business.
 
+**The AI reader (optional, demo only for now).** With `VEYRA_AI_READER=gemini` and `GEMINI_API_KEY`
+(from Google AI Studio, added as a Railway variable, never committed or pasted anywhere else), each
+uploaded invoice is read by Gemini. Gemini only copies the printed text; Veyrafy re-parses and checks
+every value, and falls back to the local reader if Gemini cannot be reached. `VEYRA_AI_MODEL` picks
+the model (default `gemini-2.5-pro`). Because invoices then go to Google, a production instance
+refuses to start with it unless `VEYRA_AI_ALLOW_PRODUCTION=true`, which is set only once that client
+has agreed in writing.
+
 ### 5.3 veyrafy-toit (Toit's real Veyrafy)
 
 | Variable | Value |

@@ -7,6 +7,7 @@ import { FakeErpConnector, type FakeErpBusiness } from '@veyra/fake-erp';
 import {
   DemoRoutedExtractor,
   FixtureExtractor,
+  GeminiExtractor,
   LocalDocumentExtractor,
   OllamaAssist,
   TesseractOcr,
@@ -43,6 +44,8 @@ export interface AppConfig {
   nodeEnv: string | undefined;
   /** Optional local Ollama assist (VEYRA_OLLAMA_URL / VEYRA_OLLAMA_MODEL). Off when absent. */
   ollama?: { baseUrl: string; model: string } | null;
+  /** The AI vision reader (Gemini); the local reader stays as its fallback. Off when absent. */
+  ai?: { apiKey: string; model: string; fetch?: typeof fetch } | null;
   /** Tests only: wraps the ERP connector (e.g. the scripted connector that injects failures). */
   wrapErp?: (erp: ErpConnector) => ErpConnector;
   /** Tests only: replaces the real document extractor. */
@@ -105,8 +108,20 @@ function makeExtractor(
         ocr: timedOcr(new TesseractOcr()),
       });
   const warmUp = () => (local ? local.warmUp({ ocr: true }) : Promise.resolve());
-  const real: Extractor & { close?: () => Promise<void> } =
+  const base: Extractor & { close?: () => Promise<void> } =
     config.documentExtractor ?? (local as LocalDocumentExtractor);
+  // The AI reader reads first; the local reader is its fallback (and closes with it).
+  const real: Extractor & { close?: () => Promise<void> } = config.ai
+    ? Object.assign(
+        new GeminiExtractor({
+          apiKey: config.ai.apiKey,
+          model: config.ai.model,
+          fallback: base,
+          ...(config.ai.fetch ? { fetch: config.ai.fetch } : {}),
+        }),
+        { close: () => base.close?.() ?? Promise.resolve() },
+      )
+    : base;
   const environment = environmentOf(config);
   const demo = (mode === 'demo' || mode === 'fixture') && environment !== 'production';
   if (!demo || !config.allowFixtureExtractor) return { extractor: real, warmUp };

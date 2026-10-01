@@ -80,6 +80,12 @@ export interface VeyraConfig {
   allowFixtureExtractor: boolean;
   /** Local AI assist. Loopback or private network only, unless explicitly allowed. */
   ollama: { baseUrl: string; model: string } | null;
+  /**
+   * The AI vision reader (Gemini): off unless VEYRA_AI_READER=gemini with a GEMINI_API_KEY. It sends
+   * each document to Google, so production refuses it unless VEYRA_AI_ALLOW_PRODUCTION=true
+   * records that the client agreed.
+   */
+  ai: { provider: 'gemini'; apiKey: Secret; model: string } | null;
   logLevel: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'silent';
   /** Proxy hops to trust for the client address (rate limiting). 0 = none. */
   trustProxy: number;
@@ -165,6 +171,11 @@ const VARS = {
   VEYRA_DEMO_BUSINESS: z.enum(['brewery', 'manufacturing']),
   VEYRA_ALLOW_FIXTURE_EXTRACTOR: bool,
   VEYRA_OLLAMA_URL: z.url({ protocol: /^https?$/ }),
+  VEYRA_AI_READER: z.enum(['off', 'gemini']),
+  VEYRA_AI_MODEL: z.string().regex(/^[a-z0-9][a-z0-9.-]{1,80}$/),
+  VEYRA_AI_ALLOW_PRODUCTION: bool,
+  // Never echoed.
+  GEMINI_API_KEY: z.string().min(20).max(200),
   VEYRA_OLLAMA_MODEL: z.string().min(1).max(100),
   VEYRA_LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'silent']),
   VEYRA_TRUST_PROXY: int(0, 10),
@@ -274,6 +285,15 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
       problems.push('VEYRA_ALLOW_FIXTURE_EXTRACTOR must not be true in production');
   }
 
+  const aiReader = read('VEYRA_AI_READER') ?? 'off';
+  const geminiKey = read('GEMINI_API_KEY');
+  if (aiReader === 'gemini' && !geminiKey)
+    problems.push('GEMINI_API_KEY is required when VEYRA_AI_READER is gemini');
+  if (aiReader === 'gemini' && environment === 'production' && !read('VEYRA_AI_ALLOW_PRODUCTION'))
+    problems.push(
+      'VEYRA_AI_READER sends invoices to Google: set VEYRA_AI_ALLOW_PRODUCTION=true only once the client has agreed',
+    );
+
   const ollamaUrl = read('VEYRA_OLLAMA_URL');
   // AI and document data stay on this machine or network unless an operator decides otherwise.
   if (ollamaUrl && !isLocalHost(new URL(ollamaUrl).hostname) && !read('VEYRA_OLLAMA_ALLOW_REMOTE'))
@@ -349,6 +369,14 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
     demo,
     demoBusiness: read('VEYRA_DEMO_BUSINESS') ?? 'brewery',
     allowFixtureExtractor,
+    ai:
+      aiReader === 'gemini' && geminiKey
+        ? {
+            provider: 'gemini',
+            apiKey: new Secret(geminiKey),
+            model: read('VEYRA_AI_MODEL') ?? 'gemini-2.5-pro',
+          }
+        : null,
     ollama: ollamaUrl
       ? { baseUrl: ollamaUrl, model: read('VEYRA_OLLAMA_MODEL') ?? 'llama3.1' }
       : null,
@@ -440,6 +468,7 @@ export function describeConfig(c: VeyraConfig) {
     cookieSecure: c.auth.cookieSecure,
     cors: c.http.corsOrigins.length > 0,
     demo: c.demo,
+    aiReader: c.ai ? `${c.ai.provider}:${c.ai.model}` : 'off',
     migrateOnStart: c.migrateOnStart,
   };
 }

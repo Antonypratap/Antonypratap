@@ -75,13 +75,20 @@ export type FieldSource = (typeof FIELD_SOURCES)[number];
 export const FIELD_STATUSES = ['usable', 'missing', 'low_confidence', 'unparseable'] as const;
 export type FieldStatus = (typeof FIELD_STATUSES)[number];
 
-export const EXTRACTOR_IDS = ['fixture', 'local_ocr', 'ollama'] as const;
+export const EXTRACTOR_IDS = ['fixture', 'local_ocr', 'ollama', 'ai_vision'] as const;
 
 /**
  * How one value was read (Phase 3D): the PDF's own text layer, Tesseract OCR, an optional local
- * Ollama model (always grounded in the document text), or the demo fixture extractor.
+ * Ollama model (always grounded in the document text), the demo fixture extractor, or the AI
+ * vision reader (the printed text it returns is re-parsed by Veyrafy's own parsers).
  */
-export const EXTRACTION_METHODS = ['pdf_text', 'tesseract', 'ollama', 'fixture'] as const;
+export const EXTRACTION_METHODS = [
+  'pdf_text',
+  'tesseract',
+  'ollama',
+  'fixture',
+  'ai_vision',
+] as const;
 export type ExtractionMethod = (typeof EXTRACTION_METHODS)[number];
 export type ExtractorId = (typeof EXTRACTOR_IDS)[number];
 

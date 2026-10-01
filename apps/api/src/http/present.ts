@@ -823,6 +823,7 @@ function readMethods(methods: readonly string[]): string {
     tesseract: 'OCR (Tesseract)',
     ollama: 'a local AI model, checked against the document text',
     fixture: 'the sample invoice data',
+    ai_vision: 'the AI reader, every value checked by Veyrafy',
   };
   const parts = methods.map((m) => text[m]).filter((t): t is string => t !== undefined);
   return parts.length ? `Read from ${parts.join(' and ')}. ` : '';

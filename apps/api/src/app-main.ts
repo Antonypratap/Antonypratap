@@ -48,6 +48,7 @@ try {
     allowFixtureExtractor: config.allowFixtureExtractor,
     nodeEnv: process.env.NODE_ENV,
     ollama: config.ollama,
+    ai: config.ai ? { apiKey: config.ai.apiKey.reveal(), model: config.ai.model } : null,
     log,
     limits: config.limits,
     rateLimits: {

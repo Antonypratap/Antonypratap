@@ -1,0 +1,2 @@
+ALTER TABLE "extracted_fields" DROP CONSTRAINT "extracted_fields_method";--> statement-breakpoint
+ALTER TABLE "extracted_fields" ADD CONSTRAINT "extracted_fields_method" CHECK ("extracted_fields"."method" IS NULL OR "extracted_fields"."method" IN ('pdf_text', 'tesseract', 'ollama', 'fixture', 'ai_vision'));
