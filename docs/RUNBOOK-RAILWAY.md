@@ -101,6 +101,9 @@ That is all. The website never connects to a database, so **do not** give it `DA
 | `VEYRA_TRUST_PROXY` | `1` |
 | `VEYRA_MIGRATE_ON_START` | `false` |
 
+The demo's sample business is a fictional brewery (DEMO.md §10). Nothing needs to be set for it;
+`VEYRA_DEMO_BUSINESS=manufacturing` would switch back to the older steel and parts business.
+
 ### 5.3 veyrafy-toit (Toit's real Veyrafy)
 
 | Variable | Value |

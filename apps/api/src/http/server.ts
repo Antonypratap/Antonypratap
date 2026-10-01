@@ -58,7 +58,7 @@ import {
   requirePermission,
   sessionCookieName,
 } from './access';
-import { DEMO_SCENARIOS, startScenario } from '../demo/scenarios';
+import { DEMO_SCENARIOS, startScenario, type DemoBusiness } from '../demo/scenarios';
 import { Presenter } from './present';
 import { isStorageError } from '../storage';
 import { BusinessImports } from '../imports/service';
@@ -92,6 +92,8 @@ export interface ServerOptions {
    * (company only) to try importing business records. Never registered in production.
    */
   resetDemo?: (erp: 'demo' | 'empty') => Promise<void>;
+  /** Which sample business the demo scenarios' documents belong to (default manufacturing). */
+  demoBusiness?: DemoBusiness;
   /** Phase 6: which deployment this is. Dev and demo routes never exist in production. */
   environment?: Environment;
   /** Structured logger (one line per request). Absent: no request logs. */
@@ -1000,7 +1002,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     );
     app.post('/api/v1/dev/scenarios/:key', DEMO, async (req, reply) => {
       const { key } = z.object({ key: z.string() }).parse(req.params);
-      const started = await startScenario(veyra, key);
+      const started = await startScenario(veyra, key, options.demoBusiness ?? 'manufacturing');
       if (!started) throw new VeyraError('NOT_FOUND', 'There is no such demo scenario.');
       return reply.status(started.existing ? 200 : 201).send(started);
     });

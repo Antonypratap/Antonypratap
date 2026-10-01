@@ -83,7 +83,7 @@ export const DEMO_ITEMS = [
   },
 ] as const;
 
-interface DemoPo {
+export interface SeedPurchaseOrder {
   poNumber: string;
   vendorCode: string;
   poDate: string;
@@ -96,7 +96,7 @@ interface DemoPo {
 const kg = (n: number): number => n * 1000;
 const nos = kg;
 
-export const DEMO_PURCHASE_ORDERS: readonly DemoPo[] = [
+export const DEMO_PURCHASE_ORDERS: readonly SeedPurchaseOrder[] = [
   {
     poNumber: 'PO-2026-0099',
     vendorCode: 'V001',
@@ -205,3 +205,25 @@ export const DEMO_PURCHASE_ORDERS: readonly DemoPo[] = [
     grn: { grnNumber: 'GRN-2026-0211', acceptedQtyMilli: [kg(200)] },
   },
 ];
+
+/** One sample business: what `resetAndSeed` writes into a fresh ERP. */
+export interface SeedBusiness {
+  company: { id: string; name: string; gstin: string; stateCode: string };
+  vendors: readonly {
+    code: string;
+    name: string;
+    gstin: string;
+    address: string;
+    status: 'active' | 'inactive';
+  }[];
+  items: readonly { code: string; name: string; hsnSac: string; uom: string; gstRateBp: number }[];
+  purchaseOrders: readonly SeedPurchaseOrder[];
+}
+
+/** The manufacturing business of docs/DEMO.md §1: the regression seed of the test suite. */
+export const DEMO_BUSINESS: SeedBusiness = {
+  company: DEMO_COMPANY,
+  vendors: DEMO_VENDORS,
+  items: DEMO_ITEMS,
+  purchaseOrders: DEMO_PURCHASE_ORDERS,
+};

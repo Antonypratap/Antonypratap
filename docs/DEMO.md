@@ -288,3 +288,77 @@ Visitors may also upload the other `fixtures/documents/` files (D02, D03, D05, D
 The demo never runs in a production environment, and a production environment never has demo data (production refuses `VEYRA_DEMO`).
 
 **Checking it.** `scripts/demo-check.mjs` runs the whole journey against the public URL (DEPLOYMENT.md §14.3, step 4).
+
+## 10. The brewery sample business (the hosted demo's default)
+
+The hosted demo shows a **fictional brewery**, so prospects see invoices like their own. It replaces
+the manufacturing business of §1 *in the demo only*: §1 stays the seed of the automated tests, which
+guard the engine. `VEYRA_DEMO_BUSINESS` chooses (`brewery`, the default, or `manufacturing`); tests
+that build the app directly use `manufacturing` unless they ask for the brewery.
+
+Everything below is made up. The GSTINs only pass the checksum; they belong to no real business.
+No customer's documents or data are used.
+
+**Company:** Hopsmith Brewing Co. Pvt Ltd, Whitefield, Bengaluru · `29AAICH4826L1Z2` · Karnataka (29).
+
+**Suppliers**
+
+| Code | Name | GSTIN | State | Status |
+|---|---|---|---|---|
+| V001 | Malabar Malt House Pvt Ltd | `29AABCM2468K1Z4` | 29 KA (intra) | active |
+| V002 | Himalayan Hop Traders Pvt Ltd | `02AAECH1357P1ZI` | 02 HP (inter) | active |
+| V003 | Deccan Glass Works | `36AAGFD9753Q1ZL` | 36 TG (inter) | **inactive** |
+| V004 | Coromandel Crown Closures Pvt Ltd | `33AAHCC8642R1Z1` | 33 TN (inter) | active |
+| V005 | Kaveri Cartons | `29ABKPK1122M1ZJ` | 29 KA | active |
+| V006 | Kaveri Cartons & Co | `29AAJFK3344N1ZT` | 29 KA | active |
+| V007 | Nandi Gases Pvt Ltd | `29AAKCN5566E1Z2` | 29 KA | active (no POs) |
+
+V005 and V006 share a name on purpose (the "Ambiguous supplier" scenario).
+
+**Items**
+
+| Code | Name | HSN | UOM | GST |
+|---|---|---|---|---|
+| ITM-001 | Pilsner Malt | 1107 | KGS | 18% |
+| ITM-002 | Munich Malt | 1107 | KGS | 18% |
+| ITM-003 | Cascade Hop Pellets | 1210 | KGS | 5% |
+| ITM-004 | Amber Bottle 330 ml | 7010 | NOS | 18% |
+| ITM-005 | Crown Cork 26 mm | 8309 | NOS | 18% |
+| ITM-006 | Corrugated Carton 24 x 330 ml | 4819 | NOS | 18% |
+| ITM-007 | Food Grade CO2 | 2811 | KGS | 18% |
+
+**Purchase orders and goods receipts** (2026, open unless noted)
+
+| PO | Supplier | Line: item × qty @ price | GRN (accepted) |
+|---|---|---|---|
+| PO-2026-1101 | V001 Malabar | Pilsner × 500 KGS @ ₹58.00 | GRN-2026-1201 (500). **PO closed** |
+| PO-2026-1102 | V001 Malabar | Pilsner × 2,000 @ ₹58.00; Munich × 500 @ ₹64.00 | GRN-2026-1202 (2,000; 500) |
+| PO-2026-1103 | V001 Malabar | Pilsner × 1,000 KGS @ ₹58.00 | GRN-2026-1203 (1,000) |
+| PO-2026-1104 | V002 Himalayan | Cascade × 50 KGS @ ₹1,450.00 | GRN-2026-1204 (50) |
+| PO-2026-1105 | V002 Himalayan | Cascade × 20 KGS @ ₹1,450.00 | **none** |
+| PO-2026-1106 | V002 Himalayan | Cascade × 10 KGS @ ₹1,450.00 | GRN-2026-1206 (10) |
+| PO-2026-1107 | V004 Coromandel | Crown Cork × 20,000 NOS @ ₹0.45 | GRN-2026-1207 (20,000) |
+| PO-2026-1108 | V005 Kaveri Cartons | Carton × 2,000 NOS @ ₹18.50 | GRN-2026-1208 (2,000) |
+| PO-2026-1109 | V001 Malabar | Munich × 300 KGS @ ₹64.00 | GRN-2026-1209 (300) |
+| PO-2026-1110 | V001 Malabar | Pilsner × 100 KGS @ ₹58.00 | GRN-2026-1210 (100) |
+| PO-2026-1111 | V003 Deccan Glass | Amber Bottle × 10,000 NOS @ ₹9.20 | GRN-2026-1211 (10,000) |
+| PO-2026-1112 | V004 Coromandel | Crown Cork × 10,000 NOS @ ₹0.45 | GRN-2026-1212 (10,000) |
+
+**The seven demo scenarios** use `fixtures/documents/brewery/` (rendered from
+`packages/extractor/src/samples/brewery-documents.ts`), read by the real extractor:
+
+| Scenario | Document | What the prospect sees |
+|---|---|---|
+| Clean invoice | `B01-clean.pdf` | 1,000 kg Pilsner malt, ₹68,440.00: matched to PO-2026-1103 and its receipt; verified, pending payment |
+| Missing goods receipt | `B02-missing-receipt.pdf` | 20 kg hops, no receipt: **Did the goods arrive?** → record it → ready |
+| Ambiguous supplier | `B03-ambiguous-supplier.pdf` | No GSTIN, "Kaveri Cartons": **Which supplier sent this invoice?** with both GSTINs |
+| Quantity mismatch | `B04-quantity-mismatch.pdf` | 24,000 crown corks invoiced, 20,000 ordered; no override |
+| Rate mismatch | `B05-rate-mismatch.pdf` | Hops at ₹1,520.00 vs order ₹1,450.00, difference ₹70.00 per kg; no override |
+| Photo needs confirmation | `B06-photo.png` (OCR) | OCR misreads the brewery's GSTIN; Veyrafy shows what it read and asks |
+| Two invoices in one file | `B07-two-invoices.pdf` | Stopped: "Upload each invoice as its own file." |
+
+`apps/api/src/demo/brewery-scenarios.test.ts` runs all seven end to end. To regenerate the
+documents: `npm run fixtures:documents -- brewery/`.
+
+The Excel samples of §6 belong to the manufacturing business. After **Reset demo → empty business**
+on the brewery, import your own brewery records rather than those files.

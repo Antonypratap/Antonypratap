@@ -8,4 +8,4 @@ export const PACKAGE_NAME = '@veyra/fake-erp';
 
 export { FakeErpConnector } from './connector';
 export type { FakeErpFailpoint, FakeErpOptions, FakeErpTestHooks } from './connector';
-export type { FakeErpSeed } from './seed/seed';
+export type { FakeErpBusiness, FakeErpSeed } from './seed/seed';

@@ -40,8 +40,19 @@ export interface SampleInvoice {
 
 export type SampleKind = 'text-pdf' | 'scanned-pdf' | 'jpeg' | 'png' | 'blurry-jpeg';
 
+/** Who the invoice is billed and shipped to. */
+export interface SampleBuyer {
+  name: string;
+  address: string;
+  gstin: string;
+  shipTo: string;
+  state: string;
+}
+
 export interface DocumentSample {
   file: string;
+  /** The buyer printed on the invoice; default BUYER, the manufacturing business. */
+  buyer?: SampleBuyer;
   kind: SampleKind;
   title: string;
   invoices: SampleInvoice[];
@@ -51,7 +62,7 @@ export interface DocumentSample {
     | { state: 'FAILED'; reason: RegExp };
 }
 
-export const BUYER = {
+export const BUYER: SampleBuyer = {
   name: 'Veyra Demo Industries Pvt Ltd',
   address: 'Peenya Industrial Area, Bengaluru 560058',
   gstin: '29AAACS1111A1Z6',

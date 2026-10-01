@@ -9,8 +9,10 @@
  * hashes. Chromium: `VEYRA_CHROMIUM=/path/to/chrome`, or Playwright's installed browser.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { BREWERY_DOCUMENT_SAMPLES } from '../samples/brewery-documents';
 import { DOCUMENT_SAMPLES } from '../samples/documents';
 import { renderSample } from './render-documents';
 
@@ -21,12 +23,13 @@ const browser = await chromium.launch(
   process.env.VEYRA_CHROMIUM ? { executablePath: process.env.VEYRA_CHROMIUM } : {},
 );
 try {
-  // `npm run fixtures:documents -- D12` renders only the files starting with D12.
+  // `npm run fixtures:documents -- D12 brewery/B0` renders only the files starting with those.
   const only = process.argv.slice(2);
-  for (const sample of DOCUMENT_SAMPLES.filter(
+  for (const sample of [...DOCUMENT_SAMPLES, ...BREWERY_DOCUMENT_SAMPLES].filter(
     (x) => only.length === 0 || only.some((o) => x.file.startsWith(o)),
   )) {
     const bytes = await renderSample(browser, sample);
+    mkdirSync(dirname(`${OUT}${sample.file}`), { recursive: true });
     writeFileSync(`${OUT}${sample.file}`, bytes);
     console.log(`${sample.file}  ${(bytes.length / 1024).toFixed(0)} KB  ${sample.title}`);
   }

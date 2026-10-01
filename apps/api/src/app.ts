@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import { guardCapabilities, type ErpConnector } from '@veyra/erp-connector';
-import { FakeErpConnector } from '@veyra/fake-erp';
+import { FakeErpConnector, type FakeErpBusiness } from '@veyra/fake-erp';
 import {
   DemoRoutedExtractor,
   FixtureExtractor,
@@ -34,6 +34,11 @@ export interface AppConfig {
   dataDir: string;
   /** Seed demo settings (automatic POs below ₹25,000) and allow resetting the demo. */
   demo: boolean;
+  /**
+   * The demo's sample business (docs/DEMO.md): its ERP seed and its scenario documents. Default
+   * `manufacturing`, the test suite's seed; deployments take VEYRA_DEMO_BUSINESS (default brewery).
+   */
+  demoBusiness?: FakeErpBusiness;
   allowFixtureExtractor: boolean;
   nodeEnv: string | undefined;
   /** Optional local Ollama assist (VEYRA_OLLAMA_URL / VEYRA_OLLAMA_MODEL). Off when absent. */
@@ -143,8 +148,10 @@ export async function createApp(config: AppConfig) {
     ...(config.database?.pool ? { pool: config.database.pool } : {}),
   });
   const db = database.db;
+  const demoBusiness = config.demoBusiness ?? 'manufacturing';
   const erp = FakeErpConnector.open({
     filename: join(config.dataDir, 'fake_erp.db'),
+    business: demoBusiness,
     ...(config.clock ? { clock: config.clock } : {}),
   });
   const initialSettings = demoMode ? DEMO_SETTINGS : DEFAULT_SETTINGS;
@@ -230,7 +237,7 @@ export async function createApp(config: AppConfig) {
     veyra,
     environment,
     commercial,
-    ...(demoMode ? { resetDemo } : {}),
+    ...(demoMode ? { resetDemo, demoBusiness } : {}),
     ...(config.log ? { log: config.log } : {}),
     ...(config.limits ? { limits: config.limits } : {}),
     ...(config.rateLimits ? { rateLimits: config.rateLimits } : {}),

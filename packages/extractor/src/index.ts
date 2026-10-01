@@ -25,8 +25,10 @@ export {
   BUYER,
   DOCUMENT_SAMPLES,
   type DocumentSample,
+  type SampleBuyer,
   type SampleInvoice,
 } from './samples/documents';
+export { BREWERY_BUYER, BREWERY_DOCUMENT_SAMPLES } from './samples/brewery-documents';
 export {
   documentLines,
   renderScenario,

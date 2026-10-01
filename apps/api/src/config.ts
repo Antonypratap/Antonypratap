@@ -75,6 +75,8 @@ export interface VeyraConfig {
    */
   http: { publicOrigins: string[]; corsOrigins: string[] };
   demo: boolean;
+  /** The demo's sample business (docs/DEMO.md §10): `brewery` unless set otherwise. */
+  demoBusiness: 'brewery' | 'manufacturing';
   allowFixtureExtractor: boolean;
   /** Local AI assist. Loopback or private network only, unless explicitly allowed. */
   ollama: { baseUrl: string; model: string } | null;
@@ -160,6 +162,7 @@ const VARS = {
   VEYRA_STORAGE_DIR: z.string().min(1),
   VEYRA_ERP: z.enum(['fake']),
   VEYRA_DEMO: bool,
+  VEYRA_DEMO_BUSINESS: z.enum(['brewery', 'manufacturing']),
   VEYRA_ALLOW_FIXTURE_EXTRACTOR: bool,
   VEYRA_OLLAMA_URL: z.url({ protocol: /^https?$/ }),
   VEYRA_OLLAMA_MODEL: z.string().min(1).max(100),
@@ -344,6 +347,7 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
     },
     http: { publicOrigins: publicOrigins ?? [], corsOrigins },
     demo,
+    demoBusiness: read('VEYRA_DEMO_BUSINESS') ?? 'brewery',
     allowFixtureExtractor,
     ollama: ollamaUrl
       ? { baseUrl: ollamaUrl, model: read('VEYRA_OLLAMA_MODEL') ?? 'llama3.1' }

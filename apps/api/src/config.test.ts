@@ -145,6 +145,17 @@ describe('configuration (Phase 6)', () => {
     );
   });
 
+  it('the demo is a brewery unless VEYRA_DEMO_BUSINESS chooses manufacturing', () => {
+    const demo = { ...STAGING, VEYRA_DEMO: 'true', VEYRA_DEMO_PIN: '550912' };
+    expect(loadConfig(demo, defaults).demoBusiness).toBe('brewery');
+    expect(
+      loadConfig({ ...demo, VEYRA_DEMO_BUSINESS: 'manufacturing' }, defaults).demoBusiness,
+    ).toBe('manufacturing');
+    expect(problems({ ...demo, VEYRA_DEMO_BUSINESS: 'bakery' }).problems).toContain(
+      'VEYRA_DEMO_BUSINESS is not valid (one of brewery, manufacturing)',
+    );
+  });
+
   it('limits can be tightened, never widened beyond the built-in maximums', () => {
     const c = loadConfig(
       { VEYRA_MAX_UPLOAD_BYTES: String(5 * 1024 * 1024), VEYRA_MAX_PDF_PAGES: '5' },

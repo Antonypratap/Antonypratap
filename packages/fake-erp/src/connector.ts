@@ -93,7 +93,7 @@ import {
   purchaseInvoiceLineId,
   vendorId as vendorIdOf,
 } from './ids';
-import { resetAndSeed, type FakeErpSeed } from './seed/seed';
+import { resetAndSeed, type FakeErpBusiness, type FakeErpSeed } from './seed/seed';
 
 type Tx = Parameters<Parameters<FakeErpDb['transaction']>[0]>[0];
 type Q = FakeErpDb | Tx;
@@ -115,6 +115,8 @@ export interface FakeErpOptions {
   filename: string;
   /** If given, deterministically wipe and seed the database on open. */
   reset?: FakeErpSeed;
+  /** Which sample business a reset writes (default `manufacturing`, the test suite's seed). */
+  business?: FakeErpBusiness;
   /** Source of `createdAt` timestamps for new records. Defaults to the system clock. */
   clock?: () => Date;
   /** How long a write waits for another connection's lock before failing as UNAVAILABLE. */
@@ -144,6 +146,7 @@ export class FakeErpConnector implements ErpConnector {
   readonly #db: FakeErpDb;
   readonly #clock: () => Date;
   readonly #hooks: FakeErpTestHooks;
+  readonly #business: FakeErpBusiness;
 
   private constructor(options: FakeErpOptions) {
     const { sqlite, db } = openDatabase(options.filename, {
@@ -153,7 +156,8 @@ export class FakeErpConnector implements ErpConnector {
     this.#db = db;
     this.#clock = options.clock ?? (() => new Date());
     this.#hooks = options.testHooks ?? {};
-    if (options.reset) resetAndSeed(this.#db, options.reset);
+    this.#business = options.business ?? 'manufacturing';
+    if (options.reset) resetAndSeed(this.#db, options.reset, this.#business);
   }
 
   static open(options: FakeErpOptions): FakeErpConnector {
@@ -162,7 +166,7 @@ export class FakeErpConnector implements ErpConnector {
 
   /** Deterministically wipe and re-seed (demo reset). */
   reset(seed: FakeErpSeed): void {
-    resetAndSeed(this.#db, seed);
+    resetAndSeed(this.#db, seed, this.#business);
   }
 
   close(): void {

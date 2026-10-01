@@ -44,6 +44,7 @@ try {
     migrate: config.migrateOnStart,
     storage: createStorage(config.storage),
     demo: config.demo,
+    demoBusiness: config.demoBusiness,
     allowFixtureExtractor: config.allowFixtureExtractor,
     nodeEnv: process.env.NODE_ENV,
     ollama: config.ollama,

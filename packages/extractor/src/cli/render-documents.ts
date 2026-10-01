@@ -9,6 +9,7 @@ const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 function invoiceHtml(inv: SampleInvoice, sample: DocumentSample): string {
+  const buyer = sample.buyer ?? BUYER;
   const hasCode = inv.lines.some((l) => l.code);
   const hasDisc = inv.lines.some((l) => l.disc);
   const head = [
@@ -63,8 +64,8 @@ function invoiceHtml(inv: SampleInvoice, sample: DocumentSample): string {
     }<br>Place of Supply: ${esc(inv.placeOfSupply)}</div>
   </div>
   <div class="grid">
-    <div class="box"><b>Bill To:</b><br>${esc(BUYER.name)}<br>${esc(BUYER.address)}<br>GSTIN: ${BUYER.gstin}</div>
-    <div class="box"><b>Ship To:</b><br>${esc(BUYER.name)}<br>${esc(BUYER.shipTo)}<br>State: ${esc(BUYER.state)}</div>
+    <div class="box"><b>Bill To:</b><br>${esc(buyer.name)}<br>${esc(buyer.address)}<br>GSTIN: ${buyer.gstin}</div>
+    <div class="box"><b>Ship To:</b><br>${esc(buyer.name)}<br>${esc(buyer.shipTo)}<br>State: ${esc(buyer.state)}</div>
   </div>
   <table class="lines"><thead><tr>${head
     .map((h) => `<th${right.has(h) ? ' class="r"' : ''}>${h}</th>`)

@@ -11,28 +11,40 @@ import {
   TABLES_IN_DEPENDENCY_ORDER,
 } from '../db/schema';
 import { grnId, grnLineId, itemId, poId, poLineId, vendorId } from '../ids';
-import {
-  DEMO_COMPANY,
-  DEMO_ITEMS,
-  DEMO_PURCHASE_ORDERS,
-  DEMO_VENDORS,
-  SEED_CREATED_AT,
-} from './demo-data';
+import { BREWERY_BUSINESS } from './brewery-data';
+import { DEMO_BUSINESS, SEED_CREATED_AT, type SeedBusiness } from './demo-data';
 
 export type FakeErpSeed = 'demo' | 'company-only';
 
 /**
+ * Which sample business a reset writes: `manufacturing` (docs/DEMO.md §1, the test suite's seed)
+ * or `brewery` (§10, the hosted demo's default).
+ */
+export type FakeErpBusiness = 'manufacturing' | 'brewery';
+
+const BUSINESSES: Record<FakeErpBusiness, SeedBusiness> = {
+  manufacturing: DEMO_BUSINESS,
+  brewery: BREWERY_BUSINESS,
+};
+
+/**
  * Deterministic reset: in one transaction, delete every row (children first, including the
  * idempotency log) and insert the seed. Running it any number of times yields the same state.
+ * `company-only` keeps just the business's own company (an empty ERP for imports).
  */
-export function resetAndSeed(db: FakeErpDb, seed: FakeErpSeed): void {
+export function resetAndSeed(
+  db: FakeErpDb,
+  seed: FakeErpSeed,
+  business: FakeErpBusiness = 'manufacturing',
+): void {
+  const data = BUSINESSES[business];
   db.transaction(
     (tx) => {
       for (const table of [...TABLES_IN_DEPENDENCY_ORDER].reverse()) tx.delete(table).run();
-      tx.insert(company).values(DEMO_COMPANY).run();
+      tx.insert(company).values(data.company).run();
       if (seed === 'company-only') return;
 
-      for (const v of DEMO_VENDORS) {
+      for (const v of data.vendors) {
         tx.insert(vendors)
           .values({
             id: vendorId(v.code),
@@ -50,7 +62,7 @@ export function resetAndSeed(db: FakeErpDb, seed: FakeErpSeed): void {
           })
           .run();
       }
-      for (const i of DEMO_ITEMS) {
+      for (const i of data.items) {
         tx.insert(items)
           .values({
             id: itemId(i.code),
@@ -66,7 +78,7 @@ export function resetAndSeed(db: FakeErpDb, seed: FakeErpSeed): void {
           })
           .run();
       }
-      for (const po of DEMO_PURCHASE_ORDERS) {
+      for (const po of data.purchaseOrders) {
         const id = poId(po.poNumber);
         tx.insert(purchaseOrders)
           .values({
@@ -82,7 +94,7 @@ export function resetAndSeed(db: FakeErpDb, seed: FakeErpSeed): void {
           })
           .run();
         po.lines.forEach((line, i) => {
-          const itemRow = DEMO_ITEMS.find((it) => it.code === line.itemCode);
+          const itemRow = data.items.find((it) => it.code === line.itemCode);
           if (!itemRow) throw new Error(`seed: unknown item ${line.itemCode}`);
           tx.insert(poLines)
             .values({
