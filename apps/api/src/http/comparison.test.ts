@@ -89,4 +89,13 @@ describe('invoice compared with the ERP', () => {
     expect(c?.verdict).not.toBe('cleared');
     expect(row(c, 'Goods receipt', 'Goods received')?.result).not.toBe('match');
   });
+
+  it('an invoice not read well enough is "not compared yet", never a mismatch to reject', async () => {
+    const c = await comparisonOf('unclear-scan');
+    expect(c?.verdict).not.toBe('cleared');
+    expect(row(c, 'Invoice', 'All required values read')?.result).not.toBe('mismatch');
+    if (c?.verdict === 'incomplete')
+      expect(c.headline).toBe('Not compared yet: the invoice could not be read well enough');
+    expect(c?.rows.find((r) => r.label === 'Taxable value (sum of lines)')?.erp).not.toBe('₹0.00');
+  }, 60_000);
 });

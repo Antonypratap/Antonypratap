@@ -117,7 +117,18 @@ export function buildComparison(x: ComparisonInput): ApiComparison | null {
 
   const h = x.header;
   // The invoice itself.
-  add('Invoice', 'All required values read', null, null, ['R01']);
+  // Values not read are not a difference from the ERP: the invoice could not be compared yet.
+  const unread = x.checks.some((c) => c.rule === 'R01' && c.outcome === 'fail');
+  if (unread)
+    rows.push({
+      section: 'Invoice',
+      label: 'All required values read',
+      invoice: null,
+      erp: null,
+      result: 'not_checked',
+      note: 'Some required values could not be read with certainty, so they cannot be compared with the ERP yet.',
+    });
+  else add('Invoice', 'All required values read', null, null, ['R01']);
   add(
     'Invoice',
     'Not already recorded',
@@ -223,9 +234,10 @@ export function buildComparison(x: ComparisonInput): ApiComparison | null {
   }
 
   // Totals: the invoice's own arithmetic.
-  const lineSum = x.lines.every((l) => l.taxablePaise !== null)
-    ? x.lines.reduce((s, l) => s + (l.taxablePaise ?? 0), 0)
-    : null;
+  const lineSum =
+    x.lines.length && x.lines.every((l) => l.taxablePaise !== null)
+      ? x.lines.reduce((s, l) => s + (l.taxablePaise ?? 0), 0)
+      : null;
   add('Totals', 'Taxable value (sum of lines)', money(h.taxablePaise), money(lineSum), ['R09']);
   for (const [label, value] of [
     ['CGST', h.cgstPaise],
@@ -263,7 +275,9 @@ export function buildComparison(x: ComparisonInput): ApiComparison | null {
         ? `Every value matches the ERP${x.po ? ` (order ${x.po.poNumber}` : ''}${
             x.po && x.grns.length ? `, receipt ${x.grns.map((g) => g.grnNumber).join(', ')}` : ''
           }${x.po ? ')' : ''}${h.totalPaise !== null ? `; total ${money(h.totalPaise)}` : ''}.`
-        : `${notChecked} value${notChecked === 1 ? '' : 's'} still to be confirmed before this invoice can be cleared.`;
+        : unread
+          ? 'Veyrafy could not read this invoice well enough to compare it with your ERP. Answer the question above, or upload a clearer copy.'
+          : `${notChecked} value${notChecked === 1 ? '' : 's'} still to be confirmed before this invoice can be cleared.`;
   return {
     source: 'erp_checks',
     verdict,
@@ -272,7 +286,9 @@ export function buildComparison(x: ComparisonInput): ApiComparison | null {
         ? 'Cleared: every value matches your ERP'
         : verdict === 'mismatch'
           ? `${mismatches.length} value${mismatches.length === 1 ? ' does' : 's do'} not match your ERP`
-          : 'Not cleared yet',
+          : unread
+            ? 'Not compared yet: the invoice could not be read well enough'
+            : 'Not cleared yet',
     summary,
     matched,
     mismatched: mismatches.length,
