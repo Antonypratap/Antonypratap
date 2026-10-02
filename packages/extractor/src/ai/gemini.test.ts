@@ -308,6 +308,12 @@ describe('AI vision reader (Gemini)', () => {
         confidenceBp: AI_CONFIDENCE_BP,
         evidence: { page: 1, text: '30 days', bbox: null },
       },
+      {
+        label: 'Freight & Cartage',
+        value: '6,100.00',
+        confidenceBp: AI_CONFIDENCE_BP,
+        evidence: { page: 1, text: 'Freight & Cartage 6,100.00', bbox: null },
+      },
     ]); // nothing is made up for a label with no value
     expect(ExtractionResultSchema.safeParse(r).success).toBe(true);
   });

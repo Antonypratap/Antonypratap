@@ -8,6 +8,7 @@ import { ERP_TABS, hrefFor, type ErpTab } from '../router';
 import { useProductData, useResource } from '../state/data';
 import { useAllowed } from '../../access/session';
 import { ErpData } from './ErpData';
+import { ErpReceipts } from '../components/ErpReceipts';
 import { erpStatusText } from '../state/decision';
 import {
   capabilityList,
@@ -199,7 +200,10 @@ export function Erp({ tab }: { tab: ErpTab }) {
     tab === 'connection' ? (
       <Connection connection={connection} />
     ) : tab === 'data' ? (
-      <ErpData />
+      <>
+        <ErpReceipts />
+        <ErpData />
+      </>
     ) : data === null ? (
       <p className={styles.none}>{error ?? 'Loading…'}</p>
     ) : data.length === 0 ? (

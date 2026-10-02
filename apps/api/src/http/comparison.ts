@@ -258,13 +258,14 @@ export function buildComparison(x: ComparisonInput): ApiComparison | null {
     `${r.section} – ${r.label}: invoice ${r.invoice ?? 'not read'}, ERP ${r.erp ?? 'none'}`;
   const summary =
     verdict === 'mismatch'
-      ? `Does not match the ERP. ${mismatches.map(describe).join('; ')}.`
+      ? `Does not match the ERP. ${listed(mismatches.map(describe))}.`
       : verdict === 'cleared'
         ? `Every value matches the ERP${x.po ? ` (order ${x.po.poNumber}` : ''}${
             x.po && x.grns.length ? `, receipt ${x.grns.map((g) => g.grnNumber).join(', ')}` : ''
           }${x.po ? ')' : ''}${h.totalPaise !== null ? `; total ${money(h.totalPaise)}` : ''}.`
         : `${notChecked} value${notChecked === 1 ? '' : 's'} still to be confirmed before this invoice can be cleared.`;
   return {
+    source: 'erp_checks',
     verdict,
     headline:
       verdict === 'cleared'
@@ -288,4 +289,10 @@ function naText(reason: string): string {
     NO_ROUND_OFF_LINE: 'No round-off on the invoice.',
   };
   return known[reason] ?? 'Not applicable to this invoice.';
+}
+
+/** The first three differences, then how many more (the table shows every one). */
+function listed(items: readonly string[]): string {
+  const shown = items.slice(0, 3).join('; ');
+  return items.length > 3 ? `${shown}; and ${items.length - 3} more` : shown;
 }

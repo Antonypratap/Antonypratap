@@ -757,6 +757,35 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     return { invoiceId: id, state: (await veyra.invoiceRow(veyra.db, id)).state };
   });
 
+  app.post('/api/v1/invoices/:id/recheck', may('invoices.reprocess'), async (req) => {
+    const { id } = Id.parse(req.params);
+    await veyra.recheckReceipt(id, actorOf(req));
+    return { invoiceId: id, state: (await veyra.invoiceRow(veyra.db, id)).state };
+  });
+
+  // ── ERP goods-receipt records (the business's own ERP export) ────────────
+  app.post(
+    '/api/v1/erp/receipt-records',
+    { ...may('imports.manage'), bodyLimit: 25 * 1024 * 1024 },
+    async (req, reply) => {
+      const { filename, content } = z
+        .object({ filename: z.string().trim().min(1).max(255), content: z.string().min(2) })
+        .parse(req.body ?? {});
+      let json: unknown;
+      try {
+        json = JSON.parse(content);
+      } catch {
+        throw new VeyraError('INVALID_INPUT', 'The file is not valid JSON.');
+      }
+      return reply.status(201).send(await veyra.importReceipts(filename, json, actorOf(req)));
+    },
+  );
+  app.get('/api/v1/erp/receipt-records', may('erp.view'), async () => veyra.listReceipts());
+  app.post('/api/v1/erp/receipt-records/:id/check', may('documents.upload'), async (req, reply) => {
+    const { id } = Id.parse(req.params);
+    return reply.status(201).send(await veyra.checkReceiptAttachment(id, actorOf(req)));
+  });
+
   // ── Questions ────────────────────────────────────────────────────────────
   app.get('/api/v1/questions', may('invoices.view'), async (req) => {
     const { status } = z

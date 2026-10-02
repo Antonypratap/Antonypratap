@@ -359,6 +359,18 @@ export function toExtraction(
       evidence: { page, text: value, bbox: bboxOf(page, o.box, sizes) },
     });
   }
+  // Charges printed outside the item lines (freight, packing…) are kept as printed too.
+  for (const c of reading.otherCharges ?? []) {
+    const label = c.label.replace(/\s+/g, ' ').trim().slice(0, 200);
+    const value = c.amount?.replace(/\s+/g, ' ').trim().slice(0, 2000);
+    if (!label || !value || otherFields.length >= 300) continue;
+    otherFields.push({
+      label,
+      value,
+      confidenceBp: confidenceBp(AI_CONFIDENCE_BP),
+      evidence: { page: 1, text: `${label} ${value}`, bbox: null },
+    });
+  }
   return { header, lines, warnings, pages: reading.pageCount ?? 1, otherFields };
 }
 

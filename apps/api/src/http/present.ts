@@ -19,6 +19,7 @@ import { readField, type StoredField } from '../engine/fields';
 import { dateText, displayValue, fieldLabel, rupees } from '../engine/questions';
 import { storedField, type Veyra } from '../workflow/veyra';
 import { buildComparison } from './comparison';
+import { compareWithReceipt } from '../workflow/erp-receipts';
 
 type InvoiceRow = typeof t.invoices.$inferSelect;
 type DocumentRow = typeof t.documents.$inferSelect;
@@ -182,6 +183,20 @@ export class Presenter {
           }
         : null,
     };
+  }
+
+  /**
+   * The invoice compared value by value: with its ERP goods-receipt record when the ERP exported
+   * one (the receipt check), otherwise with the ERP's records through the full checks.
+   */
+  private async receiptOrErpComparison(
+    ...args: Parameters<Presenter['comparison']>
+  ): Promise<ApiInvoiceDetail['comparison']> {
+    const [inv] = args;
+    if (['UPLOADED', 'EXTRACTING'].includes(inv.state)) return null;
+    const side = await this.v.invoiceSide(inv.id);
+    const record = await this.v.receiptRecordFor(side);
+    return record ? compareWithReceipt(side, record) : this.comparison(...args);
   }
 
   /** The invoice compared with the ERP, value by value (built from the latest check run). */
@@ -570,7 +585,7 @@ export class Presenter {
         .filter((q) => q.status !== 'superseded')
         .map((q) => questionDto(q, invoiceBrief)),
       checks,
-      comparison: await this.comparison(inv, f, checks, lineNos, company.gstin),
+      comparison: await this.receiptOrErpComparison(inv, f, checks, lineNos, company.gstin),
       erp: {
         vendor: vendor ? `${vendor.name} (${vendor.code})` : null,
         poNumber: await this.poNumberOf(inv),
@@ -863,6 +878,20 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
     }
     case 'invoice.failed':
       return make("Veyrafy couldn't finish", plainFailure(s('reason')), 'attention');
+    case 'receipt.checked':
+      return make(
+        d.verdict === 'cleared'
+          ? `Cleared against ERP receipt GRN ${s('grnNo')}`
+          : `Checked against ERP receipt GRN ${s('grnNo')}`,
+        s('summary'),
+        d.verdict === 'cleared' ? 'handled' : 'attention',
+      );
+    case 'receipts.imported':
+      return make(
+        `${String(d.records)} ERP receipt record${d.records === 1 ? '' : 's'} imported`,
+        s('file'),
+        'handled',
+      );
     default:
       return [];
   }

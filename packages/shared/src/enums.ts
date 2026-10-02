@@ -160,6 +160,9 @@ export const AUDIT_EVENTS = [
   'records.import_checked',
   'records.import_confirmed',
   'records.imported',
+  // ERP goods-receipt records (the ERP's own JSON export) and invoices checked against them.
+  'receipts.imported',
+  'receipt.checked',
 ] as const;
 export type AuditEventType = (typeof AUDIT_EVENTS)[number];
 

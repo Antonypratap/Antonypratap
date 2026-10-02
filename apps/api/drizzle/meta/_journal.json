@@ -36,6 +36,13 @@
       "when": 1790853217971,
       "tag": "0004_ai_vision_reader",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790919201461,
+      "tag": "0005_erp_receipt_records",
+      "breakpoints": true
     }
   ]
 }

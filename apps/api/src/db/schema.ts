@@ -555,6 +555,32 @@ export const jobs = pgTable(
  * Business-record imports (Phase 3C). The uploaded files are kept (storage dir) so a confirmation
  * re-validates against the ERP as it is at that moment. Records themselves live in the ERP.
  */
+/**
+ * Goods-receipt records exported by the business's own ERP (its JSON API), imported for the
+ * receipt check: an invoice whose number and supplier match one is compared with it value by
+ * value. Kept as the ERP sent them (`recordJson`), with the attached invoice PDF if any.
+ */
+export const erpReceiptRecords = pgTable(
+  'erp_receipt_records',
+  {
+    seq: seq(),
+    id: text('id').primaryKey(),
+    /** The supplier's invoice number as the ERP holds it, normalised for matching. */
+    invoiceNoKey: text('invoice_no_key').notNull(),
+    vendorName: text('vendor_name').notNull(),
+    grnNo: text('grn_no').notNull(),
+    recordJson: text('record_json').notNull(),
+    attachmentName: text('attachment_name'),
+    attachmentBase64: text('attachment_base64'),
+    sourceFilename: text('source_filename').notNull(),
+    importedByUserId: text('imported_by_user_id')
+      .notNull()
+      .references(() => users.id),
+    importedAt: isoTimestamp('imported_at').notNull(),
+  },
+  (t) => [index('erp_receipt_records_invoice').on(t.invoiceNoKey)],
+);
+
 export const imports = pgTable(
   'imports',
   {

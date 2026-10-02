@@ -74,6 +74,7 @@ const TABLES: PgTable[] = [
   t.auditEvents,
   t.jobs,
   t.imports,
+  t.erpReceiptRecords,
   t.plans,
   t.planEntitlements,
   t.entitlementOverrides,

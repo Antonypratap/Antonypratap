@@ -40,6 +40,16 @@ import type {
 import { assertTransition } from './state-machine';
 import { parseAnswerInput } from './answers';
 import { executeCommit, type CommitHooks } from './commit';
+import {
+  ReceiptFileSchema,
+  compareWithReceipt,
+  invoiceNoKey,
+  normalizeReceipt,
+  pickRecord,
+  toPaise,
+  type InvoiceSide,
+  type ReceiptRecord,
+} from './erp-receipts';
 
 type Db = VeyraDb | VeyraTx;
 
@@ -533,6 +543,9 @@ export class Veyra {
         if (!ok) return;
         inv = await this.invoiceRow(this.db, invoiceId);
       }
+      // An invoice the ERP already holds a goods-receipt record for is compared with that record
+      // (the receipt check); every other invoice goes through the full checks.
+      if (inv.state === 'MATCHING' && (await this.receiptCheck(invoiceId))) return;
       if (inv.state === 'MATCHING') {
         await this.evaluate(invoiceId);
         this.#log?.info(
@@ -1378,6 +1391,201 @@ export class Veyra {
         { type: 'user', userId },
         { failedStage: null, failureReason: null },
       );
+      await this.enqueue(tx, invoiceId, 'pipeline');
+    });
+    this.onEnqueue();
+  }
+
+  // ── ERP goods-receipt records (the receipt check) ────────────────────────
+
+  /** Imports the ERP's goods-receipt JSON export. Each record is kept as the ERP sent it. */
+  async importReceipts(
+    sourceFilename: string,
+    json: unknown,
+    userId: string,
+  ): Promise<{ imported: number }> {
+    await this.requireActor(userId, 'imports.manage');
+    const parsed = ReceiptFileSchema.safeParse(json);
+    if (!parsed.success)
+      throw new VeyraError(
+        'INVALID_INPUT',
+        `This is not an ERP goods-receipt file Veyrafy can read: ${parsed.error.issues[0]?.path.join('.') ?? ''} ${parsed.error.issues[0]?.message ?? ''}`.trim(),
+      );
+    const now = this.now();
+    await this.db.transaction(async (tx) => {
+      for (const raw of parsed.data.data) {
+        const record = normalizeReceipt(raw);
+        const attachment = (raw.images ?? []).find((i) =>
+          ['application/pdf', 'image/png', 'image/jpeg'].includes(i.mime_type),
+        );
+        await tx.insert(t.erpReceiptRecords).values({
+          id: ulid(),
+          invoiceNoKey: invoiceNoKey(record.invoiceNo),
+          vendorName: record.vendorName,
+          grnNo: record.grnNo,
+          recordJson: JSON.stringify(record),
+          attachmentName: attachment?.file_name ?? null,
+          attachmentBase64: attachment?.base64 ?? null,
+          sourceFilename,
+          importedByUserId: userId,
+          importedAt: now,
+        });
+      }
+      await this.audit(tx, null, { type: 'user', userId }, 'receipts.imported', {
+        file: sourceFilename,
+        records: parsed.data.data.length,
+      });
+    });
+    return { imported: parsed.data.data.length };
+  }
+
+  async listReceipts() {
+    const rows = await this.db
+      .select()
+      .from(t.erpReceiptRecords)
+      .orderBy(desc(t.erpReceiptRecords.seq));
+    return rows.map((r) => {
+      const rec = JSON.parse(r.recordJson) as ReceiptRecord;
+      return {
+        id: r.id,
+        grnNo: r.grnNo,
+        grnDate: rec.grnDate,
+        vendorName: r.vendorName,
+        invoiceNo: rec.invoiceNo,
+        lines: rec.lines.length,
+        attachment: r.attachmentName,
+        importedAt: r.importedAt,
+      };
+    });
+  }
+
+  /** Runs the invoice attached to an ERP receipt record through Veyrafy, like an upload. */
+  async checkReceiptAttachment(recordId: string, userId: string) {
+    const row = (
+      await this.db
+        .select()
+        .from(t.erpReceiptRecords)
+        .where(eq(t.erpReceiptRecords.id, recordId))
+        .limit(1)
+    )[0];
+    if (!row) throw new VeyraError('NOT_FOUND', 'ERP receipt record not found.');
+    if (!row.attachmentBase64 || !row.attachmentName)
+      throw new VeyraError('INVALID_INPUT', 'This ERP record has no invoice attached.');
+    return this.upload(
+      {
+        filename: row.attachmentName,
+        bytes: new Uint8Array(Buffer.from(row.attachmentBase64, 'base64')),
+      },
+      userId,
+    );
+  }
+
+  /** What the invoice says, from usable readings only (an unclear value counts as not read). */
+  async invoiceSide(invoiceId: string): Promise<InvoiceSide> {
+    const f = await this.loadFields(this.db, invoiceId);
+    const min = (await this.settings()).confidenceMinBp;
+    const v = <T extends string | number>(path: string) =>
+      readField<T>(f, path as never, min).value;
+    const lines = await this.db
+      .select({ lineNo: t.invoiceLines.lineNo })
+      .from(t.invoiceLines)
+      .where(eq(t.invoiceLines.invoiceId, invoiceId))
+      .orderBy(asc(t.invoiceLines.lineNo));
+    const x = (
+      await this.db
+        .select({ rawJson: t.extractions.rawJson })
+        .from(t.extractions)
+        .where(eq(t.extractions.invoiceId, invoiceId))
+        .orderBy(desc(t.extractions.createdAt), desc(t.extractions.seq))
+        .limit(1)
+    )[0];
+    const other = x
+      ? ((JSON.parse(x.rawJson) as { otherFields?: { label: string; value: string }[] })
+          .otherFields ?? [])
+      : [];
+    const freight = other
+      .filter((o) => /freight|cartage|carriage|transport/i.test(o.label))
+      .map((o) => toPaise(o.value.replace(/[₹\s]|Rs\.?/gi, '')))
+      .filter((p): p is number => p !== null);
+    return {
+      vendorName: v<string>('header.vendorName'),
+      vendorGstin: v<string>('header.vendorGstin'),
+      invoiceNumber: v<string>('header.invoiceNumber'),
+      invoiceDate: v<string>('header.invoiceDate'),
+      poNumber: v<string>('header.poNumber'),
+      cgstPaise: v<number>('header.cgstPaise'),
+      sgstPaise: v<number>('header.sgstPaise'),
+      igstPaise: v<number>('header.igstPaise'),
+      roundOffPaise: v<number>('header.roundOffPaise'),
+      totalPaise: v<number>('header.totalPaise'),
+      freightPaise: freight.length ? freight.reduce((a, b) => a + b, 0) : null,
+      lines: lines.map(({ lineNo }) => ({
+        lineNo,
+        description: v<string>(`lines[${lineNo}].description`),
+        hsnSac: v<string>(`lines[${lineNo}].hsnSac`),
+        uom: v<string>(`lines[${lineNo}].uom`),
+        qtyMilli: v<number>(`lines[${lineNo}].qtyMilli`),
+        unitPricePaise: v<number>(`lines[${lineNo}].unitPricePaise`),
+        taxablePaise: v<number>(`lines[${lineNo}].taxablePaise`),
+      })),
+    };
+  }
+
+  /** The ERP receipt record this invoice belongs to, if the ERP exported one. */
+  async receiptRecordFor(side: InvoiceSide): Promise<ReceiptRecord | null> {
+    if (!side.invoiceNumber) return null;
+    const rows = await this.db
+      .select()
+      .from(t.erpReceiptRecords)
+      .where(eq(t.erpReceiptRecords.invoiceNoKey, invoiceNoKey(side.invoiceNumber)))
+      .orderBy(asc(t.erpReceiptRecords.seq));
+    const picked = pickRecord(
+      rows.map((r) => ({ record: JSON.parse(r.recordJson) as ReceiptRecord })),
+      side.vendorName,
+    );
+    return picked?.record ?? null;
+  }
+
+  /**
+   * The receipt check: when the ERP holds a goods-receipt record for this invoice, compare the
+   * two value by value. Every value matching clears the invoice (nothing is written to the
+   * ERP); any difference, or a value not read with certainty, waits for a person.
+   */
+  private async receiptCheck(invoiceId: string): Promise<boolean> {
+    const side = await this.invoiceSide(invoiceId);
+    const record = await this.receiptRecordFor(side);
+    if (!record) return false;
+    const c = compareWithReceipt(side, record);
+    const system: Actor = { type: 'system' };
+    await this.db.transaction(async (tx) => {
+      await this.transition(tx, invoiceId, 'MATCHING', 'RESOLVING', system);
+      await this.transition(tx, invoiceId, 'RESOLVING', 'VALIDATING', system);
+      await this.audit(tx, invoiceId, system, 'receipt.checked', {
+        grnNo: record.grnNo,
+        verdict: c.verdict,
+        matched: c.matched,
+        mismatched: c.mismatched,
+        notChecked: c.notChecked,
+        summary: c.summary.slice(0, 2000),
+      });
+      if (c.verdict === 'cleared') {
+        await this.transition(tx, invoiceId, 'VALIDATING', 'COMMITTING', system);
+        await this.transition(tx, invoiceId, 'COMMITTING', 'VERIFIED_PENDING_PAYMENT', system);
+      } else {
+        await this.transition(tx, invoiceId, 'VALIDATING', 'NEEDS_INPUT', system);
+      }
+    });
+    return true;
+  }
+
+  /** Checks an invoice against its ERP receipt record again (after the ERP was corrected). */
+  async recheckReceipt(invoiceId: string, userId: string): Promise<void> {
+    await this.requireActor(userId, 'invoices.reprocess');
+    const inv = await this.invoiceRow(this.db, invoiceId);
+    if (inv.state !== 'NEEDS_INPUT')
+      throw new VeyraError('INVALID_STATE', 'Only invoices waiting for you can be checked again.');
+    await this.db.transaction(async (tx) => {
+      await this.transition(tx, invoiceId, 'NEEDS_INPUT', 'MATCHING', { type: 'user', userId });
       await this.enqueue(tx, invoiceId, 'pipeline');
     });
     this.onEnqueue();

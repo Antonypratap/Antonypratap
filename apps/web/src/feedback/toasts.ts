@@ -96,6 +96,12 @@ export const notify = {
       ? show('import', 'success', 'File checked. Review the preview, then confirm the import.')
       : show('import', 'attention', 'The file has problems. See the list below.'),
   imported: () => show('import', 'success', 'Business records imported into your ERP.'),
+  receiptsImported: (n: number) =>
+    show(
+      'import',
+      'success',
+      `${plural(n, 'ERP receipt', 'ERP receipts')} imported. Matching invoices are checked against ${n === 1 ? 'it' : 'them'}.`,
+    ),
   signedIn: () => show('session', 'success', 'Signed in.'),
   signedOut: () => show('session', 'info', 'You have signed out.'),
   offline: () =>

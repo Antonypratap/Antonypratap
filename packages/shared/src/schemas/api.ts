@@ -168,6 +168,8 @@ export const ApiComparisonRowSchema = z.object({
   note: z.string().nullable(),
 });
 export const ApiComparisonSchema = z.object({
+  /** Compared with the ERP's records through the full checks, or with an ERP goods-receipt record. */
+  source: z.enum(['erp_checks', 'erp_receipt']),
   verdict: z.enum(['cleared', 'mismatch', 'incomplete']),
   headline: z.string(),
   /** One paragraph naming every mismatch with both values (used as a rejection reason). */

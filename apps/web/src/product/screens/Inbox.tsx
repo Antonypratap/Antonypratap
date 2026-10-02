@@ -116,10 +116,13 @@ export function Inbox() {
                 <a href={hrefFor({ name: 'invoice', id: inv.id })} className={styles.item}>
                   <span className={styles.issue}>
                     <span className={styles.issueTitle}>
-                      {inv.question?.summary ?? 'Couldn’t finish'}
+                      {inv.question?.summary ??
+                        (inv.failure ? 'Couldn’t finish' : 'Differs from the ERP record')}
                     </span>
                     <span className={styles.evidence}>
-                      {inv.question?.evidence ?? inv.failure?.reason}
+                      {inv.question?.evidence ??
+                        inv.failure?.reason ??
+                        'Open it to see every value next to the ERP’s'}
                     </span>
                   </span>
                   <span className={styles.who}>

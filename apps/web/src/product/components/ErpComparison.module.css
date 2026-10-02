@@ -137,6 +137,22 @@
   font-weight: var(--weight-medium);
   cursor: pointer;
 }
+.recheck {
+  margin-left: auto;
+  height: 2.25rem;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px var(--color-line-strong);
+  color: var(--color-ink);
+  font: inherit;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+.recheck + .reject {
+  margin-left: 0;
+}
 .reject:disabled {
   opacity: 0.6;
   cursor: default;

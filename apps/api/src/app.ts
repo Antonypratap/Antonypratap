@@ -228,6 +228,7 @@ export async function createApp(config: AppConfig) {
     for (const key of keys) await storage.delete(key).catch(() => undefined);
     await db.transaction(async (tx) => {
       for (const table of [
+        'erp_receipt_records',
         'imports',
         'erp_writes',
         'jobs',

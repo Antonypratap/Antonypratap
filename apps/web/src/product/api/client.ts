@@ -98,6 +98,21 @@ export const json = (body: unknown): RequestInit => ({
 const Created = z.object({ documentId: z.string(), invoiceId: z.string() });
 const Moved = z.object({ state: z.string().nullable() }).loose();
 
+/** Goods-receipt records imported from the business's own ERP (its JSON export). */
+const ReceiptRecords = z.array(
+  z.object({
+    id: z.string(),
+    grnNo: z.string(),
+    grnDate: z.string().nullable(),
+    vendorName: z.string(),
+    invoiceNo: z.string(),
+    lines: z.number(),
+    attachment: z.string().nullable(),
+    importedAt: z.string(),
+  }),
+);
+export type ReceiptRecordView = z.output<typeof ReceiptRecords>[number];
+
 export const api = {
   /** What this organization may use (Phase 8A): availability and usage, never the plan. */
   capabilities: (): Promise<ApiCapabilities> => request(ApiCapabilitiesSchema, '/capabilities'),
@@ -155,6 +170,20 @@ export const api = {
     },
     confirm: (id: string): Promise<ApiImport> =>
       request(ApiImportSchema, `/imports/${encodeURIComponent(id)}/confirm`, { method: 'POST' }),
+  },
+  /** Check an invoice against its ERP goods-receipt record again (after the ERP was corrected). */
+  recheck: (invoiceId: string) =>
+    request(Moved, `/invoices/${encodeURIComponent(invoiceId)}/recheck`, { method: 'POST' }),
+  receipts: {
+    list: () => request(ReceiptRecords, '/erp/receipt-records'),
+    import: (filename: string, content: string) =>
+      request(
+        z.object({ imported: z.number() }),
+        '/erp/receipt-records',
+        json({ filename, content }),
+      ),
+    checkAttached: (id: string) =>
+      request(Created, `/erp/receipt-records/${encodeURIComponent(id)}/check`, { method: 'POST' }),
   },
   erp: {
     connection: () => request(ApiErpSchema.connection, '/erp/connection'),

@@ -19,9 +19,12 @@ const RESULT_LABEL: Record<Row['result'], string> = {
 export function ErpComparison({
   comparison,
   onReject,
+  onRecheck,
   busy,
 }: {
   comparison: ApiComparison;
+  /** Check again against the ERP receipt (after it was corrected and imported again). */
+  onRecheck?: () => void;
   /** Reject the invoice with the summary as its reason; absent when not allowed or final. */
   onReject?: (reason: string) => void;
   busy?: boolean;
@@ -41,7 +44,11 @@ export function ErpComparison({
           <Icon name={verdict === 'cleared' ? 'check' : 'attention'} size={26} strokeWidth={2.4} />
         </span>
         <div className={styles.verdictText}>
-          <p className={styles.eyebrow}>Checked against your ERP</p>
+          <p className={styles.eyebrow}>
+            {comparison.source === 'erp_receipt'
+              ? 'Checked against your ERP’s goods receipt'
+              : 'Checked against your ERP'}
+          </p>
           <h2 id="erp-check-title" className={styles.headline}>
             {comparison.headline}
           </h2>
@@ -75,6 +82,11 @@ export function ErpComparison({
         <span className={styles.count}>
           {comparison.matched} of {total} values match
         </span>
+        {verdict !== 'cleared' && onRecheck && (
+          <button type="button" className={styles.recheck} disabled={busy} onClick={onRecheck}>
+            Re-check against the ERP
+          </button>
+        )}
         {verdict === 'mismatch' && onReject && (
           <button
             type="button"

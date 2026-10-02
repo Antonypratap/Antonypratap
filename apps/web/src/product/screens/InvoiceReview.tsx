@@ -455,6 +455,13 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
         <ErpComparison
           comparison={invoice.comparison}
           busy={busy}
+          {...(invoice.comparison.source === 'erp_receipt' &&
+          invoice.state === 'NEEDS_INPUT' &&
+          allowed('invoices.reprocess')
+            ? {
+                onRecheck: () => void act(() => api.recheck(invoice.id), notify.reprocessing),
+              }
+            : {})}
           {...(allowed('invoices.reject') &&
           status !== 'rejected' &&
           status !== 'handled' &&
