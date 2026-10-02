@@ -25,7 +25,10 @@ export function ErpComparison({
   comparison: ApiComparison;
   /** Check again against the ERP receipt (after it was corrected and imported again). */
   onRecheck?: () => void;
-  /** Reject the invoice with the summary as its reason; absent when not allowed or final. */
+  /**
+   * Reject the invoice at once with the summary as its reason (recorded in the audit trail);
+   * absent when not allowed or final.
+   */
   onReject?: (reason: string) => void;
   busy?: boolean;
 }) {
@@ -97,8 +100,7 @@ export function ErpComparison({
                 comparison.summary.length > 300
                   ? `${comparison.summary.slice(0, 297)}…`
                   : comparison.summary;
-              if (window.confirm(`Reject this invoice?\n\nReason recorded:\n${reason}`))
-                onReject(reason);
+              onReject(reason);
             }}
           >
             Reject with this summary

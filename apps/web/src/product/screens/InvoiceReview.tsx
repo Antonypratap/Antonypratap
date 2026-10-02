@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type SyntheticEvent } from 'react';
 import type { ApiInvoiceDetail, ApiOption, ApiQuestion } from '@veyra/shared';
 import { Icon, StatusPill, Struck } from '../../design-system';
 import { api, ApiError, documentInfo, documentPageUrl, documentUrl } from '../api/client';
@@ -7,7 +7,7 @@ import { ErpComparison } from '../components/ErpComparison';
 import { InvoiceDocument } from '../components/InvoiceDocument';
 import { formatDate, inr } from '../format';
 import { hrefFor, navigate } from '../router';
-import { attentionQueue, nextInQueue, useProductData, useResource } from '../state/data';
+import { attentionQueue, nextInvoice, useProductData, useResource } from '../state/data';
 import { AFTER_DECISION, ASK_LABEL, completionEvidence, erpStatusText } from '../state/decision';
 import { STATUS_LABEL, STATUS_TONE } from '../state/status';
 import styles from './InvoiceReview.module.css';
@@ -77,7 +77,15 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
     .sort((a, b) => (b.answeredAt ?? '').localeCompare(a.answeredAt ?? ''))[0];
   const queue = attentionQueue(inbox);
   const position = queue.findIndex((i) => i.id === invoice.id);
-  const next = nextInQueue(inbox, invoice.id);
+  const next = nextInvoice(inbox, invoice.id);
+  const nextNeedsYou = next?.status === 'attention';
+  /** After a final decision, straight on to the next invoice (or the inbox when none is left). */
+  const advance = () => navigate(next ? { name: 'invoice', id: next.id } : { name: 'inbox' });
+  // Open on every invoice; collapsed only while the user keeps it collapsed on this one.
+  const [printedOpen, setPrintedOpen] = useState(true);
+  const togglePrinted = (e: SyntheticEvent<HTMLDetailsElement>) =>
+    setPrintedOpen(e.currentTarget.open);
+  const [pageFailed, setPageFailed] = useState(false);
   const working = invoice.erp.reconciling
     ? 'Veyrafy is confirming the transaction with your business system. Nothing is shown as recorded until it is confirmed.'
     : WORKING[invoice.state];
@@ -149,10 +157,18 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
   return (
     <div className={styles.page}>
       <div className={styles.head}>
-        <a href={hrefFor({ name: 'inbox' })} className={styles.back}>
-          <Icon name="chevronLeft" size={16} />
-          Inbox
-        </a>
+        <div className={styles.headNav}>
+          <a href={hrefFor({ name: 'inbox' })} className={styles.back}>
+            <Icon name="chevronLeft" size={16} />
+            Inbox
+          </a>
+          {next && (
+            <a href={hrefFor({ name: 'invoice', id: next.id })} className={styles.nextLink}>
+              {nextNeedsYou ? 'Next invoice to decide' : 'Next invoice'}
+              <Icon name="chevronRight" size={16} />
+            </a>
+          )}
+        </div>
         <div className={styles.titleRow}>
           <div>
             <h1 className={styles.title}>Invoice {title}</h1>
@@ -208,6 +224,16 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
               <div className={styles.sheet}>
                 <InvoiceDocument invoice={invoice} />
               </div>
+            ) : pageFailed ? (
+              <div className={styles.pageFailed}>
+                <p>The invoice page couldn&rsquo;t be shown here.</p>
+                <a href={documentUrl(invoice.documentId)} target="_blank" rel="noreferrer">
+                  Open the file
+                </a>
+                <button type="button" className={styles.zoom} onClick={() => setAsRead(true)}>
+                  Show as read
+                </button>
+              </div>
             ) : (
               <div className={styles.original}>
                 {Array.from({ length: pageCount }, (_, i) => (
@@ -217,6 +243,7 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
                     src={documentPageUrl(invoice.documentId, i + 1)}
                     alt={`Page ${i + 1} of ${pageCount} of the uploaded invoice`}
                     loading={i === 0 ? 'eager' : 'lazy'}
+                    onError={() => setPageFailed(true)}
                   />
                 ))}
               </div>
@@ -264,7 +291,7 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
           </dl>
 
           {otherFields.length > 0 && (
-            <details className={styles.printed}>
+            <details className={styles.printed} open={printedOpen} onToggle={togglePrinted}>
               <summary>Also printed on the invoice ({otherFields.length})</summary>
               <dl className={styles.evidence}>
                 {otherFields.map((f, i) => (
@@ -357,7 +384,10 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
                     onClick={() =>
                       void act(
                         () => api.reject(invoice.id, 'Rejected after it could not be read'),
-                        notify.rejected,
+                        () => {
+                          notify.rejected();
+                          advance();
+                        },
                       )
                     }
                   >
@@ -409,7 +439,7 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
                       className={styles.nextButton}
                       onClick={() => navigate({ name: 'invoice', id: next.id })}
                     >
-                      Next question
+                      {nextNeedsYou ? 'Next invoice to decide' : 'Next invoice'}
                       <Icon name="chevronRight" size={16} />
                     </button>
                   ) : (
@@ -468,7 +498,13 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
           status !== 'ready'
             ? {
                 onReject: (reason: string) =>
-                  void act(() => api.reject(invoice.id, reason), notify.rejected),
+                  void act(
+                    () => api.reject(invoice.id, reason),
+                    () => {
+                      notify.rejected();
+                      advance();
+                    },
+                  ),
               }
             : {})}
         />

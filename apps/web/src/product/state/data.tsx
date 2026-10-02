@@ -149,6 +149,21 @@ export function nextInQueue(inbox: ApiInbox | null, currentId: string): ApiInvoi
 }
 
 /**
+ * The invoice to go to after this one: the next that needs a decision, else the next in the
+ * invoice list (wrapping around); null when this is the only invoice.
+ */
+export function nextInvoice(inbox: ApiInbox | null, currentId: string): ApiInvoiceSummary | null {
+  const needed = nextInQueue(inbox, currentId);
+  if (needed) return needed;
+  const all = inbox?.invoices ?? [];
+  const at = all.findIndex((i) => i.id === currentId);
+  const others = [...all.slice(at + 1), ...all.slice(0, Math.max(at, 0))].filter(
+    (i) => i.id !== currentId,
+  );
+  return others[0] ?? null;
+}
+
+/**
  * Loads one resource and reloads it whenever the shared data refreshes. `null` while loading;
  * errors are kept separately so a transient failure does not blank the screen.
  */
