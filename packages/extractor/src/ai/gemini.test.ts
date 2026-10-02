@@ -123,6 +123,7 @@ const reader = (fetch: typeof globalThis.fetch) =>
     model: 'gemini-test',
     fallback: local,
     fetch,
+    retryDelaysMs: [1, 1],
   });
 
 describe('AI vision reader (Gemini)', () => {
@@ -316,5 +317,29 @@ describe('AI vision reader (Gemini)', () => {
       },
     ]); // nothing is made up for a label with no value
     expect(ExtractionResultSchema.safeParse(r).success).toBe(true);
+  });
+
+  it('a busy AI service (503) is tried again before giving up; a refusal is not', async () => {
+    let calls = 0;
+    const busyTwice = (async () => {
+      calls++;
+      return calls <= 2
+        ? new Response('{}', { status: 503 })
+        : new Response(
+            JSON.stringify({
+              candidates: [{ content: { parts: [{ text: JSON.stringify(READING) }] } }],
+            }),
+          );
+    }) as unknown as typeof fetch;
+    const r = await reader(busyTwice).extract(input);
+    expect([calls, r.extractor.id]).toEqual([3, 'ai_vision']);
+
+    let refused = 0;
+    const forbidden = (async () => {
+      refused++;
+      return new Response('{}', { status: 403 });
+    }) as unknown as typeof fetch;
+    const fallback = await reader(forbidden).extract(input);
+    expect([refused, fallback.extractor.id]).toEqual([1, 'local_ocr']);
   });
 });

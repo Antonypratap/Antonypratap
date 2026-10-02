@@ -201,6 +201,11 @@ export interface GeminiOptions {
   /** The reader used when the AI cannot be reached or answers badly. */
   fallback: Extractor;
   timeoutMs?: number;
+  /**
+   * Waits before trying again when the AI service is busy or briefly failing (HTTP 429, 500,
+   * 502, 503, 504, or the connection dropped). One retry per entry; then the local reader.
+   */
+  retryDelaysMs?: readonly number[];
   fetch?: typeof fetch;
   endpoint?: string;
 }
@@ -465,6 +470,7 @@ export class GeminiExtractor implements Extractor {
   constructor(options: GeminiOptions) {
     this.#o = {
       timeoutMs: 90_000,
+      retryDelaysMs: [2_000, 6_000, 15_000],
       fetch: globalThis.fetch,
       endpoint: 'https://generativelanguage.googleapis.com/v1beta',
       ...options,
@@ -482,7 +488,7 @@ export class GeminiExtractor implements Extractor {
     try {
       doc = await visionDocument(await readFile(input.filePath), input.mime);
       if (doc.bytes > MAX_INLINE_BYTES) return await this.#fallback(input, 'too large for it');
-      reading = await this.#read(doc.parts);
+      reading = await this.#readWithRetries(doc.parts);
     } catch (error) {
       // Network, quota, timeout, an unusable answer or a file it cannot be given: never a reason
       // to lose the invoice. The local reader reads it (and fails only if nothing is readable).
@@ -527,6 +533,22 @@ export class GeminiExtractor implements Extractor {
           }
         : {}),
     };
+  }
+
+  /** A busy or briefly failing AI service is tried again, with growing waits, before giving up. */
+  async #readWithRetries(parts: readonly Part[]): Promise<AiReading> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.#read(parts);
+      } catch (error) {
+        const transient =
+          (error instanceof AiHttpError && [429, 500, 502, 503, 504].includes(error.status)) ||
+          error instanceof TypeError; // fetch: the connection failed or dropped
+        const wait = this.#o.retryDelaysMs[attempt];
+        if (!transient || wait === undefined) throw error;
+        await new Promise((r) => setTimeout(r, wait));
+      }
+    }
   }
 
   async #read(parts: readonly Part[]): Promise<AiReading> {
