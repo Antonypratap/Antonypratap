@@ -333,13 +333,22 @@ configuration:
 - **FixtureExtractor** returns scripted readings of the demo's sample invoices. It is for tests
   and demos only; production refuses it at startup.
 
-**EXTERNAL PROCESSING (not configured, not built)**
+**EXTERNAL PROCESSING (Gemini; off unless configured)**
 
-- No external AI provider is integrated, and none is called. The only outbound call in the
-  extractor is the optional Ollama request above.
-- Pointing Ollama at a remote host requires the explicit `VEYRA_OLLAMA_ALLOW_REMOTE=true`. That
-  **sends invoice text (supplier names, GSTIN, PAN, bank details, amounts) off the host**, and it
-  is a decision for the data owner, with the provider's terms reviewed first.
+- With `VEYRA_AI_READER=gemini` and `GEMINI_API_KEY`, each uploaded invoice (the original file, or
+  its pages as images) is sent to Google's Gemini API to be read. That **sends the whole invoice
+  off the host**: supplier and buyer names, GSTINs, PAN, bank details, amounts.
+- It is for the demo only by default: a production instance refuses to start with it unless
+  `VEYRA_AI_ALLOW_PRODUCTION=true`, set only after that client agreed in writing.
+- Use a **paid** (billing-enabled) Gemini API key. Check Google's current Gemini API terms for how
+  paid and free usage data is handled before sending real invoices.
+- The key is a secret: Railway variables only, never in Git, logs or chat. Restrict it in Google
+  Cloud to the Generative Language API, and set a budget alert.
+- The request carries the key in a header, never the URL. Google's error messages are logged
+  (they never contain the key or the document); people see plain wording only.
+- A busy or failing AI service never loses an invoice: the local reader reads it instead.
+- An Ollama URL that is not local requires the explicit `VEYRA_OLLAMA_ALLOW_REMOTE=true`, which
+  also sends invoice text off the host.
 
 **Model output is untrusted.**
 
@@ -535,6 +544,9 @@ These are known and **not** addressed by Phase 6C:
 - **Dev-only moderate advisories** in drizzle-kit's esbuild remain.
 - **Denial of service** beyond the rate limits and body limits depends on the proxy and host.
 - **No independent audit or penetration test** has been done.
+- **Real customer documents must never go into the hosted demo.** The demo is protected only by a
+  shared PIN, everyone signs in as the same ADMIN, and imported ERP receipt files keep the
+  invoice PDFs inside them. A real client gets its own instance with individual accounts.
 - **The hosted demo (Phase 7C) is a shared workspace.** Everyone with the PIN signs in as the same
   demo ADMIN. They can reset the demo, and create or disable demo users, for everyone. It holds
   sample data only, and production refuses the demo. Rotate the PIN, and revoke sessions, if it
