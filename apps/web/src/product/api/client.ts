@@ -138,6 +138,19 @@ export const api = {
     request(Moved, `/invoices/${encodeURIComponent(invoiceId)}/reject`, json({ reason })),
   reprocess: (invoiceId: string) =>
     request(Moved, `/invoices/${encodeURIComponent(invoiceId)}/reprocess`, { method: 'POST' }),
+  /** A one-question check that the main (AI) reader answers, with the result in plain words. */
+  testReader: () =>
+    request(
+      z.object({
+        configured: z.boolean(),
+        ok: z.boolean(),
+        ms: z.number(),
+        plain: z.string(),
+        technical: z.string(),
+      }),
+      '/reader/check',
+      { method: 'POST' },
+    ),
   /** Demo only. `demo`: the sample business back; `empty`: an ERP with only the company in it. */
   resetDemo: (erp: 'demo' | 'empty' = 'demo') =>
     request(z.object({ ok: z.boolean() }).loose(), '/dev/reset', json({ erp })),

@@ -222,7 +222,10 @@ describe('AI vision reader (Gemini)', () => {
       [fakeGemini({}, 404), 'the AI model "gemini-test" was not found; check VEYRA_AI_MODEL'],
       [fakeGemini({}, 403), 'the AI service refused the request (HTTP 403); check GEMINI_API_KEY'],
       [fakeGemini({}, 429), 'the AI service quota or rate limit was reached'],
-      [fakeGemini({ nonsense: true }), 'the AI service gave an unusable answer'],
+      [
+        fakeGemini({ nonsense: true }),
+        'the AI service gave an unusable answer: the answer did not have the agreed shape (invoiceCount: Invalid input: expected number, received undefined)',
+      ],
       [
         {
           fetch: (async () => {
@@ -341,5 +344,39 @@ describe('AI vision reader (Gemini)', () => {
     }) as unknown as typeof fetch;
     const fallback = await reader(forbidden).extract(input);
     expect([refused, fallback.extractor.id]).toEqual([1, 'local_ocr']);
+  });
+
+  it('one badly shaped value does not lose the reading: that value is asked, the rest kept', async () => {
+    const odd = {
+      ...READING,
+      header: {
+        ...READING.header,
+        total: { printed: '₹ 68,440.00', page: 0, box: [1, 2, 3] }, // page 0 and a 3-number box
+        cgst: { printed: 5220 }, // a number where text was agreed
+      },
+    };
+    const r = await reader(fakeGemini(odd).fetch).extract(input);
+    expect(r.extractor.id).toBe('ai_vision'); // not thrown away
+    expect(r.header.totalPaise).toMatchObject({ value: 6_844_000, evidence: { bbox: null } });
+    expect(r.header.cgstPaise).toMatchObject({ value: null, confidenceBp: 0 }); // asked
+    expect(r.header.vendorGstin.value).toBe('29AABCM2468K1Z4');
+  });
+
+  it('an answer cut off by length is said precisely', async () => {
+    const cut = (async () =>
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: { parts: [{ text: '{"invoiceCount":1,"hea' }] },
+              finishReason: 'MAX_TOKENS',
+            },
+          ],
+        }),
+      )) as unknown as typeof fetch;
+    const r = await reader(cut).extract(input);
+    expect(r.warnings[0]).toBe(
+      'The AI reader was unavailable (the AI service gave an unusable answer: the answer was cut off); read by the local reader instead.',
+    );
   });
 });

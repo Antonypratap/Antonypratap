@@ -1,5 +1,5 @@
 import { formatRate, rateBp } from '@veyra/shared';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { StatusPill } from '../../design-system';
 import { PageHeader } from '../components/PageHeader';
 import { api } from '../api/client';
@@ -175,7 +175,58 @@ function Connection({ connection }: { connection: ErpConnectionView | null }) {
           </li>
         ))}
       </ul>
+      <ReaderTest />
     </section>
+  );
+}
+
+/** Checks in one click that the main reader (the one that reads invoices) answers. */
+function ReaderTest() {
+  const canTest = useAllowed('imports.manage');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; plain: string; technical: string } | null>(
+    null,
+  );
+  if (!canTest) return null;
+  const run = () => {
+    setBusy(true);
+    setResult(null);
+    api
+      .testReader()
+      .then((r) => setResult(r))
+      .catch(() =>
+        setResult({
+          ok: false,
+          plain: "Veyrafy couldn't run the check just now. Try again in a moment.",
+          technical: 'the request did not complete',
+        }),
+      )
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className={styles.reader}>
+      <p className={styles.eyebrow}>The invoice reader</p>
+      <p className={styles.readerText}>
+        Check that the reader Veyrafy uses to read invoices is answering.
+      </p>
+      <div>
+        <button type="button" className={styles.action} disabled={busy} onClick={run}>
+          {busy ? 'Checking…' : 'Test the reader'}
+        </button>
+      </div>
+      {result && (
+        <div className={styles.readerResult} data-ok={result.ok} role="status">
+          <p>
+            <span aria-hidden="true">{result.ok ? '✓ ' : '✗ '}</span>
+            {result.plain}
+          </p>
+          <details>
+            <summary>Details for your technical team</summary>
+            <code>{result.technical}</code>
+          </details>
+        </div>
+      )}
+    </div>
   );
 }
 

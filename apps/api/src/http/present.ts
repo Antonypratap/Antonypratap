@@ -949,9 +949,13 @@ export const fmt = {
 function readerNote(warning: string): string {
   if (/too large/.test(warning))
     return "The file is too large for Veyrafy's main reader, so a simpler reader was used. Some values may need your confirmation.";
-  if (/not found|refused|check VEYRA_|check GEMINI_/.test(warning))
+  if (/not found|refused|rejected|check VEYRA_|check GEMINI_/.test(warning))
     return "Veyrafy's main reader isn't set up correctly, so a simpler reader was used. Please tell your administrator.";
-  if (/busy|HTTP 5|HTTP 429|quota|rate limit|in time|could not be reached|unusable/.test(warning))
+  if (/quota|rate limit/.test(warning))
+    return "Veyrafy's main reader has reached its usage limit for now, so a simpler reader was used. Please tell your administrator.";
+  if (/unusable/.test(warning))
+    return "Veyrafy's main reader gave an incomplete answer, so a simpler reader was used. Some values may need your confirmation.";
+  if (/busy|HTTP 5|in time|could not be reached/.test(warning))
     return "Veyrafy's main reader was busy, so a simpler reader was used. Some values may need your confirmation.";
   return "Veyrafy's main reader wasn't available, so a simpler reader was used. Some values may need your confirmation.";
 }

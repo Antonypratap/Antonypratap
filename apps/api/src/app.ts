@@ -101,7 +101,11 @@ const DEV_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173'];
 function makeExtractor(
   mode: string,
   config: AppConfig,
-): { extractor: Extractor & { close?: () => Promise<void> }; warmUp: () => Promise<void> } {
+): {
+  extractor: Extractor & { close?: () => Promise<void> };
+  warmUp: () => Promise<void>;
+  aiReader: GeminiExtractor | null;
+} {
   const local = config.documentExtractor
     ? null
     : new LocalDocumentExtractor({
@@ -113,20 +117,20 @@ function makeExtractor(
   const base: Extractor & { close?: () => Promise<void> } =
     config.documentExtractor ?? (local as LocalDocumentExtractor);
   // The AI reader reads first; the local reader is its fallback (and closes with it).
-  const real: Extractor & { close?: () => Promise<void> } = config.ai
-    ? Object.assign(
-        new GeminiExtractor({
-          apiKey: config.ai.apiKey,
-          model: config.ai.model,
-          fallback: base,
-          ...(config.ai.fetch ? { fetch: config.ai.fetch } : {}),
-        }),
-        { close: () => base.close?.() ?? Promise.resolve() },
-      )
+  const aiReader = config.ai
+    ? new GeminiExtractor({
+        apiKey: config.ai.apiKey,
+        model: config.ai.model,
+        fallback: base,
+        ...(config.ai.fetch ? { fetch: config.ai.fetch } : {}),
+      })
+    : null;
+  const real: Extractor & { close?: () => Promise<void> } = aiReader
+    ? Object.assign(aiReader, { close: () => base.close?.() ?? Promise.resolve() })
     : base;
   const environment = environmentOf(config);
   const demo = (mode === 'demo' || mode === 'fixture') && environment !== 'production';
-  if (!demo || !config.allowFixtureExtractor) return { extractor: real, warmUp };
+  if (!demo || !config.allowFixtureExtractor) return { extractor: real, warmUp, aiReader };
   const fixture = new FixtureExtractor({
     allow: config.allowFixtureExtractor,
     nodeEnv: environment,
@@ -136,6 +140,7 @@ function makeExtractor(
       close: () => real.close?.() ?? Promise.resolve(),
     }),
     warmUp,
+    aiReader,
   };
 }
 
@@ -173,10 +178,11 @@ export async function createApp(config: AppConfig) {
   });
   const initialSettings = demoMode ? DEMO_SETTINGS : DEFAULT_SETTINGS;
   const storage = config.storage ?? new LocalDocumentStorage(join(config.dataDir, 'uploads'));
-  const { extractor, warmUp: warmUpExtractor } = makeExtractor(
-    initialSettings.extractorMode,
-    config,
-  );
+  const {
+    extractor,
+    warmUp: warmUpExtractor,
+    aiReader,
+  } = makeExtractor(initialSettings.extractorMode, config);
   // The workflow sees only the ErpConnector port, behind the capability guard: an operation the
   // connector does not declare is UNSUPPORTED, never a silent fallback (ARCHITECTURE §17).
   // Every connector call is timed (ERP_LOOKUP / ERP_WRITE) without changing the contract.
@@ -256,6 +262,7 @@ export async function createApp(config: AppConfig) {
   const cookieSecure = config.auth?.cookieSecure ?? environment !== 'development';
   const server = await buildServer({
     veyra,
+    aiReader,
     environment,
     commercial,
     ...(demoMode ? { resetDemo, demoBusiness } : {}),

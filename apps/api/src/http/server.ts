@@ -88,6 +88,10 @@ import {
 
 export interface ServerOptions {
   veyra: Veyra;
+  /** The AI reader, when one is configured: "Test the reader" asks it a tiny question. */
+  aiReader?: {
+    test(): Promise<{ ok: boolean; ms: number; model: string; reason: string | null }>;
+  } | null;
   /**
    * Dev only: wipe Veyra's data and reset the ERP to the DEMO.md seed, or to an empty business
    * (company only) to try importing business records. Never registered in production.
@@ -757,6 +761,30 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     return { invoiceId: id, state: (await veyra.invoiceRow(veyra.db, id)).state };
   });
 
+  // Whether the invoice reader works right now (a tiny request, no document): for whoever sets
+  // Veyrafy up. Plain words first; the technical reason for the administrator.
+  app.post('/api/v1/reader/check', may('imports.manage'), async () => {
+    if (!options.aiReader)
+      return {
+        configured: false,
+        ok: false,
+        ms: 0,
+        plain:
+          "Veyrafy's main reader isn't switched on, so invoices are read by the simpler reader.",
+        technical: 'VEYRA_AI_READER is not set',
+      };
+    const r = await options.aiReader.test();
+    return {
+      configured: true,
+      ok: r.ok,
+      ms: r.ms,
+      plain: r.ok
+        ? `Veyrafy's main reader is working (it answered in ${(r.ms / 1000).toFixed(1)} seconds).`
+        : readerProblem(r.reason ?? ''),
+      technical: r.ok ? `model ${r.model}` : `model ${r.model}: ${r.reason ?? ''}`,
+    };
+  });
+
   app.post('/api/v1/invoices/:id/recheck', may('invoices.reprocess'), async (req) => {
     const { id } = Id.parse(req.params);
     await veyra.recheckReceipt(id, actorOf(req));
@@ -1083,4 +1111,15 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   if (options.web) registerWebApp(app, options.web);
 
   return app;
+}
+
+/** What a failed reader test means, in plain words. */
+function readerProblem(reason: string): string {
+  if (/not found|refused|rejected/.test(reason))
+    return "Veyrafy's main reader isn't set up correctly. Check the reader settings with whoever set up Veyrafy.";
+  if (/quota|rate limit/.test(reason))
+    return "Veyrafy's main reader has reached its usage limit for now. Try again later, or raise the limit.";
+  if (/in time|could not be reached/.test(reason))
+    return "Veyrafy's main reader couldn't be reached just now. Try again in a minute.";
+  return "Veyrafy's main reader is busy just now. Try again in a minute.";
 }

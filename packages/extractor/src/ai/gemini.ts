@@ -39,15 +39,19 @@ const DOUBTFUL_BP = 4000;
 const MAX_INLINE_BYTES = 14 * 1024 * 1024;
 
 /** Where on its page a value is printed: [ymin, xmin, ymax, xmax], each 0–1000 of the page. */
-const Box = z.array(z.number()).length(4).nullable().optional();
+// A box that is not four numbers is dropped (the value keeps its page and text).
+const Box = z.array(z.number()).length(4).nullable().optional().catch(null);
 const Printed = z
   .object({
     printed: z.string().nullable(),
-    page: z.number().int().positive().nullable(),
-    unreadable: z.boolean().nullable().optional(),
+    page: z.number().int().positive().nullable().catch(null),
+    unreadable: z.boolean().nullable().optional().catch(null),
     box: Box,
   })
-  .nullable();
+  .nullable()
+  // A value the model returned in a shape Veyrafy cannot use is treated as printed but unreadable
+  // (so it is asked), never as "not printed", and never loses the rest of the reading.
+  .catch({ printed: null, page: null, unreadable: true, box: null });
 type Printed = z.infer<typeof Printed>;
 
 const HEADER_KEYS = [
@@ -98,7 +102,8 @@ export const AiReadingSchema = z.object({
   otherCharges: z
     .array(z.object({ label: z.string(), amount: z.string().nullable() }))
     .nullable()
-    .optional(),
+    .optional()
+    .catch(null),
   otherPrinted: z
     .array(
       z.object({
@@ -109,7 +114,8 @@ export const AiReadingSchema = z.object({
       }),
     )
     .nullable()
-    .optional(),
+    .optional()
+    .catch(null),
 });
 export type AiReading = z.infer<typeof AiReadingSchema>;
 
@@ -438,8 +444,19 @@ async function visionDocument(bytes: Buffer, mime: string): Promise<VisionDocume
 }
 
 class AiHttpError extends Error {
-  constructor(readonly status: number) {
+  constructor(
+    readonly status: number,
+    /** The AI service's own explanation (for the server log; never shown as is to people). */
+    readonly detail: string = '',
+  ) {
     super(`AI reader HTTP ${status}`);
+  }
+}
+
+/** An answer that came back but cannot be used (cut off, empty, or not in the agreed shape). */
+class AiAnswerError extends Error {
+  constructor(readonly reason: string) {
+    super(reason);
   }
 }
 
@@ -449,17 +466,36 @@ class AiHttpError extends Error {
  */
 export function whyUnavailable(error: unknown, model: string): string {
   if (error instanceof AiHttpError) {
-    if (error.status === 404) return `the AI model "${model}" was not found; check VEYRA_AI_MODEL`;
-    if (error.status === 400 || error.status === 401 || error.status === 403)
-      return `the AI service refused the request (HTTP ${error.status}); check GEMINI_API_KEY`;
-    if (error.status === 429) return 'the AI service quota or rate limit was reached';
-    return `the AI service answered HTTP ${error.status}`;
+    const detail = error.detail ? ` (${error.detail})` : '';
+    if (error.status === 404)
+      return `the AI model "${model}" was not found; check VEYRA_AI_MODEL${detail}`;
+    if (error.status === 401 || error.status === 403)
+      return `the AI service refused the request (HTTP ${error.status}); check GEMINI_API_KEY${detail}`;
+    if (error.status === 400) return `the AI service rejected the request (HTTP 400)${detail}`;
+    if (error.status === 429) return `the AI service quota or rate limit was reached${detail}`;
+    return `the AI service answered HTTP ${error.status}${detail}`;
   }
+  if (error instanceof AiAnswerError)
+    return `the AI service gave an unusable answer: ${error.reason}`;
   if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError'))
     return 'the AI service did not answer in time';
   if (error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError'))
     return 'the AI service gave an unusable answer';
   return 'the AI service could not be reached';
+}
+
+/** The AI service's error message, short, for the log (it never contains the key). */
+async function errorDetail(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { error?: { message?: string; status?: string } };
+    return [body.error?.status, body.error?.message]
+      .filter(Boolean)
+      .join(': ')
+      .replace(/\s+/g, ' ')
+      .slice(0, 240);
+  } catch {
+    return '';
+  }
 }
 
 export class GeminiExtractor implements Extractor {
@@ -563,17 +599,70 @@ export class GeminiExtractor implements Extractor {
           contents: [{ role: 'user', parts: [...parts, { text: GEMINI_PROMPT }] }],
           generationConfig: {
             temperature: 0,
+            // Room for a long invoice with every value, its place and everything else printed.
+            maxOutputTokens: 32_768,
             responseMimeType: 'application/json',
             responseSchema: GEMINI_RESPONSE_SCHEMA,
           },
         }),
       },
     );
-    if (!res.ok) throw new AiHttpError(res.status);
+    if (!res.ok) throw new AiHttpError(res.status, await errorDetail(res));
     const body = (await res.json()) as {
-      candidates?: { content?: { parts?: { text?: string }[] } }[];
+      candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
+      promptFeedback?: { blockReason?: string };
     };
-    const answer = body.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
-    return AiReadingSchema.parse(JSON.parse(answer));
+    const first = body.candidates?.[0];
+    if (!first)
+      throw new AiAnswerError(
+        `no answer${body.promptFeedback?.blockReason ? ` (blocked: ${body.promptFeedback.blockReason})` : ''}`,
+      );
+    if (first.finishReason === 'MAX_TOKENS') throw new AiAnswerError('the answer was cut off');
+    const answer = first.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
+    if (!answer.trim())
+      throw new AiAnswerError(`an empty answer (finish reason ${first.finishReason ?? 'unknown'})`);
+    let json: unknown;
+    try {
+      json = JSON.parse(answer);
+    } catch {
+      throw new AiAnswerError('the answer was not valid JSON');
+    }
+    const parsed = AiReadingSchema.safeParse(json);
+    if (!parsed.success)
+      throw new AiAnswerError(
+        `the answer did not have the agreed shape (${parsed.error.issues[0]?.path.join('.') ?? ''}: ${parsed.error.issues[0]?.message ?? ''})`,
+      );
+    return parsed.data;
+  }
+
+  /**
+   * A tiny request to see whether the AI reader works right now (for whoever sets Veyrafy up):
+   * no document is sent. Plain-words result and the technical reason.
+   */
+  async test(): Promise<{ ok: boolean; ms: number; model: string; reason: string | null }> {
+    const started = Date.now();
+    try {
+      const res = await this.#o.fetch(
+        `${this.#o.endpoint}/models/${encodeURIComponent(this.#o.model)}:generateContent`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-goog-api-key': this.#o.apiKey },
+          signal: AbortSignal.timeout(30_000),
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: 'Reply with the single word: ready' }] }],
+            generationConfig: { temperature: 0, maxOutputTokens: 256 },
+          }),
+        },
+      );
+      if (!res.ok) throw new AiHttpError(res.status, await errorDetail(res));
+      return { ok: true, ms: Date.now() - started, model: this.#o.model, reason: null };
+    } catch (error) {
+      return {
+        ok: false,
+        ms: Date.now() - started,
+        model: this.#o.model,
+        reason: whyUnavailable(error, this.#o.model),
+      };
+    }
   }
 }
