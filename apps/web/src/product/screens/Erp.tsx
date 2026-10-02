@@ -5,7 +5,8 @@ import { PageHeader } from '../components/PageHeader';
 import { api } from '../api/client';
 import { formatDate, inr } from '../format';
 import { ERP_TABS, hrefFor, type ErpTab } from '../router';
-import { useResource } from '../state/data';
+import { useProductData, useResource } from '../state/data';
+import { useAllowed } from '../../access/session';
 import { ErpData } from './ErpData';
 import { erpStatusText } from '../state/decision';
 import {
@@ -178,6 +179,18 @@ function Connection({ connection }: { connection: ErpConnectionView | null }) {
 
 export function Erp({ tab }: { tab: ErpTab }) {
   const { data, error } = useTab(tab);
+  const { refresh } = useProductData();
+  // Demo only: the same reset as the sidebar's (the sample ERP and every invoice together, so no
+  // invoice is left pointing at records that no longer exist).
+  const canReset = useAllowed('demo.manage');
+  const resetErp = () => {
+    if (
+      window.confirm(
+        'Reset the sample ERP? This restores its original records and clears every invoice.',
+      )
+    )
+      void api.resetDemo().then(() => refresh());
+  };
   const { data: connection } = useResource(() => api.erp.connection(), 'erp:connection');
   const spec = HEAD[tab];
   const body: ReactNode =
@@ -214,9 +227,16 @@ export function Erp({ tab }: { tab: ErpTab }) {
         }
         aside={
           tab === 'data' || tab === 'connection' ? undefined : (
-            <a className={styles.action} href={hrefFor({ name: 'erp', tab: 'data' })}>
-              Import business records
-            </a>
+            <>
+              {canReset && (
+                <button type="button" className={styles.action} onClick={resetErp}>
+                  Reset sample ERP
+                </button>
+              )}
+              <a className={styles.action} href={hrefFor({ name: 'erp', tab: 'data' })}>
+                Import business records
+              </a>
+            </>
           )
         }
       />
