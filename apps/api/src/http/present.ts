@@ -620,9 +620,13 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
     case 'extraction.completed': {
       const unclear = (d.lowConfidence as string[] | undefined) ?? [];
       const how = readMethods((d.methods as string[] | undefined) ?? []);
+      // When the AI reader could not be used, say why (a wrong model name, a key, a quota).
+      const aiFallback = ((d.warnings as string[] | undefined) ?? []).find((w) =>
+        w.startsWith('The AI reader was '),
+      );
       return make(
         'Read invoice',
-        `${how}${String(d.lines)} line${d.lines === 1 ? '' : 's'}, totals and tax${unclear.length ? `. Not clear: ${unclear.map(fieldLabel).join(', ')}` : ''}`,
+        `${how}${String(d.lines)} line${d.lines === 1 ? '' : 's'}, totals and tax${unclear.length ? `. Not clear: ${unclear.map(fieldLabel).join(', ')}` : ''}${aiFallback ? `. ${aiFallback}` : ''}`,
       );
     }
     case 'field.derived':

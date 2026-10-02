@@ -420,6 +420,31 @@ async function visionDocument(bytes: Buffer, mime: string): Promise<VisionDocume
   return { parts, bytes: total, pages: pages.length, sizes, rendered, image: false };
 }
 
+class AiHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`AI reader HTTP ${status}`);
+  }
+}
+
+/**
+ * Why the AI reader could not be used, in words a person can act on (shown in the invoice's
+ * history). Never the key, the request or the document.
+ */
+export function whyUnavailable(error: unknown, model: string): string {
+  if (error instanceof AiHttpError) {
+    if (error.status === 404) return `the AI model "${model}" was not found; check VEYRA_AI_MODEL`;
+    if (error.status === 400 || error.status === 401 || error.status === 403)
+      return `the AI service refused the request (HTTP ${error.status}); check GEMINI_API_KEY`;
+    if (error.status === 429) return 'the AI service quota or rate limit was reached';
+    return `the AI service answered HTTP ${error.status}`;
+  }
+  if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError'))
+    return 'the AI service did not answer in time';
+  if (error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError'))
+    return 'the AI service gave an unusable answer';
+  return 'the AI service could not be reached';
+}
+
 export class GeminiExtractor implements Extractor {
   readonly id = 'ai_vision' as const;
   readonly version: string;
@@ -446,10 +471,10 @@ export class GeminiExtractor implements Extractor {
       doc = await visionDocument(await readFile(input.filePath), input.mime);
       if (doc.bytes > MAX_INLINE_BYTES) return await this.#fallback(input, 'too large for it');
       reading = await this.#read(doc.parts);
-    } catch {
+    } catch (error) {
       // Network, quota, timeout, an unusable answer or a file it cannot be given: never a reason
       // to lose the invoice. The local reader reads it (and fails only if nothing is readable).
-      return this.#fallback(input, 'unavailable');
+      return this.#fallback(input, `unavailable (${whyUnavailable(error, this.#o.model)})`);
     }
     if (reading.invoiceCount > 1) {
       const numbers = (reading.invoiceNumbers ?? []).filter(Boolean);
@@ -510,7 +535,7 @@ export class GeminiExtractor implements Extractor {
         }),
       },
     );
-    if (!res.ok) throw new Error(`AI reader HTTP ${res.status}`);
+    if (!res.ok) throw new AiHttpError(res.status);
     const body = (await res.json()) as {
       candidates?: { content?: { parts?: { text?: string }[] } }[];
     };

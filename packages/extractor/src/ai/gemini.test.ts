@@ -216,19 +216,26 @@ describe('AI vision reader (Gemini)', () => {
   });
 
   it('an error, a bad answer or no answer falls back to the local reader, and says so', async () => {
-    for (const g of [
-      fakeGemini({}, 503),
-      fakeGemini({ nonsense: true }),
-      {
-        fetch: (async () => {
-          throw new TypeError('network');
-        }) as unknown as typeof fetch,
-      },
-    ]) {
+    for (const [g, why] of [
+      [fakeGemini({}, 503), 'the AI service answered HTTP 503'],
+      [fakeGemini({}, 404), 'the AI model "gemini-test" was not found; check VEYRA_AI_MODEL'],
+      [fakeGemini({}, 403), 'the AI service refused the request (HTTP 403); check GEMINI_API_KEY'],
+      [fakeGemini({}, 429), 'the AI service quota or rate limit was reached'],
+      [fakeGemini({ nonsense: true }), 'the AI service gave an unusable answer'],
+      [
+        {
+          fetch: (async () => {
+            throw new TypeError('network');
+          }) as unknown as typeof fetch,
+        },
+        'the AI service could not be reached',
+      ],
+    ] as const) {
       const r = await reader(g.fetch).extract(input);
       expect(r.extractor.id).toBe('local_ocr');
+      // The reason is said, so it can be fixed (a wrong model name, a key, a quota).
       expect(r.warnings[0]).toBe(
-        'The AI reader was unavailable; read by the local reader instead.',
+        `The AI reader was unavailable (${why}); read by the local reader instead.`,
       );
     }
   });
