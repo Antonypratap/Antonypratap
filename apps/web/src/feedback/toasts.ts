@@ -97,11 +97,13 @@ export const notify = {
       : show('import', 'attention', 'The file has problems. See the list below.'),
   imported: () => show('import', 'success', 'Business records imported into your ERP.'),
   receiptsImported: (n: number) =>
-    show(
-      'import',
-      'success',
-      `${plural(n, 'ERP receipt', 'ERP receipts')} imported. Matching invoices are checked against ${n === 1 ? 'it' : 'them'}.`,
-    ),
+    n === 0
+      ? show('import', 'info', 'Already imported: nothing new in this file.')
+      : show(
+          'import',
+          'success',
+          `${plural(n, 'ERP receipt', 'ERP receipts')} imported. Matching invoices are checked against ${n === 1 ? 'it' : 'them'}.`,
+        ),
   passwordChanged: () =>
     show('account', 'success', 'Password changed. You were signed out everywhere else.'),
   teamUpdated: () => show('team', 'success', 'Team updated.'),

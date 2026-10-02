@@ -12,7 +12,8 @@ import { Icon } from '../../design-system';
 import { notify } from '../../feedback/toasts';
 import { api, ApiError } from '../api/client';
 import { useProductData } from '../state/data';
-import { ACCEPT, carriesFiles, pastedName, refusalOf } from './files';
+import { allowed } from '../../access/session';
+import { ACCEPT, carriesFiles, isReceiptExport, pastedName, refusalOf } from './files';
 import styles from './Uploads.module.css';
 
 export interface UploadItem {
@@ -21,6 +22,8 @@ export interface UploadItem {
   state: 'uploading' | 'added' | 'refused';
   message?: string;
   invoiceId?: string;
+  /** Shown before the invoice's status (an ERP receipt file: what was imported). */
+  note?: string;
 }
 
 interface Uploads {
@@ -44,6 +47,48 @@ export function useUploads(): Uploads {
 }
 
 const RECENT = 6;
+
+/**
+ * An ERP goods-receipt export dropped or chosen with the invoices: imported as ERP records, then
+ * the invoice attached to each record is added and checked against it (the same as Import and
+ * export → Check attached invoice). The same file twice changes nothing.
+ */
+async function importReceiptFile(file: File): Promise<Partial<UploadItem>> {
+  if (!allowed('imports.manage'))
+    return {
+      state: 'refused',
+      message: 'ERP receipt files are imported by Finance or an administrator.',
+    };
+  let result;
+  try {
+    result = await api.receipts.import(file.name, await file.text());
+  } catch (e) {
+    return {
+      state: 'refused',
+      message: e instanceof ApiError ? e.message : 'The ERP receipt file could not be imported.',
+    };
+  }
+  const grns = result.records.map((r) => r.grnNo).join(', ');
+  const note = `ERP receipt${result.records.length === 1 ? '' : 's'} GRN ${grns} · `;
+  let invoiceId: string | undefined;
+  let problem: string | null = null;
+  for (const r of result.records.filter((x) => x.hasAttachment)) {
+    try {
+      invoiceId ??= (await api.receipts.checkAttached(r.id)).invoiceId;
+    } catch (e) {
+      // Already in Veyrafy: link to it rather than calling it a failure.
+      const existing = e instanceof ApiError ? e.details.invoiceId : undefined;
+      if (typeof existing === 'string') invoiceId ??= existing;
+      else problem = e instanceof ApiError ? e.message : 'The attached invoice could not be added.';
+    }
+  }
+  if (invoiceId) return { state: 'added', invoiceId, note };
+  if (problem) return { state: 'refused', message: `${note}${problem}` };
+  return {
+    state: 'added',
+    note: `${note}imported (no invoice attached: upload the invoice to check it).`,
+  };
+}
 let counter = 0;
 
 function isEditable(target: EventTarget | null): boolean {
@@ -85,6 +130,12 @@ export function UploadsProvider({ enabled, children }: { enabled: boolean; child
         const refused = refusalOf(file);
         if (refused) {
           update(item.key, { state: 'refused', message: refused });
+          continue;
+        }
+        if (isReceiptExport(file)) {
+          const done = await importReceiptFile(file);
+          update(item.key, done);
+          if (done.invoiceId) uploaded++;
           continue;
         }
         try {
@@ -209,7 +260,9 @@ export function UploadsProvider({ enabled, children }: { enabled: boolean; child
                   <Icon name="upload" size={28} />
                 </span>
                 <p className={styles.overlayTitle}>Drop to add invoices</p>
-                <p className={styles.overlayHint}>PDF, JPEG or PNG · up to 20 MB each</p>
+                <p className={styles.overlayHint}>
+                  PDF, JPEG or PNG · or your ERP&rsquo;s receipt file · up to 20 MB each
+                </p>
               </div>
             </div>
           )}

@@ -164,7 +164,7 @@ describe('the receipt check: invoices against the ERP’s own goods-receipt reco
   it('imports the ERP export, and an invoice matching it in every value is cleared', async () => {
     const res = await importExport(erpExport());
     expect(res.statusCode, res.body).toBe(201);
-    expect(res.json()).toEqual({ imported: 1 });
+    expect(res.json()).toMatchObject({ imported: 1 });
     const list = (
       await app.server.inject({ method: 'GET', url: '/api/v1/erp/receipt-records' })
     ).json();
@@ -329,6 +329,28 @@ describe('the receipt check: invoices against the ERP’s own goods-receipt reco
       (await app.server.inject({ method: 'GET', url: '/api/v1/settings/retention' })).json(),
     ).toEqual({ mode: 'DELETE_AFTER_DAYS', days: 45 });
     await put({ mode: 'KEEP' });
+  });
+
+  it('the same ERP file imported twice is stored once; a corrected record is stored again', async () => {
+    const first = (await importExport(erpExport())).json<{
+      imported: number;
+      records: { id: string; grnNo: string; alreadyImported: boolean }[];
+    }>();
+    expect(first).toMatchObject({
+      imported: 1,
+      records: [{ grnNo: '501', alreadyImported: false }],
+    });
+    const again = (await importExport(erpExport())).json<typeof first>();
+    expect(again).toMatchObject({
+      imported: 0,
+      records: [{ id: first.records[0]?.id, alreadyImported: true }],
+    });
+    const corrected = (await importExport(erpExport({ rate: '18.00' }))).json<typeof first>();
+    expect(corrected.imported).toBe(1);
+    const list = (
+      await app.server.inject({ method: 'GET', url: '/api/v1/erp/receipt-records' })
+    ).json<unknown[]>();
+    expect(list).toHaveLength(2);
   });
 
   it('a file that is not an ERP goods-receipt export is refused, saying why', async () => {

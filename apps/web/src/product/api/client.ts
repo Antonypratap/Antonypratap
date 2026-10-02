@@ -210,7 +210,19 @@ export const api = {
     list: () => request(ReceiptRecords, '/erp/receipt-records'),
     import: (filename: string, content: string) =>
       request(
-        z.object({ imported: z.number() }),
+        z.object({
+          imported: z.number(),
+          records: z
+            .array(
+              z.object({
+                id: z.string(),
+                grnNo: z.string(),
+                hasAttachment: z.boolean(),
+                alreadyImported: z.boolean(),
+              }),
+            )
+            .default([]),
+        }),
         '/erp/receipt-records',
         json({ filename, content }),
       ),

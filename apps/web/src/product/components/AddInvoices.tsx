@@ -93,12 +93,13 @@ export function AddInvoices({ compact }: { compact: boolean }) {
               <span className={styles.itemName}>{item.name}</span>
               <span className={styles.itemState}>
                 {item.state === 'uploading' && 'Uploading…'}
+                {item.state === 'added' && item.note}
                 {item.state === 'added' &&
                   (item.invoiceId ? (
                     <a href={hrefFor({ name: 'invoice', id: item.invoiceId })}>
                       {AFTER_UPLOAD[statusOf(item.invoiceId)]}
                     </a>
-                  ) : (
+                  ) : item.note ? null : (
                     AFTER_UPLOAD.processing
                   ))}
                 {item.state === 'refused' && item.message}

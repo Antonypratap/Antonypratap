@@ -1709,7 +1709,11 @@ export class Veyra {
     sourceFilename: string,
     json: unknown,
     userId: string,
-  ): Promise<{ imported: number }> {
+  ): Promise<{
+    imported: number;
+    /** Every record in the file (new, or the identical one already imported), for checking. */
+    records: { id: string; grnNo: string; hasAttachment: boolean; alreadyImported: boolean }[];
+  }> {
     await this.requireActor(userId, 'imports.manage');
     const parsed = ReceiptFileSchema.safeParse(json);
     if (!parsed.success)
@@ -1723,18 +1727,56 @@ export class Veyra {
         },
       );
     const now = this.now();
+    const records: {
+      id: string;
+      grnNo: string;
+      hasAttachment: boolean;
+      alreadyImported: boolean;
+    }[] = [];
     await this.db.transaction(async (tx) => {
       for (const raw of parsed.data.data) {
         const record = normalizeReceipt(raw);
         const attachment = (raw.images ?? []).find((i) =>
           ['application/pdf', 'image/png', 'image/jpeg'].includes(i.mime_type),
         );
+        const recordJson = JSON.stringify(record);
+        // The same record imported again (the same file twice) is not stored twice; a corrected
+        // record from the ERP (different content) is stored, and the newest one is used.
+        const same = (
+          await tx
+            .select({ id: t.erpReceiptRecords.id, recordJson: t.erpReceiptRecords.recordJson })
+            .from(t.erpReceiptRecords)
+            .where(
+              and(
+                eq(t.erpReceiptRecords.grnNo, record.grnNo),
+                eq(t.erpReceiptRecords.invoiceNoKey, invoiceNoKey(record.invoiceNo)),
+              ),
+            )
+            .orderBy(desc(t.erpReceiptRecords.seq))
+            .limit(1)
+        )[0];
+        if (same && same.recordJson === recordJson) {
+          records.push({
+            id: same.id,
+            grnNo: record.grnNo,
+            hasAttachment: Boolean(attachment),
+            alreadyImported: true,
+          });
+          continue;
+        }
+        const id = ulid();
+        records.push({
+          id,
+          grnNo: record.grnNo,
+          hasAttachment: Boolean(attachment),
+          alreadyImported: false,
+        });
         await tx.insert(t.erpReceiptRecords).values({
-          id: ulid(),
+          id,
           invoiceNoKey: invoiceNoKey(record.invoiceNo),
           vendorName: record.vendorName,
           grnNo: record.grnNo,
-          recordJson: JSON.stringify(record),
+          recordJson,
           attachmentName: attachment?.file_name ?? null,
           attachmentBase64: attachment?.base64 ?? null,
           sourceFilename,
@@ -1744,10 +1786,10 @@ export class Veyra {
       }
       await this.audit(tx, null, { type: 'user', userId }, 'receipts.imported', {
         file: sourceFilename,
-        records: parsed.data.data.length,
+        records: records.filter((r) => !r.alreadyImported).length,
       });
     });
-    return { imported: parsed.data.data.length };
+    return { imported: records.filter((r) => !r.alreadyImported).length, records };
   }
 
   async listReceipts() {

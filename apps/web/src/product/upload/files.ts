@@ -1,9 +1,16 @@
 import { MAX_UPLOAD_BYTES } from '@veyra/shared';
 
 /** What the server reads: PDFs (text or scanned) and JPEG or PNG images (photos, screenshots). */
-export const ACCEPT = '.pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg';
+export const ACCEPT =
+  '.pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg,.txt,.json,text/plain,application/json';
 const TYPES = new Set(['application/pdf', 'image/png', 'image/jpeg']);
 const EXTENSIONS = /\.(pdf|png|jpe?g)$/i;
+
+/** An ERP goods-receipt export (JSON, often saved as .txt): imported, then its invoice checked. */
+export const isReceiptExport = (file: { name: string; type: string }): boolean =>
+  /\.(txt|json)$/i.test(file.name) ||
+  file.type === 'application/json' ||
+  file.type === 'text/plain';
 
 export interface FileLike {
   name: string;
@@ -16,8 +23,8 @@ export interface FileLike {
  * checks every file again (its real type and size) and decides.
  */
 export function refusalOf(file: FileLike, maxBytes = MAX_UPLOAD_BYTES): string | null {
-  if (!TYPES.has(file.type) && !EXTENSIONS.test(file.name))
-    return 'Only PDF, JPEG or PNG files can be read.';
+  if (!TYPES.has(file.type) && !EXTENSIONS.test(file.name) && !isReceiptExport(file))
+    return 'Only PDF, JPEG or PNG invoices, or an ERP receipt file, can be read.';
   if (file.size === 0) return 'The file is empty.';
   if (file.size > maxBytes)
     return `The file is larger than ${Math.round(maxBytes / (1024 * 1024))} MB.`;
