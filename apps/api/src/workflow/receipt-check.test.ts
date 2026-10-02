@@ -247,7 +247,7 @@ describe('the receipt check: invoices against the ERP’s own goods-receipt reco
     const res = await importExport({ rows: [] });
     expect(res.statusCode).toBe(422);
     expect(res.json<{ error: { message: string } }>().error.message).toMatch(
-      /not an ERP goods-receipt file/,
+      /isn't a goods-receipt export Veyrafy recognises/,
     );
   });
 

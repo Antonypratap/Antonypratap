@@ -63,7 +63,7 @@ export function ErpReceipts() {
             Goods receipts from your ERP
           </h2>
           <p className={styles.hint}>
-            Import your ERP’s goods-receipt export (JSON). Every invoice whose number and supplier
+            Import the goods-receipt file your ERP exports. Every invoice whose number and supplier
             match a receipt is checked against it, value by value, as soon as it is read.
           </p>
         </div>
@@ -76,7 +76,7 @@ export function ErpReceipts() {
               onClick={() => input.current?.click()}
             >
               <Icon name="upload" size={15} />
-              {busy === 'import' ? 'Importing…' : 'Import ERP JSON'}
+              {busy === 'import' ? 'Importing…' : 'Import from your ERP'}
             </button>
             <input
               ref={input}

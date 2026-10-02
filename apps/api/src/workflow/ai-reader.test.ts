@@ -106,7 +106,7 @@ describe('AI reader in the workflow', () => {
     const audit = (
       await app.server.inject({ method: 'GET', url: `/api/v1/audit?invoiceId=${invoiceId}` })
     ).json<{ detail?: string | null; title: string }[]>();
-    expect(JSON.stringify(audit)).toContain('the AI reader, every value checked by Veyrafy');
+    expect(JSON.stringify(audit)).toContain('the page itself, every value checked by Veyrafy');
   });
 
   it('a PDF with NO text layer is read visually (every page as an image), verified and shown', async () => {

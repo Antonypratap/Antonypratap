@@ -775,7 +775,10 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       try {
         json = JSON.parse(content);
       } catch {
-        throw new VeyraError('INVALID_INPUT', 'The file is not valid JSON.');
+        throw new VeyraError(
+          'INVALID_INPUT',
+          "This file couldn't be opened as an export from your ERP. Check that you chose the right file.",
+        );
       }
       return reply.status(201).send(await veyra.importReceipts(filename, json, actorOf(req)));
     },

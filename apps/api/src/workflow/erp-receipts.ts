@@ -314,7 +314,7 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
     'Purchase order',
     'Order',
     inv.poNumber,
-    erp.poRef ? `Internal id ${erp.poRef}` : null,
+    erp.poRef ? `ERP reference ${erp.poRef}` : null,
     null,
     'The ERP record holds its internal order id, not the order number printed on the invoice.',
   );
@@ -420,12 +420,12 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
   for (const code of [...new Set(others.map((o) => o.code))])
     push({
       section: 'Totals',
-      label: `ERP charge ${code}`,
+      label: `Other charge (your ERP's code ${code})`,
       invoice: null,
       erp: money(others.filter((o) => o.code === code).reduce((s, o) => s + o.paise, 0)),
       result: 'not_checked',
       blocking: true,
-      note: 'An ERP charge code Veyrafy does not know yet; it is counted in the ERP total.',
+      note: "A charge in your ERP that Veyrafy doesn't recognise yet; it is included in the ERP total.",
     });
   const erpTotal =
     goods +

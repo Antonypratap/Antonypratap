@@ -738,6 +738,9 @@ export class Veyra {
           lines: result.lines.length,
           otherFields: result.otherFields?.length ?? 0,
           warnings: result.warnings.length,
+          // Why the main reader was not used (a busy service, a wrong model name, a key): for
+          // whoever runs Veyrafy. People see what it means for them, in plain words.
+          readerFallback: result.warnings.find((w) => w.startsWith('The AI reader was ')) ?? null,
         },
         'invoice read',
       );
@@ -1458,7 +1461,12 @@ export class Veyra {
     if (!parsed.success)
       throw new VeyraError(
         'INVALID_INPUT',
-        `This is not an ERP goods-receipt file Veyrafy can read: ${parsed.error.issues[0]?.path.join('.') ?? ''} ${parsed.error.issues[0]?.message ?? ''}`.trim(),
+        "This file isn't a goods-receipt export Veyrafy recognises. Check that you chose the file exported from your ERP.",
+        // For whoever supports the import (never shown as the message): what did not fit.
+        {
+          field: parsed.error.issues[0]?.path.join('.') ?? '',
+          problem: parsed.error.issues[0]?.message ?? '',
+        },
       );
     const now = this.now();
     await this.db.transaction(async (tx) => {

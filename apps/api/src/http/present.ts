@@ -733,7 +733,7 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
       );
       return make(
         'Read invoice',
-        `${how}${String(d.lines)} line${d.lines === 1 ? '' : 's'}, totals and tax${unclear.length ? `. Not clear: ${unclear.map(fieldLabel).join(', ')}` : ''}${aiFallback ? `. ${aiFallback}` : ''}`,
+        `${how}${String(d.lines)} line${d.lines === 1 ? '' : 's'}, totals and tax${unclear.length ? `. Not clear: ${unclear.map(fieldLabel).join(', ')}` : ''}${aiFallback ? `. ${readerNote(aiFallback)}` : ''}`,
       );
     }
     case 'field.derived':
@@ -942,13 +942,27 @@ export const fmt = {
 };
 
 /** How an invoice was read, for the audit trail ("Read from the PDF's text. "). */
+/**
+ * Why the main reader was not used, in plain words (the technical reason is in the server log for
+ * whoever runs Veyrafy; people see what it means for them).
+ */
+function readerNote(warning: string): string {
+  if (/too large/.test(warning))
+    return "The file is too large for Veyrafy's main reader, so a simpler reader was used. Some values may need your confirmation.";
+  if (/not found|refused|check VEYRA_|check GEMINI_/.test(warning))
+    return "Veyrafy's main reader isn't set up correctly, so a simpler reader was used. Please tell your administrator.";
+  if (/busy|HTTP 5|HTTP 429|quota|rate limit|in time|could not be reached|unusable/.test(warning))
+    return "Veyrafy's main reader was busy, so a simpler reader was used. Some values may need your confirmation.";
+  return "Veyrafy's main reader wasn't available, so a simpler reader was used. Some values may need your confirmation.";
+}
+
 function readMethods(methods: readonly string[]): string {
   const text: Record<string, string> = {
     pdf_text: "the PDF's text",
-    tesseract: 'OCR (Tesseract)',
-    ollama: 'a local AI model, checked against the document text',
+    tesseract: 'the scanned image',
+    ollama: 'an assistant, checked against the document text',
     fixture: 'the sample invoice data',
-    ai_vision: 'the AI reader, every value checked by Veyrafy',
+    ai_vision: 'the page itself, every value checked by Veyrafy',
   };
   const parts = methods.map((m) => text[m]).filter((t): t is string => t !== undefined);
   return parts.length ? `Read from ${parts.join(' and ')}. ` : '';

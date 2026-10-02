@@ -84,7 +84,7 @@ export async function request<S extends z.ZodType>(
           parsed.data.error.message,
           parsed.data.error.details ?? {},
         )
-      : new ApiError(res.status, 'HTTP', `Request failed (${res.status}).`);
+      : new ApiError(res.status, 'HTTP', 'Something went wrong. Please try again.');
   }
   return schema.parse(body);
 }
