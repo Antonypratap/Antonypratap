@@ -12,7 +12,7 @@ const TILES = Array.from({ length: RECEIVED }, (_, i) => ({ i, needsYou: NEED_YO
 export function Showcase() {
   const [ref, inView] = useInView<HTMLDivElement>({ threshold: 0.35 });
   // 1: invoices are worked through; 2: the handled ones fall away, the 11 remain.
-  const phase = useSequence(2, 1900, inView, 300);
+  const phase = useSequence(2, 1900, inView, 300, 4000);
 
   return (
     <section id="product" className={styles.section} aria-labelledby="showcase-title">

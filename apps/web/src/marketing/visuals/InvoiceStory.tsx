@@ -5,10 +5,10 @@ import styles from './InvoiceStory.module.css';
 /**
  * Hero: one invoice goes through Veyrafy. Every check runs on its own; the one question only a
  * person can answer (did the goods arrive?) is put to the team; then the invoice is recorded in
- * the ERP. Plays once; with reduced motion it shows the finished state.
+ * the ERP. Plays on a loop; with reduced motion it shows the finished state.
  */
 export function InvoiceStory() {
-  const step = useSequence(STORY_STEPS, 700, true, 700);
+  const step = useSequence(STORY_STEPS, 700, true, 700, 3500);
   const s = storyAt(step);
 
   return (

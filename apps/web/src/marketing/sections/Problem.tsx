@@ -17,7 +17,7 @@ const QUEUE = [
 export function Problem() {
   const [ref, inView] = useInView<HTMLDivElement>({ threshold: 0.35 });
   // One step per chore taken away, then a final step where the queue settles.
-  const step = useSequence(QUEUE.length + 1, 380, inView, 500);
+  const step = useSequence(QUEUE.length + 1, 380, inView, 500, 3000);
   const settled = step > QUEUE.length;
   const waiting = QUEUE.filter((q, i) => 'keep' in q || i >= step).length;
 
