@@ -45,7 +45,7 @@ export interface AppConfig {
   /** Optional local Ollama assist (VEYRA_OLLAMA_URL / VEYRA_OLLAMA_MODEL). Off when absent. */
   ollama?: { baseUrl: string; model: string } | null;
   /** The AI vision reader (Gemini); the local reader stays as its fallback. Off when absent. */
-  ai?: { apiKey: string; model: string; fetch?: typeof fetch } | null;
+  ai?: { apiKey: string; model: string; backupModels?: string[]; fetch?: typeof fetch } | null;
   /** Tests only: wraps the ERP connector (e.g. the scripted connector that injects failures). */
   wrapErp?: (erp: ErpConnector) => ErpConnector;
   /** Tests only: replaces the real document extractor. */
@@ -121,6 +121,7 @@ function makeExtractor(
     ? new GeminiExtractor({
         apiKey: config.ai.apiKey,
         model: config.ai.model,
+        backupModels: config.ai.backupModels ?? [],
         fallback: base,
         ...(config.ai.fetch ? { fetch: config.ai.fetch } : {}),
       })

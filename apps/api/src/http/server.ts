@@ -90,7 +90,13 @@ export interface ServerOptions {
   veyra: Veyra;
   /** The AI reader, when one is configured: "Test the reader" asks it a tiny question. */
   aiReader?: {
-    test(): Promise<{ ok: boolean; ms: number; model: string; reason: string | null }>;
+    test(): Promise<{
+      ok: boolean;
+      ms: number;
+      model: string;
+      reason: string | null;
+      skipped: string[];
+    }>;
   } | null;
   /**
    * Dev only: wipe Veyra's data and reset the ERP to the DEMO.md seed, or to an empty business
@@ -779,9 +785,14 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       ok: r.ok,
       ms: r.ms,
       plain: r.ok
-        ? `Veyrafy's main reader is working (it answered in ${(r.ms / 1000).toFixed(1)} seconds).`
+        ? `Veyrafy's main reader is working (it answered in ${(r.ms / 1000).toFixed(1)} seconds)${
+            r.skipped.length ? ', using its backup because the first choice was busy' : ''
+          }.`
         : readerProblem(r.reason ?? ''),
-      technical: r.ok ? `model ${r.model}` : `model ${r.model}: ${r.reason ?? ''}`,
+      technical: [
+        ...r.skipped.map((m) => `model ${m}`),
+        ...(r.ok ? [`model ${r.model}: answered`] : []),
+      ].join('\n'),
     };
   });
 

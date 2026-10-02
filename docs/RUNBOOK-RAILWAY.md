@@ -108,7 +108,8 @@ The demo's sample business is a fictional brewery (DEMO.md §10). Nothing needs 
 (from Google AI Studio, added as a Railway variable, never committed or pasted anywhere else), each
 uploaded invoice is read by Gemini. Gemini only copies the printed text; Veyrafy re-parses and checks
 every value, and falls back to the local reader if Gemini cannot be reached. `VEYRA_AI_MODEL` picks
-the model (default `gemini-2.5-pro`). Because invoices then go to Google, a production instance
+the model (default `gemini-2.5-pro`); a comma-separated list adds backups (`main-model,backup-model`),
+used at once when the main one is busy. ERP → Business system → *Test the reader* checks them. Because invoices then go to Google, a production instance
 refuses to start with it unless `VEYRA_AI_ALLOW_PRODUCTION=true`, which is set only once that client
 has agreed in writing.
 

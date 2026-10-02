@@ -85,7 +85,13 @@ export interface VeyraConfig {
    * each document to Google, so production refuses it unless VEYRA_AI_ALLOW_PRODUCTION=true
    * records that the client agreed.
    */
-  ai: { provider: 'gemini'; apiKey: Secret; model: string } | null;
+  ai: {
+    provider: 'gemini';
+    apiKey: Secret;
+    model: string;
+    /** Tried in turn when the main model is busy or not available. */
+    backupModels: string[];
+  } | null;
   logLevel: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'silent';
   /** Proxy hops to trust for the client address (rate limiting). 0 = none. */
   trustProxy: number;
@@ -172,7 +178,11 @@ const VARS = {
   VEYRA_ALLOW_FIXTURE_EXTRACTOR: bool,
   VEYRA_OLLAMA_URL: z.url({ protocol: /^https?$/ }),
   VEYRA_AI_READER: z.enum(['off', 'gemini']),
-  VEYRA_AI_MODEL: z.string().regex(/^[a-z0-9][a-z0-9.-]{1,80}$/),
+  // The model, then any backups, comma-separated: "main-model, backup-model".
+  VEYRA_AI_MODEL: z
+    .string()
+    .regex(/^\s*[a-z0-9][a-z0-9.-]{1,80}(\s*,\s*[a-z0-9][a-z0-9.-]{1,80}){0,3}\s*$/)
+    .transform((v) => v.split(',').map((m) => m.trim())),
   VEYRA_AI_ALLOW_PRODUCTION: bool,
   // Never echoed.
   GEMINI_API_KEY: z.string().min(20).max(200),
@@ -374,7 +384,8 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
         ? {
             provider: 'gemini',
             apiKey: new Secret(geminiKey),
-            model: read('VEYRA_AI_MODEL') ?? 'gemini-2.5-pro',
+            model: read('VEYRA_AI_MODEL')?.[0] ?? 'gemini-2.5-pro',
+            backupModels: read('VEYRA_AI_MODEL')?.slice(1) ?? [],
           }
         : null,
     ollama: ollamaUrl
@@ -468,7 +479,7 @@ export function describeConfig(c: VeyraConfig) {
     cookieSecure: c.auth.cookieSecure,
     cors: c.http.corsOrigins.length > 0,
     demo: c.demo,
-    aiReader: c.ai ? `${c.ai.provider}:${c.ai.model}` : 'off',
+    aiReader: c.ai ? `${c.ai.provider}:${[c.ai.model, ...c.ai.backupModels].join(',')}` : 'off',
     migrateOnStart: c.migrateOnStart,
   };
 }

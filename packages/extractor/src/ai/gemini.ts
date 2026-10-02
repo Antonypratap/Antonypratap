@@ -204,6 +204,11 @@ Ignore stamps, signatures and handwriting that are not part of the printed invoi
 export interface GeminiOptions {
   apiKey: string;
   model: string;
+  /**
+   * Other models tried, in turn with the main one, when it is busy (HTTP 429/5xx) or not
+   * available (HTTP 404). Google's busiest models are often "experiencing high demand".
+   */
+  backupModels?: readonly string[];
   /** The reader used when the AI cannot be reached or answers badly. */
   fallback: Extractor;
   timeoutMs?: number;
@@ -448,6 +453,8 @@ class AiHttpError extends Error {
     readonly status: number,
     /** The AI service's own explanation (for the server log; never shown as is to people). */
     readonly detail: string = '',
+    /** The model that was asked. */
+    readonly model?: string,
   ) {
     super(`AI reader HTTP ${status}`);
   }
@@ -455,7 +462,10 @@ class AiHttpError extends Error {
 
 /** An answer that came back but cannot be used (cut off, empty, or not in the agreed shape). */
 class AiAnswerError extends Error {
-  constructor(readonly reason: string) {
+  constructor(
+    readonly reason: string,
+    readonly model?: string,
+  ) {
     super(reason);
   }
 }
@@ -464,7 +474,11 @@ class AiAnswerError extends Error {
  * Why the AI reader could not be used, in words a person can act on (shown in the invoice's
  * history). Never the key, the request or the document.
  */
-export function whyUnavailable(error: unknown, model: string): string {
+export function whyUnavailable(error: unknown, configured: string): string {
+  const model =
+    error instanceof AiHttpError || error instanceof AiAnswerError
+      ? (error.model ?? configured)
+      : configured;
   if (error instanceof AiHttpError) {
     const detail = error.detail ? ` (${error.detail})` : '';
     if (error.status === 404)
@@ -502,6 +516,8 @@ export class GeminiExtractor implements Extractor {
   readonly id = 'ai_vision' as const;
   readonly version: string;
   readonly #o: Required<Omit<GeminiOptions, 'fallback'>> & { fallback: Extractor };
+  /** The main model first, then the backups. */
+  readonly #models: readonly string[];
 
   constructor(options: GeminiOptions) {
     this.#o = {
@@ -509,8 +525,10 @@ export class GeminiExtractor implements Extractor {
       retryDelaysMs: [2_000, 6_000, 15_000],
       fetch: globalThis.fetch,
       endpoint: 'https://generativelanguage.googleapis.com/v1beta',
+      backupModels: [],
       ...options,
     };
+    this.#models = [...new Set([options.model, ...(options.backupModels ?? [])])];
     this.version = `gemini:${options.model}`;
   }
 
@@ -520,11 +538,12 @@ export class GeminiExtractor implements Extractor {
 
   async extract(input: ExtractorInput): Promise<ExtractionResult> {
     let reading: AiReading;
+    let model: string;
     let doc: VisionDocument;
     try {
       doc = await visionDocument(await readFile(input.filePath), input.mime);
       if (doc.bytes > MAX_INLINE_BYTES) return await this.#fallback(input, 'too large for it');
-      reading = await this.#readWithRetries(doc.parts);
+      ({ reading, model } = await this.#readWithRetries(doc.parts));
     } catch (error) {
       // Network, quota, timeout, an unusable answer or a file it cannot be given: never a reason
       // to lose the invoice. The local reader reads it (and fails only if nothing is readable).
@@ -537,9 +556,11 @@ export class GeminiExtractor implements Extractor {
         `This file seems to hold more than one invoice${numbers.length ? ` (${numbers.join(', ')})` : ''}. Upload each invoice as its own file.`,
       );
     }
-    const read = toExtraction(reading, this.version, doc.sizes);
+    // The version names the model that actually read it (the main one or a backup).
+    const version = `gemini:${model}`;
+    const read = toExtraction(reading, version, doc.sizes);
     return {
-      extractor: { id: this.id, version: this.version },
+      extractor: { id: this.id, version },
       ...read,
       // The page count is the document's own, never the model's.
       pages: doc.pages,
@@ -571,25 +592,40 @@ export class GeminiExtractor implements Extractor {
     };
   }
 
-  /** A busy or briefly failing AI service is tried again, with growing waits, before giving up. */
-  async #readWithRetries(parts: readonly Part[]): Promise<AiReading> {
-    for (let attempt = 0; ; attempt++) {
+  /**
+   * A busy or briefly failing AI service is tried again, with growing waits, before giving up.
+   * With backup models, each try goes to the next model in turn (main, backup, main, …), so a
+   * model that is overloaded does not hold the invoice up; a model that does not exist is dropped.
+   */
+  async #readWithRetries(parts: readonly Part[]): Promise<{ reading: AiReading; model: string }> {
+    let models = this.#models;
+    let round = 0;
+    for (let turn = 0; ; turn++) {
+      const model = models[turn % models.length] ?? this.#o.model;
       try {
-        return await this.#read(parts);
+        return { reading: await this.#read(parts, model), model };
       } catch (error) {
+        if (error instanceof AiHttpError && error.status === 404 && models.length > 1) {
+          models = models.filter((m) => m !== model);
+          turn--; // the same position now holds the next model
+          continue;
+        }
         const transient =
           (error instanceof AiHttpError && [429, 500, 502, 503, 504].includes(error.status)) ||
           error instanceof TypeError; // fetch: the connection failed or dropped
-        const wait = this.#o.retryDelaysMs[attempt];
-        if (!transient || wait === undefined) throw error;
+        if (!transient) throw error;
+        // Straight on to the next model; after every model failed once, wait, then a new round.
+        if (turn % models.length !== models.length - 1) continue;
+        const wait = this.#o.retryDelaysMs[round++];
+        if (wait === undefined) throw error;
         await new Promise((r) => setTimeout(r, wait));
       }
     }
   }
 
-  async #read(parts: readonly Part[]): Promise<AiReading> {
+  async #read(parts: readonly Part[], model: string): Promise<AiReading> {
     const res = await this.#o.fetch(
-      `${this.#o.endpoint}/models/${encodeURIComponent(this.#o.model)}:generateContent`,
+      `${this.#o.endpoint}/models/${encodeURIComponent(model)}:generateContent`,
       {
         method: 'POST',
         // The key goes in a header, never in the URL (URLs end up in logs).
@@ -607,7 +643,7 @@ export class GeminiExtractor implements Extractor {
         }),
       },
     );
-    if (!res.ok) throw new AiHttpError(res.status, await errorDetail(res));
+    if (!res.ok) throw new AiHttpError(res.status, await errorDetail(res), model);
     const body = (await res.json()) as {
       candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
       promptFeedback?: { blockReason?: string };
@@ -616,53 +652,68 @@ export class GeminiExtractor implements Extractor {
     if (!first)
       throw new AiAnswerError(
         `no answer${body.promptFeedback?.blockReason ? ` (blocked: ${body.promptFeedback.blockReason})` : ''}`,
+        model,
       );
-    if (first.finishReason === 'MAX_TOKENS') throw new AiAnswerError('the answer was cut off');
+    if (first.finishReason === 'MAX_TOKENS')
+      throw new AiAnswerError('the answer was cut off', model);
     const answer = first.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
     if (!answer.trim())
-      throw new AiAnswerError(`an empty answer (finish reason ${first.finishReason ?? 'unknown'})`);
+      throw new AiAnswerError(
+        `an empty answer (finish reason ${first.finishReason ?? 'unknown'})`,
+        model,
+      );
     let json: unknown;
     try {
       json = JSON.parse(answer);
     } catch {
-      throw new AiAnswerError('the answer was not valid JSON');
+      throw new AiAnswerError('the answer was not valid JSON', model);
     }
     const parsed = AiReadingSchema.safeParse(json);
     if (!parsed.success)
       throw new AiAnswerError(
         `the answer did not have the agreed shape (${parsed.error.issues[0]?.path.join('.') ?? ''}: ${parsed.error.issues[0]?.message ?? ''})`,
+        model,
       );
     return parsed.data;
   }
 
   /**
    * A tiny request to see whether the AI reader works right now (for whoever sets Veyrafy up):
-   * no document is sent. Plain-words result and the technical reason.
+   * no document is sent. Each model is asked in turn until one answers. Plain-words result and
+   * the technical reason; `skipped` names the models that did not answer, and why.
    */
-  async test(): Promise<{ ok: boolean; ms: number; model: string; reason: string | null }> {
+  async test(): Promise<{
+    ok: boolean;
+    ms: number;
+    model: string;
+    reason: string | null;
+    skipped: string[];
+  }> {
     const started = Date.now();
-    try {
-      const res = await this.#o.fetch(
-        `${this.#o.endpoint}/models/${encodeURIComponent(this.#o.model)}:generateContent`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-goog-api-key': this.#o.apiKey },
-          signal: AbortSignal.timeout(30_000),
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: 'Reply with the single word: ready' }] }],
-            generationConfig: { temperature: 0, maxOutputTokens: 256 },
-          }),
-        },
-      );
-      if (!res.ok) throw new AiHttpError(res.status, await errorDetail(res));
-      return { ok: true, ms: Date.now() - started, model: this.#o.model, reason: null };
-    } catch (error) {
-      return {
-        ok: false,
-        ms: Date.now() - started,
-        model: this.#o.model,
-        reason: whyUnavailable(error, this.#o.model),
-      };
+    const skipped: string[] = [];
+    let first: string | null = null;
+    for (const model of this.#models) {
+      try {
+        const res = await this.#o.fetch(
+          `${this.#o.endpoint}/models/${encodeURIComponent(model)}:generateContent`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-goog-api-key': this.#o.apiKey },
+            signal: AbortSignal.timeout(30_000),
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: 'Reply with the single word: ready' }] }],
+              generationConfig: { temperature: 0, maxOutputTokens: 256 },
+            }),
+          },
+        );
+        if (!res.ok) throw new AiHttpError(res.status, await errorDetail(res), model);
+        return { ok: true, ms: Date.now() - started, model, reason: null, skipped };
+      } catch (error) {
+        const why = whyUnavailable(error, model);
+        first ??= why;
+        skipped.push(`${model}: ${why}`);
+      }
     }
+    return { ok: false, ms: Date.now() - started, model: this.#o.model, reason: first, skipped };
   }
 }

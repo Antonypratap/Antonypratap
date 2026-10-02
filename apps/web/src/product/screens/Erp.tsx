@@ -222,7 +222,7 @@ function ReaderTest() {
           </p>
           <details>
             <summary>Details for your technical team</summary>
-            <code>{result.technical}</code>
+            <code className={styles.readerCode}>{result.technical}</code>
           </details>
         </div>
       )}

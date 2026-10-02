@@ -151,6 +151,18 @@ describe('configuration (Phase 6)', () => {
     const key = 'AIzaFakeKeyForTests0123456789';
     const on = loadConfig({ ...demo, VEYRA_AI_READER: 'gemini', GEMINI_API_KEY: key }, defaults);
     expect(on.ai).toMatchObject({ provider: 'gemini', model: 'gemini-2.5-pro' });
+    // A main model and backups, comma-separated.
+    expect(
+      loadConfig(
+        {
+          ...demo,
+          VEYRA_AI_READER: 'gemini',
+          GEMINI_API_KEY: key,
+          VEYRA_AI_MODEL: 'main-model, backup-model',
+        },
+        defaults,
+      ).ai,
+    ).toMatchObject({ model: 'main-model', backupModels: ['backup-model'] });
     expect(String(on.ai?.apiKey)).not.toContain(key);
     expect(JSON.stringify(describeConfig(on))).not.toContain(key);
     expect(problems({ ...demo, VEYRA_AI_READER: 'gemini' }).problems).toContain(

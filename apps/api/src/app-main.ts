@@ -48,7 +48,13 @@ try {
     allowFixtureExtractor: config.allowFixtureExtractor,
     nodeEnv: process.env.NODE_ENV,
     ollama: config.ollama,
-    ai: config.ai ? { apiKey: config.ai.apiKey.reveal(), model: config.ai.model } : null,
+    ai: config.ai
+      ? {
+          apiKey: config.ai.apiKey.reveal(),
+          model: config.ai.model,
+          backupModels: config.ai.backupModels,
+        }
+      : null,
     // Several invoices are read at once (the AI or OCR); checking and recording stay serial.
     readAhead: 3,
     log,

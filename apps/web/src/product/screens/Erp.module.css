@@ -213,3 +213,7 @@ button.action {
 .readerResult code {
   overflow-wrap: anywhere;
 }
+.readerCode {
+  display: block;
+  white-space: pre-line;
+}

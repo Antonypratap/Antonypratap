@@ -379,4 +379,54 @@ describe('AI vision reader (Gemini)', () => {
       'The AI reader was unavailable (the AI service gave an unusable answer: the answer was cut off); read by the local reader instead.',
     );
   });
+
+  it('when the main model is busy, the backup model reads it at once; one not found is dropped', async () => {
+    const asked: string[] = [];
+    const busyMain = (async (url: string) => {
+      const model = /models\/([^:]+):/.exec(url)?.[1] ?? '';
+      asked.push(model);
+      if (model === 'main-model') return new Response('{}', { status: 503 });
+      if (model === 'gone-model') return new Response('{}', { status: 404 });
+      return new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: JSON.stringify(READING) }] } }],
+        }),
+      );
+    }) as unknown as typeof fetch;
+    const g = new GeminiExtractor({
+      apiKey: 'test-key-0123456789abcdef',
+      model: 'main-model',
+      backupModels: ['gone-model', 'backup-model'],
+      fallback: local,
+      fetch: busyMain,
+      retryDelaysMs: [60_000], // never waited for: the backup answers in the same round
+    });
+    const r = await g.extract(input);
+    expect(asked).toEqual(['main-model', 'gone-model', 'backup-model']);
+    expect(r.extractor).toEqual({ id: 'ai_vision', version: 'gemini:backup-model' });
+
+    const t = await g.test();
+    expect(t).toMatchObject({ ok: true, model: 'backup-model' });
+    expect(t.skipped).toEqual([
+      'main-model: the AI service answered HTTP 503',
+      'gone-model: the AI model "gone-model" was not found; check VEYRA_AI_MODEL',
+    ]);
+  });
+
+  it('every model busy: tried in rounds, then the local reader, naming the model', async () => {
+    let calls = 0;
+    const busy = (async () => {
+      calls++;
+      return new Response('{}', { status: 503 });
+    }) as unknown as typeof fetch;
+    const r = await new GeminiExtractor({
+      apiKey: 'test-key-0123456789abcdef',
+      model: 'a-model',
+      backupModels: ['b-model'],
+      fallback: local,
+      fetch: busy,
+      retryDelaysMs: [1, 1],
+    }).extract(input);
+    expect([calls, r.extractor.id]).toEqual([6, 'local_ocr']); // 3 rounds of 2 models
+  });
 });
