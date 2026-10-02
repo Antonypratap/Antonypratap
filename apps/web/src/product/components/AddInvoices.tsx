@@ -2,6 +2,8 @@ import { Button, Icon } from '../../design-system';
 import { useAllowed } from '../../access/session';
 import { hrefFor } from '../router';
 import { useDemo } from '../shell/DemoPanel';
+import { useProductData } from '../state/data';
+import type { UiStatus } from '@veyra/shared';
 import { useUploads } from '../upload/Uploads';
 import styles from './AddInvoices.module.css';
 
@@ -10,8 +12,20 @@ import styles from './AddInvoices.module.css';
  * take a photo on a phone, paste a screenshot, or bring business records from Excel. Large when
  * the workspace is empty, a slim bar once invoices are flowing.
  */
+/** What an uploaded file's row says, from the invoice's real status (never a fixed "reading"). */
+const AFTER_UPLOAD: Record<UiStatus, string> = {
+  processing: 'Added · Veyrafy is reading it',
+  attention: 'Read · needs your decision',
+  ready: 'Read and checked · ready',
+  handled: 'Read and checked · handled',
+  rejected: 'Rejected',
+};
+
 export function AddInvoices({ compact }: { compact: boolean }) {
   const uploads = useUploads();
+  const { inbox } = useProductData();
+  const statusOf = (invoiceId: string | undefined): UiStatus =>
+    inbox?.invoices.find((i) => i.id === invoiceId)?.status ?? 'processing';
   const demo = useDemo();
   const canImport = useAllowed('imports.manage');
   if (!uploads.enabled) return null;
@@ -82,10 +96,10 @@ export function AddInvoices({ compact }: { compact: boolean }) {
                 {item.state === 'added' &&
                   (item.invoiceId ? (
                     <a href={hrefFor({ name: 'invoice', id: item.invoiceId })}>
-                      Added · Veyrafy is reading it
+                      {AFTER_UPLOAD[statusOf(item.invoiceId)]}
                     </a>
                   ) : (
-                    'Added · Veyrafy is reading it'
+                    AFTER_UPLOAD.processing
                   ))}
                 {item.state === 'refused' && item.message}
               </span>
