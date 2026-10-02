@@ -1,18 +1,20 @@
 import styles from './HomePage.module.css';
 import { SiteNav } from './SiteNav';
 import { BuiltForIndia } from './sections/BuiltForIndia';
+import { Faq } from './sections/Faq';
 import { FinalCta } from './sections/FinalCta';
 import { Hero } from './sections/Hero';
 import { HowItWorks } from './sections/HowItWorks';
 import { Outcomes } from './sections/Outcomes';
 import { Philosophy } from './sections/Philosophy';
 import { Problem } from './sections/Problem';
+import { Roadmap } from './sections/Roadmap';
 import { Showcase } from './sections/Showcase';
 import { SiteFooter } from './sections/SiteFooter';
 import { Trust } from './sections/Trust';
 import { WhyNow } from './sections/WhyNow';
 
-/** WHY → WHAT → HOW → TRUST → CTA */
+/** WHY → WHAT → HOW → TRUST → NEXT → QUESTIONS → CTA */
 export function HomePage() {
   return (
     <div className={styles.site}>
@@ -31,6 +33,8 @@ export function HomePage() {
         <BuiltForIndia />
         <Philosophy />
         <Trust />
+        <Roadmap />
+        <Faq />
         <FinalCta />
       </main>
       <SiteFooter />

@@ -1161,7 +1161,8 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   }
 
   // The web app on this same origin (production client instances): every non-/api GET.
-  if (options.web) registerWebApp(app, options.web);
+  // A client or demo instance is never indexed (only the public website is).
+  if (options.web) registerWebApp(app, options.web, { indexable: false });
 
   return app;
 }

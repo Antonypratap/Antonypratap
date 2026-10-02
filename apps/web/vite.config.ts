@@ -4,6 +4,7 @@ import { defineConfig, loadEnv } from 'vite';
 import { parseApiBase, refuseUnknownWebEnv } from './src/api-base';
 import { webSecurityHeaders } from './src/security-headers';
 import { checkVercelConfig } from './src/vercel-config';
+import { crawlableBody, seoHead } from './src/marketing/seo-html';
 
 export default defineConfig(({ mode }) => {
   // Only VITE_API_BASE_URL may reach the browser bundle (api-base.ts); an invalid value, or any
@@ -18,7 +19,18 @@ export default defineConfig(({ mode }) => {
       webSecurityHeaders(api.origin),
     );
   return {
-    plugins: [react()],
+    plugins: [
+      react(),
+      {
+        // Search engines and link previews: meta tags, structured data and crawlable copy, all
+        // from src/marketing/seo.ts (the page's own FAQ uses the same text).
+        name: 'veyrafy-seo',
+        transformIndexHtml: (html: string) =>
+          html
+            .replace('<!-- seo:head (built from src/marketing/seo.ts) -->', seoHead())
+            .replace('<!-- seo:body -->', crawlableBody()),
+      },
+    ],
     server: {
       port: 5173,
       strictPort: true,

@@ -120,3 +120,21 @@ svg {
 h1 {
   font-family: var(--font-display);
 }
+
+/* The homepage as plain HTML for crawlers (index.html), shown only until the app has loaded. */
+.seo-fallback {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 4rem 1.5rem;
+  color: var(--color-ink-2);
+}
+.seo-fallback h1 {
+  margin: 0.5rem 0 1rem;
+  font-size: 2.25rem;
+  color: var(--color-ink);
+}
+.seo-fallback h2,
+.seo-fallback h3 {
+  margin-top: 1.5rem;
+  color: var(--color-ink);
+}

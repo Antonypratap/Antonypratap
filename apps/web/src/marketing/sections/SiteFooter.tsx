@@ -10,6 +10,8 @@ const COLUMNS = [
       { href: '#why-now', label: 'Why now' },
       { href: '#how-it-works', label: 'How it works' },
       { href: '#built-for-india', label: 'Built for India' },
+      { href: '#whats-next', label: 'What’s next' },
+      { href: '#faq', label: 'Questions' },
     ],
   },
   {

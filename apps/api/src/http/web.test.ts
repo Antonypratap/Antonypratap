@@ -28,6 +28,8 @@ beforeAll(async () => {
   writeFileSync(join(dist, 'assets', 'index-abc123.js'), SCRIPT);
   writeFileSync(join(dist, 'favicon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
   writeFileSync(join(dist, 'notes.bin'), 'not a web file type: never served');
+  writeFileSync(join(dist, 'robots.txt'), 'User-agent: *\nAllow: /\n');
+  writeFileSync(join(dist, 'sitemap.xml'), '<urlset></urlset>');
   web = await loadWebDist(dist);
 });
 afterAll(() => rmSync(dist, { recursive: true, force: true }));
@@ -40,6 +42,8 @@ describe('web build loading', () => {
       '/assets/index-abc123.js',
       '/favicon.svg',
       '/index.html',
+      '/robots.txt',
+      '/sitemap.xml',
     ]);
     const empty = mkdtempSync(join(tmpdir(), 'veyra-empty-'));
     await expect(loadWebDist(empty)).rejects.toBeInstanceOf(WebDistError);
@@ -97,11 +101,20 @@ describe('client instance: the web app and /api/v1 on one origin', () => {
     expect(js.headers['content-type']).toBe('text/javascript; charset=utf-8');
     expect(js.headers['cache-control']).toBe('public, max-age=31536000, immutable');
     expect(js.body).toBe(SCRIPT);
-    for (const url of ['/assets/index-old.js', '/robots.txt', '/notes.bin']) {
+    for (const url of ['/assets/index-old.js', '/missing.txt', '/notes.bin']) {
       const res = await get(url);
       expect(res.statusCode, url).toBe(404);
       expect(res.body, url).not.toContain('<div id="root">');
     }
+  });
+
+  it('a client or demo instance is never indexed by search engines', async () => {
+    const page = await get('/');
+    expect(page.headers['x-robots-tag']).toBe('noindex, nofollow, noarchive');
+    const robots = await get('/robots.txt');
+    expect([robots.statusCode, robots.body]).toEqual([200, 'User-agent: *\nDisallow: /\n']);
+    expect(robots.headers['x-robots-tag']).toBe('noindex, nofollow, noarchive');
+    expect((await get('/sitemap.xml')).statusCode).toBe(404);
   });
 
   it('path traversal is refused over real HTTP: nothing outside the build is ever read', async () => {
@@ -167,6 +180,15 @@ describe('the public website (VEYRA_SITE_ONLY): static only', () => {
     expect(home.headers['content-security-policy']).toBe(PAGE_HEADERS['Content-Security-Policy']);
     expect(home.headers['x-frame-options']).toBe('DENY');
     expect(home.headers['strict-transport-security']).toBe('max-age=31536000');
+    // The website is for search engines: its own robots.txt and sitemap, no noindex.
+    expect(home.headers['x-robots-tag']).toBeUndefined();
+    const robots = await site.inject({ method: 'GET', url: '/robots.txt' });
+    expect([robots.statusCode, robots.body]).toEqual([200, 'User-agent: *\nAllow: /\n']);
+    const sitemap = await site.inject({ method: 'GET', url: '/sitemap.xml' });
+    expect([sitemap.statusCode, sitemap.headers['content-type']]).toEqual([
+      200,
+      'application/xml; charset=utf-8',
+    ]);
     expect((await site.inject({ method: 'GET', url: '/api/v1/health' })).json()).toEqual({
       ok: true,
       site: true,

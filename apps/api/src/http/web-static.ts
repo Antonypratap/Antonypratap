@@ -32,6 +32,7 @@ const TYPES: Record<string, string> = {
   '.json': 'application/json; charset=utf-8',
   '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.txt': 'text/plain; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -86,8 +87,29 @@ export async function loadWebDist(dir: string): Promise<WebFiles> {
  * not have stay the API's JSON 404. Security headers are the web app's own policy
  * (`webSecurityHeaders()`, the same object Vercel and `vite preview` send), never a copy.
  */
-export function registerWebApp(app: FastifyInstance, web: WebFiles): void {
-  const headers = webSecurityHeaders();
+export function registerWebApp(
+  app: FastifyInstance,
+  web: WebFiles,
+  /**
+   * Whether search engines may index this address. Only the public website is; a client or demo
+   * instance answers every page with X-Robots-Tag noindex and a robots.txt that disallows all,
+   * so no client's address or sign-in page ever appears in search results.
+   */
+  options: { indexable: boolean } = { indexable: false },
+): void {
+  const headers = options.indexable
+    ? webSecurityHeaders()
+    : { ...webSecurityHeaders(), 'x-robots-tag': 'noindex, nofollow, noarchive' };
+  if (!options.indexable) {
+    app.get('/robots.txt', { config: { access: 'public' } }, async (_req, reply) =>
+      reply
+        .headers({ ...headers, 'content-type': 'text/plain; charset=utf-8' })
+        .send('User-agent: *\nDisallow: /\n'),
+    );
+    app.get('/sitemap.xml', { config: { access: 'public' } }, async (_req, reply) =>
+      reply.status(404).headers(headers).type('text/plain; charset=utf-8').send('Not found'),
+    );
+  }
   const send = (reply: FastifyReply, file: WebFile, cache: string) =>
     reply
       .headers({ ...headers, 'content-type': file.type, 'cache-control': cache })

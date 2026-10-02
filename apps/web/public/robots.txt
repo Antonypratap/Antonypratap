@@ -1,0 +1,8 @@
+# veyrafy.com: the public website. Client and demo instances answer every crawler with
+# "Disallow: /" and an X-Robots-Tag noindex header (served by the Veyrafy API, not this file).
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /app/
+
+Sitemap: https://veyrafy.com/sitemap.xml

@@ -39,6 +39,6 @@ export async function buildSiteServer(options: {
       error: { code: 'NOT_FOUND', message: 'There is no such endpoint.', requestId: req.id },
     }),
   );
-  registerWebApp(app, options.web);
+  registerWebApp(app, options.web, { indexable: true });
   return app;
 }
