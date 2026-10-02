@@ -648,7 +648,25 @@ export class Presenter {
       .from(t.auditEvents)
       .where(invoiceId ? eq(t.auditEvents.invoiceId, invoiceId) : undefined)
       .orderBy(asc(t.auditEvents.seq));
-    return rows.flatMap((e) => auditEntry(e));
+    // Questions raised together are one entry ("Asked you about 3 values"), not one line each.
+    const entries: ApiAuditEntry[] = [];
+    for (const entry of rows.flatMap((e) => auditEntry(e))) {
+      const last = entries.at(-1);
+      if (
+        last &&
+        entry.title === 'Asked you' &&
+        (last.title === 'Asked you' || last.title.startsWith('Asked you about ')) &&
+        last.invoiceId === entry.invoiceId
+      ) {
+        const count = last.title === 'Asked you' ? 2 : Number(last.title.split(' ')[3]) + 1;
+        entries[entries.length - 1] = {
+          ...last,
+          title: `Asked you about ${count} values`,
+          detail: `${last.detail}\n${entry.detail}`,
+        };
+      } else entries.push(entry);
+    }
+    return entries;
   }
 }
 

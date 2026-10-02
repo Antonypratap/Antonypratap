@@ -135,6 +135,12 @@ export interface VeyraOptions {
   organizationName?: string;
   /** Commercial entitlements (Phase 8A); one per process, shared with Veyra Operations. */
   entitlements?: Entitlements;
+  /**
+   * Documents read at the same time as soon as they are uploaded (0: off). Reading (the slow part,
+   * an AI call or OCR) then overlaps for several invoices; checking and recording stay one at a
+   * time, in the job runner.
+   */
+  readAhead?: number;
   /** Structured log of how each invoice was read (never document content or credentials). */
   log?: { info(obj: object, msg: string): void; warn(obj: object, msg: string): void };
 }
@@ -170,6 +176,7 @@ export class Veyra {
     this.#initial = options.initialSettings ?? DEFAULT_SETTINGS;
     this.organizationName = options.organizationName ?? 'Toit';
     this.#log = options.log ?? null;
+    this.#readAheadMax = options.readAhead ?? 0;
     this.entitlements = options.entitlements ?? new Entitlements(this.db, this.clock);
   }
 
@@ -182,6 +189,50 @@ export class Veyra {
 
   readonly #initial: Omit<VeyraSettings, 'designatedUserId'>;
   readonly #log: VeyraOptions['log'] | null;
+  readonly #readAheadMax: number;
+  /** Readings started at upload, by document id, taken by the pipeline when it gets there. */
+  readonly #ahead = new Map<string, Promise<unknown>>();
+  #aheadRunning = 0;
+  readonly #aheadWaiting: (() => void)[] = [];
+
+  /** Starts reading a document now, alongside others (at most `readAhead` at once). */
+  private readAhead(doc: { id: string; mime: string; sha256: string; storagePath: string }): void {
+    if (this.#readAheadMax <= 0 || this.#ahead.has(doc.id)) return;
+    const reading = (async () => {
+      while (this.#aheadRunning >= this.#readAheadMax)
+        await new Promise<void>((r) => this.#aheadWaiting.push(r));
+      this.#aheadRunning++;
+      try {
+        return await this.readDocumentNow(doc);
+      } finally {
+        this.#aheadRunning--;
+        this.#aheadWaiting.shift()?.();
+      }
+    })();
+    reading.catch(() => undefined); // taken (and its error handled) by the pipeline
+    this.#ahead.set(doc.id, reading);
+  }
+
+  /** Forgets readings started ahead (demo reset). */
+  clearReadAhead(): void {
+    this.#ahead.clear();
+  }
+
+  private readDocumentNow(doc: { id: string; mime: string; sha256: string; storagePath: string }) {
+    // The reader gets a verified local copy of the original (object storage: a private
+    // temporary file, removed as soon as the document has been read).
+    return this.storage.withLocalFile(
+      this.documentKey(doc),
+      (filePath) =>
+        this.extractor.extract({
+          documentId: doc.id,
+          filePath,
+          mime: doc.mime,
+          sha256: doc.sha256,
+        }),
+      { sha256: doc.sha256 },
+    );
+  }
 
   /** Creates the designated user and default settings when missing. Call once before use. */
   async init(): Promise<this> {
@@ -476,6 +527,7 @@ export class Veyra {
       throw error;
     }
     this.onEnqueue();
+    this.readAhead({ id: documentId, mime, sha256, storagePath: storageKey });
     return { documentId, invoiceId };
   }
 
@@ -634,19 +686,16 @@ export class Veyra {
     const started = Date.now();
     const about = { invoiceId, documentId: doc.id, mime: doc.mime, sizeBytes: doc.sizeBytes };
     try {
-      // The reader gets a verified local copy of the original (object storage: a private
-      // temporary file, removed as soon as the document has been read).
-      const raw: unknown = await this.storage.withLocalFile(
-        this.documentKey(doc),
-        (filePath) =>
-          this.extractor.extract({
-            documentId: doc.id,
-            filePath,
-            mime: doc.mime,
-            sha256: doc.sha256,
-          }),
-        { sha256: doc.sha256 },
-      );
+      // A reading started at upload is used when there is one; a temporary failure there is
+      // simply read again now.
+      const ahead = this.#ahead.get(doc.id);
+      this.#ahead.delete(doc.id);
+      const raw: unknown = ahead
+        ? await ahead.catch((e: unknown) => {
+            if (isRetryable(e)) return this.readDocumentNow(doc);
+            throw e;
+          })
+        : await this.readDocumentNow(doc);
       const parsed = ExtractionResultSchema.safeParse(raw);
       if (!parsed.success)
         throw new Error(

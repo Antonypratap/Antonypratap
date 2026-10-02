@@ -49,6 +49,8 @@ try {
     nodeEnv: process.env.NODE_ENV,
     ollama: config.ollama,
     ai: config.ai ? { apiKey: config.ai.apiKey.reveal(), model: config.ai.model } : null,
+    // Several invoices are read at once (the AI or OCR); checking and recording stay serial.
+    readAhead: 3,
     log,
     limits: config.limits,
     rateLimits: {

@@ -67,6 +67,8 @@ export interface AppConfig {
   };
   /** Structured logger; absent: silent. */
   log?: Logger;
+  /** Invoices read at the same time as soon as they are uploaded (0 or absent: one at a time). */
+  readAhead?: number;
   limits?: { maxUploadBytes: number; maxJsonBodyBytes: number } & ConfigurableDocumentLimits;
   rateLimits?: Record<RateBucket, number>;
   trustProxy?: number;
@@ -189,6 +191,7 @@ export async function createApp(config: AppConfig) {
     ...(config.clock ? { clock: config.clock } : {}),
     ...(config.organizationName ? { organizationName: config.organizationName } : {}),
     ...(config.log ? { log: config.log.child({ component: 'reader' }) } : {}),
+    ...(config.readAhead ? { readAhead: config.readAhead } : {}),
   });
   await veyra.init();
   const sessions = new SessionStore(
@@ -214,6 +217,7 @@ export async function createApp(config: AppConfig) {
   // Demo only (never registered in production): wipe Veyra's data and its stored documents.
   const resetDemo = async (mode: 'demo' | 'empty' = 'demo') => {
     await runner.shutdown(10_000);
+    veyra.clearReadAhead();
     erp.reset(mode === 'empty' ? 'company-only' : 'demo');
     const keys = [
       ...(await db.select().from(t.documents)).map((d) => veyra.documentKey(d)),

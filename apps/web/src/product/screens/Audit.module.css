@@ -106,7 +106,7 @@
 }
 .by {
   flex-shrink: 0;
-  width: 3rem;
+  width: 4.75rem;
   text-align: center;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -128,7 +128,8 @@
   font-weight: var(--weight-semibold);
 }
 .entryDetail {
-  padding-left: calc(3rem + var(--space-2));
+  padding-left: calc(4.75rem + var(--space-2));
+  white-space: pre-line;
   font-size: var(--text-xsmall);
   color: var(--color-ink-3);
 }
