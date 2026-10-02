@@ -37,6 +37,7 @@ import {
   milliQty,
   paise,
 } from '@veyra/shared';
+import { renderPdfPage } from '@veyra/extractor';
 import { stateName } from '@veyra/india-tax';
 import {
   CAPABILITY_LABEL,
@@ -649,7 +650,11 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
         .limit(1)
     )[0];
     if (!x) return null;
-    const raw = JSON.parse(x.rawJson) as { pages?: number; warnings?: string[] };
+    const raw = JSON.parse(x.rawJson) as {
+      pages?: number;
+      warnings?: string[];
+      otherFields?: { label: string; value: string; evidence: { page: number } | null }[];
+    };
     const methods = (
       await veyra.db
         .selectDistinct({ method: t.extractedFields.method })
@@ -665,6 +670,12 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       pages: raw.pages ?? null,
       methods,
       warnings: raw.warnings ?? [],
+      // Everything else printed on the document, exactly as printed (label, value, page).
+      otherFields: (raw.otherFields ?? []).map((f) => ({
+        label: f.label,
+        value: f.value,
+        page: f.evidence?.page ?? null,
+      })),
       readAt: x.createdAt,
     };
   };
@@ -692,6 +703,34 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
           : "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'self'; sandbox",
       )
       .send(bytes);
+  });
+
+  // One page of the ORIGINAL document as an image, to show it as it was uploaded (a PDF page is
+  // drawn exactly as a PDF viewer would; a photo is itself). Same access rule as the file.
+  app.get('/api/v1/documents/:id/pages/:page', may('documents.view'), async (req, reply) => {
+    const { id, page } = z
+      .object({ id: z.string().min(1).max(64), page: z.coerce.number().int().min(1).max(500) })
+      .parse(req.params);
+    const d = await documentRow(id);
+    const bytes = await veyra.readDocument(d);
+    if (page === 1) await users.record('document.accessed', ctx(req), { documentId: d.id });
+    let body: Uint8Array;
+    let mime = d.mime;
+    if (d.mime === 'application/pdf') {
+      const drawn = await renderPdfPage(bytes, page);
+      if (!drawn) throw new VeyraError('NOT_FOUND', 'The document has no such page.');
+      body = drawn.png;
+      mime = 'image/png';
+    } else {
+      if (page !== 1) throw new VeyraError('NOT_FOUND', 'The document has no such page.');
+      body = bytes;
+    }
+    return reply
+      .header('content-type', mime)
+      .header('x-content-type-options', 'nosniff')
+      .header('cache-control', 'private, max-age=600')
+      .header('content-security-policy', "default-src 'none'; frame-ancestors 'self'; sandbox")
+      .send(Buffer.from(body));
   });
 
   // ── Invoices ─────────────────────────────────────────────────────────────

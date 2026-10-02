@@ -188,6 +188,7 @@ export async function createApp(config: AppConfig) {
     initialSettings,
     ...(config.clock ? { clock: config.clock } : {}),
     ...(config.organizationName ? { organizationName: config.organizationName } : {}),
+    ...(config.log ? { log: config.log.child({ component: 'reader' }) } : {}),
   });
   await veyra.init();
   const sessions = new SessionStore(

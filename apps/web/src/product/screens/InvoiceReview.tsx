@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ApiInvoiceDetail, ApiOption, ApiQuestion } from '@veyra/shared';
 import { Icon, StatusPill, Struck } from '../../design-system';
-import { api, ApiError, documentUrl } from '../api/client';
+import { api, ApiError, documentInfo, documentPageUrl, documentUrl } from '../api/client';
 import { AnswerForm } from '../components/AnswerForm';
 import { InvoiceDocument } from '../components/InvoiceDocument';
 import { formatDate, inr } from '../format';
@@ -56,6 +56,14 @@ function enteredText(input: unknown): string | undefined {
 function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
   const { inbox, refresh } = useProductData();
   const [fullSize, setFullSize] = useState(false);
+  // The ORIGINAL document is shown by default; "As read" is Veyrafy's reading laid out.
+  const [asRead, setAsRead] = useState(false);
+  const { data: doc } = useResource(
+    () => documentInfo(invoice.documentId),
+    `document:${invoice.documentId}`,
+  );
+  const pageCount = doc?.extraction?.pages ?? 1;
+  const otherFields = doc?.extraction?.otherFields ?? [];
   const [local, setLocal] = useState<LocalAnswer | null>(null);
   const [pending, setPending] = useState<ApiOption | null>(null);
   const [busy, setBusy] = useState(false);
@@ -93,6 +101,10 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
             }
           : null));
 
+  // The decision just made counts at once: a rejection shows as rejected before the server's
+  // status catches up (it is final either way; nothing is recorded in the ERP).
+  const rejected = status === 'rejected' || resolved?.option.rejects === true;
+
   const submit = async (option: ApiOption, input: unknown) => {
     if (!question) return;
     setBusy(true);
@@ -102,7 +114,9 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
       const entered = enteredText(input);
       setLocal({ question, option, ...(entered ? { entered } : {}) });
       setPending(null);
-      notify.answered();
+      // A rejection is final: say so, never "Veyrafy is continuing".
+      if (option.rejects) notify.rejected();
+      else notify.answered();
       await refresh();
     } catch (e) {
       setProblem(e instanceof ApiError ? e.message : 'Your answer could not be recorded.');
@@ -163,13 +177,21 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
                 {invoice.source === 'Photo' ? 'Phone photo' : 'PDF'} · {invoice.filename}
               </span>
             </span>
+            <button
+              type="button"
+              className={styles.zoom}
+              onClick={() => setAsRead((v) => !v)}
+              aria-pressed={asRead}
+            >
+              {asRead ? 'Show original' : 'Show as read'}
+            </button>
             <a
               className={styles.zoom}
               href={documentUrl(invoice.documentId)}
               target="_blank"
               rel="noreferrer"
             >
-              Original
+              Open file
             </a>
             <button
               type="button"
@@ -181,9 +203,23 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
             </button>
           </div>
           <div className={styles.stage} data-full={fullSize}>
-            <div className={styles.sheet}>
-              <InvoiceDocument invoice={invoice} />
-            </div>
+            {asRead ? (
+              <div className={styles.sheet}>
+                <InvoiceDocument invoice={invoice} />
+              </div>
+            ) : (
+              <div className={styles.original}>
+                {Array.from({ length: pageCount }, (_, i) => (
+                  <img
+                    key={i}
+                    className={styles.page}
+                    src={documentPageUrl(invoice.documentId, i + 1)}
+                    alt={`Page ${i + 1} of ${pageCount} of the uploaded invoice`}
+                    loading={i === 0 ? 'eager' : 'lazy'}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </section>
 
@@ -225,6 +261,23 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
               </dd>
             </div>
           </dl>
+
+          {otherFields.length > 0 && (
+            <details className={styles.printed}>
+              <summary>Also printed on the invoice ({otherFields.length})</summary>
+              <dl className={styles.evidence}>
+                {otherFields.map((f, i) => (
+                  <div key={i}>
+                    <dt>{f.label}</dt>
+                    <dd>
+                      {f.value}
+                      {f.page !== null && pageCount > 1 ? ` · page ${f.page}` : ''}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </details>
+          )}
 
           {question && (
             <>
@@ -324,12 +377,12 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
               <QuestionBlock question={resolved.question} resolved />
               <section
                 className={styles.done}
-                data-outcome={status === 'rejected' ? 'rejected' : 'ready'}
+                data-outcome={rejected ? 'rejected' : 'ready'}
                 aria-live="polite"
               >
                 <div className={styles.doneHead}>
                   <span className={styles.doneIcon}>
-                    <Icon name={status === 'rejected' ? 'undo' : 'person'} size={16} />
+                    <Icon name={rejected ? 'undo' : 'person'} size={16} />
                   </span>
                   <div>
                     <p className={styles.doneTitle}>You decided</p>
@@ -340,7 +393,7 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
                   </div>
                 </div>
                 {/* What happens next is the workflow's real state, never assumed. */}
-                {status === 'rejected' ? (
+                {rejected ? (
                   <p className={styles.doneState}>Invoice rejected. Nothing was recorded.</p>
                 ) : working ? (
                   <p className={styles.doneState} data-working="true">
@@ -360,7 +413,7 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
                     </button>
                   ) : (
                     <a className={styles.nextButton} href={hrefFor({ name: 'inbox' })}>
-                      {status === 'ready' || status === 'rejected'
+                      {status === 'ready' || rejected
                         ? 'All caught up. Back to inbox'
                         : 'Back to inbox'}
                     </a>

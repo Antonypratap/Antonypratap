@@ -131,7 +131,9 @@ describe('parser: never guesses', () => {
   });
 
   it('a document with no readable text is refused as malformed', () => {
-    expect(() => parseInvoice([{ page: 1, segments: [] }])).toThrow(/No text could be read/);
+    expect(() => parseInvoice([{ page: 1, segments: [] }])).toThrow(
+      /no words were found on any page/,
+    );
   });
 });
 

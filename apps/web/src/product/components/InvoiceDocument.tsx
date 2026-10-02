@@ -8,7 +8,7 @@ import {
   rateBp,
   type ApiInvoiceDetail,
 } from '@veyra/shared';
-import { amountInWords, formatDate } from '../format';
+import { formatDate } from '../format';
 import styles from './InvoiceDocument.module.css';
 
 /** Plain rupee figure as printed on Indian invoices: 1,13,870.00 */
@@ -74,7 +74,9 @@ function MarkedField({
 
 /**
  * The invoice as Veyrafy read it, drawn in HTML: every value here comes from the stored reading of
- * the uploaded document. Values a question is about are marked; unclear ones are blurred.
+ * the uploaded document, and nothing else (no names from the ERP, no computed wording, no standard
+ * footer). Values a question is about are marked; unclear ones are blurred. The original document
+ * is shown separately; this is never presented as it.
  */
 export function InvoiceDocument({ invoice }: { invoice: ApiInvoiceDetail }) {
   const open = invoice.questions.find((q) => q.status === 'open');
@@ -153,7 +155,6 @@ export function InvoiceDocument({ invoice }: { invoice: ApiInvoiceDetail }) {
       <section className={styles.parties}>
         <div>
           <p className={styles.label}>Bill to</p>
-          <p className={styles.strong}>{invoice.buyer.name}</p>
           <p className={styles.small}>GSTIN: {invoice.buyer.gstin ?? '—'}</p>
         </div>
         <div>
@@ -197,10 +198,7 @@ export function InvoiceDocument({ invoice }: { invoice: ApiInvoiceDetail }) {
       </table>
 
       <section className={styles.bottom}>
-        <div className={styles.words}>
-          <p className={styles.label}>Amount in words</p>
-          <p>{invoice.readTotalPaise === null ? '—' : amountInWords(invoice.readTotalPaise)}</p>
-        </div>
+        <div className={styles.words} />
         <dl className={styles.totals}>
           <div>
             <dt>Taxable value</dt>
@@ -208,17 +206,15 @@ export function InvoiceDocument({ invoice }: { invoice: ApiInvoiceDetail }) {
           </div>
           {(
             [
-              ['CGST', invoice.cgstPaise, halfRate(firstRate)],
-              ['SGST', invoice.sgstPaise, halfRate(firstRate)],
-              ['IGST', invoice.igstPaise, formatRate(rateBp(firstRate))],
+              ['CGST', invoice.cgstPaise, firstRate ? halfRate(firstRate) : null],
+              ['SGST', invoice.sgstPaise, firstRate ? halfRate(firstRate) : null],
+              ['IGST', invoice.igstPaise, firstRate ? formatRate(rateBp(firstRate)) : null],
             ] as const
           )
             .filter(([, value]) => value !== null)
             .map(([head, value, rate]) => (
               <div key={head}>
-                <dt>
-                  {head} @ {rate}
-                </dt>
+                <dt>{rate ? `${head} @ ${rate}` : head}</dt>
                 <dd>
                   <MarkedField field="tax" marked={markedFields} unreadable={unreadableFields}>
                     {amt(value)}
@@ -242,16 +238,6 @@ export function InvoiceDocument({ invoice }: { invoice: ApiInvoiceDetail }) {
           </div>
         </dl>
       </section>
-
-      <footer className={styles.sign}>
-        <p className={styles.small}>
-          Goods once sold will not be taken back. Subject to Bengaluru jurisdiction.
-        </p>
-        <p className={styles.signature}>
-          For {invoice.supplier.name ?? 'the supplier'}
-          <span>Authorised Signatory</span>
-        </p>
-      </footer>
     </article>
   );
 }

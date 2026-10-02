@@ -164,6 +164,28 @@ export const api = {
   },
 };
 
+/** How the original document was read: its page count and everything else printed on it. */
+const DocumentInfo = z
+  .object({
+    extraction: z
+      .object({
+        pages: z.number().int().positive().nullable(),
+        otherFields: z
+          .array(z.object({ label: z.string(), value: z.string(), page: z.number().nullable() }))
+          .optional(),
+      })
+      .loose()
+      .nullable(),
+  })
+  .loose();
+export type DocumentInfo = z.output<typeof DocumentInfo>;
+export const documentInfo = (documentId: string): Promise<DocumentInfo> =>
+  request(DocumentInfo, `/documents/${encodeURIComponent(documentId)}`);
+
+/** One page of the original, as uploaded (a PDF page drawn as an image; a photo as itself). */
+export const documentPageUrl = (documentId: string, page: number): string =>
+  `${BASE}/documents/${encodeURIComponent(documentId)}/pages/${page}`;
+
 export const documentUrl = (documentId: string): string =>
   `${BASE}/documents/${encodeURIComponent(documentId)}/file`;
 

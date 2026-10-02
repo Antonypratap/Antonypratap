@@ -125,6 +125,8 @@ export interface VeyraOptions {
   organizationName?: string;
   /** Commercial entitlements (Phase 8A); one per process, shared with Veyra Operations. */
   entitlements?: Entitlements;
+  /** Structured log of how each invoice was read (never document content or credentials). */
+  log?: { info(obj: object, msg: string): void; warn(obj: object, msg: string): void };
 }
 
 type Actor = { type: 'system' | 'ai' } | { type: 'user'; userId: string };
@@ -157,6 +159,7 @@ export class Veyra {
     this.commitHooks = options.commitHooks ?? {};
     this.#initial = options.initialSettings ?? DEFAULT_SETTINGS;
     this.organizationName = options.organizationName ?? 'Toit';
+    this.#log = options.log ?? null;
     this.entitlements = options.entitlements ?? new Entitlements(this.db, this.clock);
   }
 
@@ -168,6 +171,7 @@ export class Veyra {
   readonly organizationId = ORGANIZATION_ID;
 
   readonly #initial: Omit<VeyraSettings, 'designatedUserId'>;
+  readonly #log: VeyraOptions['log'] | null;
 
   /** Creates the designated user and default settings when missing. Call once before use. */
   async init(): Promise<this> {
@@ -529,7 +533,13 @@ export class Veyra {
         if (!ok) return;
         inv = await this.invoiceRow(this.db, invoiceId);
       }
-      if (inv.state === 'MATCHING') await this.evaluate(invoiceId);
+      if (inv.state === 'MATCHING') {
+        await this.evaluate(invoiceId);
+        this.#log?.info(
+          { invoiceId, state: (await this.invoiceRow(this.db, invoiceId)).state },
+          'invoice checked',
+        );
+      }
     } catch (error) {
       // A temporary outage (ERP, storage, database) is retried by the job runner, which fails
       // the invoice itself once the retries are used up (Phase 6 retry policy).
@@ -608,6 +618,8 @@ export class Veyra {
     )[0]?.documents;
     if (!doc) throw new Error('document missing');
     let result: ExtractionResult;
+    const started = Date.now();
+    const about = { invoiceId, documentId: doc.id, mime: doc.mime, sizeBytes: doc.sizeBytes };
     try {
       // The reader gets a verified local copy of the original (object storage: a private
       // temporary file, removed as soon as the document has been read).
@@ -630,8 +642,43 @@ export class Veyra {
       result = parsed.data;
     } catch (error) {
       if (isRetryable(error)) throw error;
+      this.#log?.warn(
+        {
+          ...about,
+          durationMs: Date.now() - started,
+          code: (error as { code?: unknown }).code ?? null,
+          reason: error instanceof Error ? error.message.slice(0, 300) : 'unknown',
+        },
+        'invoice could not be read',
+      );
       await this.fail(invoiceId, error);
       return false;
+    }
+    {
+      // Counts only: which readers ran and how much they read (no values, no document text).
+      const all = [
+        ...Object.values(result.header),
+        ...result.lines.flatMap((l) =>
+          Object.entries(l)
+            .filter(([k]) => k !== 'lineNo')
+            .map(([, f]) => f as { value: unknown; confidenceBp: number }),
+        ),
+      ];
+      this.#log?.info(
+        {
+          ...about,
+          durationMs: Date.now() - started,
+          extractor: result.extractor.id,
+          pages: result.pages,
+          ...(result.diagnostics ?? {}),
+          fieldsRead: all.filter((f) => f.value !== null).length,
+          fieldsUncertain: all.filter((f) => f.confidenceBp < 9000).length,
+          lines: result.lines.length,
+          otherFields: result.otherFields?.length ?? 0,
+          warnings: result.warnings.length,
+        },
+        'invoice read',
+      );
     }
     const extractionId = ulid();
     const now = this.now();

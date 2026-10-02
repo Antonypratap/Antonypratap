@@ -9,10 +9,13 @@ export * from './extractor';
 export { FixtureExtractor, type FixtureExtractorOptions } from './fixture/fixture-extractor';
 export {
   LocalDocumentExtractor,
+  renderPdfPage,
   sniffDocument,
   type LocalExtractorOptions,
 } from './local/local-extractor';
 export { checkImageSize, imageSize } from './local/image';
+/** Test support: a PDF turned into image strips with no text layer (synthetic fixtures only). */
+export { imageOnlyStripPdf } from './local/image-only-pdf';
 export {
   LIMITS as DOCUMENT_LIMITS,
   configureDocumentLimits,

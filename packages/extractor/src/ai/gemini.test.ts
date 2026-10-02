@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -10,6 +10,7 @@ import {
   GeminiExtractor,
   type AiReading,
 } from './gemini';
+import { imageOnlyStripPdf } from '../local/image-only-pdf';
 
 /**
  * The AI reader is tested against a fake Gemini endpoint: what is sent, how every printed value is
@@ -17,13 +18,21 @@ import {
  */
 const dir = mkdtempSync(join(tmpdir(), 'veyra-ai-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
+const DOCS = new URL('../../../../fixtures/documents/', import.meta.url);
+/** A made-up text PDF (the brewery demo's clean invoice). */
+const TEXT_PDF = readFileSync(new URL('brewery/B01-clean.pdf', DOCS));
 const file = join(dir, 'invoice.pdf');
-writeFileSync(file, '%PDF-1.4 made-up');
+writeFileSync(file, TEXT_PDF);
 const input: ExtractorInput = {
   documentId: 'd1',
   filePath: file,
   mime: 'application/pdf',
   sha256: 'x',
+};
+const inputOf = (name: string, bytes: Uint8Array): ExtractorInput => {
+  const path = join(dir, name);
+  writeFileSync(path, bytes);
+  return { ...input, filePath: path };
 };
 
 const p = (printed: string, page = 1) => ({ printed, page });
@@ -131,7 +140,7 @@ describe('AI vision reader (Gemini)', () => {
     const body = JSON.parse(String(call?.init.body));
     expect(body.contents[0].parts[0].inline_data).toEqual({
       mime_type: 'application/pdf',
-      data: Buffer.from('%PDF-1.4 made-up').toString('base64'),
+      data: TEXT_PDF.toString('base64'),
     });
     expect(body.generationConfig).toMatchObject({
       temperature: 0,
@@ -222,5 +231,77 @@ describe('AI vision reader (Gemini)', () => {
         'The AI reader was unavailable; read by the local reader instead.',
       );
     }
+  });
+  it('a scanned PDF (no text layer) is sent as page images, every page, never refused', async () => {
+    const scan = inputOf('scan.pdf', readFileSync(new URL('D14-office-scan.pdf', DOCS)));
+    const g = fakeGemini(READING);
+    const r = await reader(g.fetch).extract(scan);
+    const parts = JSON.parse(String(g.calls[0]?.init.body)).contents[0].parts;
+    expect(parts[0]).toEqual({ text: 'Page 1 of 1:' });
+    expect(parts[1].inline_data.mime_type).toBe('image/jpeg');
+    expect(Buffer.from(parts[1].inline_data.data, 'base64').subarray(0, 3)).toEqual(
+      Buffer.from([0xff, 0xd8, 0xff]),
+    );
+    expect(parts.at(-1).text).toMatch(/Read ONLY what is visibly printed/);
+    expect(r.extractor.id).toBe('ai_vision');
+    expect(r.diagnostics).toEqual({
+      readers: ['ai_vision'],
+      textPages: 0,
+      imagePages: 1,
+      rendered: true,
+    });
+    expect(r.warnings).toContain(
+      'The PDF has no readable text layer: every page was read as an image.',
+    );
+    expect(r.header.totalPaise.value).toBe(6_844_000);
+  }, 60_000);
+
+  it('a multi-page PDF without text: every page is sent, in order', async () => {
+    const pdf = await imageOnlyStripPdf(
+      new Uint8Array(readFileSync(new URL('D10-multi-page.pdf', DOCS))),
+      2,
+    );
+    const g = fakeGemini({ ...READING, pageCount: 1 });
+    const r = await reader(g.fetch).extract(inputOf('two-pages.pdf', pdf));
+    const parts = JSON.parse(String(g.calls[0]?.init.body)).contents[0].parts;
+    expect(parts.filter((x: { text?: string }) => x.text?.startsWith('Page '))).toEqual([
+      { text: 'Page 1 of 2:' },
+      { text: 'Page 2 of 2:' },
+    ]);
+    expect(r.pages).toBe(2); // the document's own count, never the model's
+  }, 60_000);
+
+  it('keeps where each value is printed, and everything else printed, as printed', async () => {
+    const withBoxes: AiReading = {
+      ...READING,
+      header: {
+        ...READING.header,
+        total: { printed: '₹ 68,440.00', page: 1, box: [500, 600, 520, 900] },
+      },
+      otherPrinted: [
+        { label: 'e-Way Bill No.', printed: '1812 3456 7890', page: 1, box: [100, 50, 110, 300] },
+        { label: 'Terms of Payment', printed: '30 days', page: 1 },
+        { label: 'IRN', printed: null, page: 1 },
+      ],
+    };
+    const r = await reader(fakeGemini(withBoxes).fetch).extract(input);
+    // The page in PDF points, top-left origin, as the PDF text reader's boxes.
+    const bbox = r.header.totalPaise.evidence?.bbox ?? [];
+    expect(bbox.map((v) => Math.round(v))).toEqual([358, 421, 179, 17]);
+    expect(r.otherFields).toEqual([
+      {
+        label: 'e-Way Bill No.',
+        value: '1812 3456 7890',
+        confidenceBp: AI_CONFIDENCE_BP,
+        evidence: { page: 1, text: '1812 3456 7890', bbox: expect.any(Array) as unknown },
+      },
+      {
+        label: 'Terms of Payment',
+        value: '30 days',
+        confidenceBp: AI_CONFIDENCE_BP,
+        evidence: { page: 1, text: '30 days', bbox: null },
+      },
+    ]); // nothing is made up for a label with no value
+    expect(ExtractionResultSchema.safeParse(r).success).toBe(true);
   });
 });

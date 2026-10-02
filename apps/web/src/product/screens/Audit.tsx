@@ -83,7 +83,7 @@ function RecordsTimeline({ entries }: { entries: ApiAuditEntry[] }) {
 }
 
 function Timeline({ invoiceId, title }: { invoiceId: string; title: string }) {
-  const { data: trail } = useResource(() => api.audit(invoiceId), `audit:${invoiceId}`);
+  const { data: trail, error } = useResource(() => api.audit(invoiceId), `audit:${invoiceId}`);
   return (
     <section className={styles.timelineWrap} aria-label={`History of invoice ${title}`}>
       <div className={styles.timelineHead}>
@@ -92,7 +92,11 @@ function Timeline({ invoiceId, title }: { invoiceId: string; title: string }) {
           Open invoice
         </a>
       </div>
-      <Entries entries={trail ?? []} />
+      {trail === null ? (
+        <p className={styles.entryDetail}>{error ?? 'Loading…'}</p>
+      ) : (
+        <Entries entries={trail} />
+      )}
     </section>
   );
 }

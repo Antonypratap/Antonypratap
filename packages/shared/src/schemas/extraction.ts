@@ -83,6 +83,32 @@ export const ExtractedLineSchema = z.object({
 });
 export type ExtractedLine = z.infer<typeof ExtractedLineSchema>;
 
+/**
+ * A value printed on the document that has no field of its own (IRN, e-way bill, bank details,
+ * payment terms, transporter…): kept exactly as printed, with where it was read. Never used by
+ * the deterministic core; it is shown and exported so nothing printed is thrown away.
+ */
+export const OtherPrintedFieldSchema = z.object({
+  label: z.string().min(1).max(200),
+  value: z.string().min(1).max(2000),
+  confidenceBp: ConfidenceBpSchema,
+  evidence: EvidenceSchema.nullable(),
+});
+export type OtherPrintedField = z.infer<typeof OtherPrintedFieldSchema>;
+
+/** How a document was read (for the server log; never document content). */
+export const ExtractionDiagnosticsSchema = z.object({
+  /** The readers that ran, in order (for example ["ai_vision"] or ["ai_vision", "local_ocr"]). */
+  readers: z.array(z.string().min(1)).max(10),
+  /** Pages read from a PDF text layer. */
+  textPages: z.int().nonnegative(),
+  /** Pages read as images (scan images, or whole pages drawn as images). */
+  imagePages: z.int().nonnegative(),
+  /** Whether pages had to be drawn as images because the PDF had no usable text. */
+  rendered: z.boolean(),
+});
+export type ExtractionDiagnostics = z.infer<typeof ExtractionDiagnosticsSchema>;
+
 /** What every Extractor implementation returns (ARCHITECTURE §3.1). */
 export const ExtractionResultSchema = z
   .object({
@@ -92,6 +118,9 @@ export const ExtractionResultSchema = z
     lines: z.array(ExtractedLineSchema),
     pages: z.int().positive(),
     warnings: z.array(z.string()),
+    /** Everything else printed on the document, as printed (optional: not every reader has it). */
+    otherFields: z.array(OtherPrintedFieldSchema).max(300).optional(),
+    diagnostics: ExtractionDiagnosticsSchema.optional(),
   })
   .superRefine((r, ctx) => {
     r.lines.forEach((line, i) => {

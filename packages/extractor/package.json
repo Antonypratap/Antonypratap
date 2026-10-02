@@ -13,6 +13,7 @@
     "fixtures:documents": "tsx src/cli/generate-documents.ts"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.9",
     "@tesseract.js-data/eng": "^1.0.0",
     "@veyra/shared": "*",
     "jpeg-js": "^0.4.4",

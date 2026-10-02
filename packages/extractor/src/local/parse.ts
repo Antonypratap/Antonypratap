@@ -569,7 +569,10 @@ export function parseInvoice(pages: readonly PageText[]): ParsedInvoice {
   const unitFor = (page: number) => units.get(page) ?? 10;
   const first = pages[0];
   if (!first || pages.every((p) => p.segments.length === 0)) {
-    throw new ExtractorError('MALFORMED_DOCUMENT', 'No text could be read from the document.');
+    throw new ExtractorError(
+      'MALFORMED_DOCUMENT',
+      "Veyrafy couldn't read this invoice: no words were found on any page, even when each page was read as an image.",
+    );
   }
 
   // Invoice boundaries: different invoice numbers on different pages means more than one invoice.

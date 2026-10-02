@@ -66,14 +66,15 @@ export class LocalDocumentExtractor implements Extractor {
    * Reads nothing and changes nothing about how documents are read.
    */
   async warmUp(options: { ocr: boolean }): Promise<void> {
-    const [{ loadPdfJs, pdfDecodersAvailable }, { renderPdf }] = await Promise.all([
-      import('./pdf'),
-      import('../fixture/document'),
-    ]);
+    const [{ loadPdfJs, pageRenderingAvailable, pdfDecodersAvailable }, { renderPdf }] =
+      await Promise.all([import('./pdf'), import('../fixture/document')]);
     // Scanned PDFs need pdf.js's image decoders; a missing install must be loud at start-up, not
     // a scan that silently reads as blank.
     if (!pdfDecodersAvailable())
       throw new ExtractorError('OCR_UNAVAILABLE', 'The PDF image decoders are not installed.');
+    // A page without a usable text layer is drawn as an image to be read: that needs the canvas.
+    if (!(await pageRenderingAvailable()))
+      throw new ExtractorError('OCR_UNAVAILABLE', 'The PDF page renderer is not installed.');
     await Promise.all([loadPdfJs(), options.ocr ? this.#ocr.warmUp?.() : undefined]);
     // One tiny generated text PDF (no document of anyone's): pdf.js sets up its worker and
     // compiles its hot paths on the first document it reads. The result is discarded.
@@ -99,15 +100,20 @@ export class LocalDocumentExtractor implements Extractor {
   ): Promise<ExtractionResult> {
     let pages: PageText[];
     const warnings: string[] = [];
+    const diagnostics = { readers: [this.id], textPages: 0, imagePages: 0, rendered: false };
     if (mime === 'application/pdf') {
       const { readPdf } = await import('./pdf');
       const read = await readPdf(bytes, this.#ocr);
       pages = read.pages;
       warnings.push(...read.warnings);
+      diagnostics.textPages = read.diagnostics.textPages;
+      diagnostics.imagePages = read.diagnostics.scanImagePages + read.diagnostics.renderedPages;
+      diagnostics.rendered = read.diagnostics.renderedPages > 0;
     } else {
       const lines = await this.#ocr.recognize(encodePng(removeRules(decodeImage(bytes, mime))));
       pages = [{ page: 1, segments: wordsToSegments(lines, 1) }];
       warnings.push('Read by OCR.');
+      diagnostics.imagePages = 1;
     }
     const parsed = parseInvoice(pages);
     warnings.push(...parsed.warnings);
@@ -124,10 +130,23 @@ export class LocalDocumentExtractor implements Extractor {
       lines,
       pages: pages.length,
       warnings,
+      diagnostics,
     });
   }
 
   async close(): Promise<void> {
     await this.#ocr.close();
   }
+}
+
+/**
+ * One page of an uploaded PDF drawn as a PNG, to show the original as it was uploaded (the same
+ * drawing as for reading; nothing is read). Null when the PDF has no such page.
+ */
+export async function renderPdfPage(
+  bytes: Uint8Array,
+  page: number,
+): Promise<{ png: Buffer; pages: number } | null> {
+  const { renderPdfPagePng } = await import('./pdf');
+  return renderPdfPagePng(bytes, page);
 }
