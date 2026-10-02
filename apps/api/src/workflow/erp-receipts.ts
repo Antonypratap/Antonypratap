@@ -228,12 +228,27 @@ export interface InvoiceSide {
   }[];
 }
 
-type Row = ApiComparison['rows'][number] & { blocking: boolean };
+type Row = ApiComparison['rows'][number] & {
+  blocking: boolean;
+  /** The invoice field a blocking row waits for (asked as a question), when there is one. */
+  path?: string;
+};
 const money = (p: number | null) => (p === null ? null : formatInr(paise(p)));
 const qty = (m: number | null, uom: string | null) =>
   m === null ? null : `${formatQty(milliQty(m))}${uom ? ` ${uom.toUpperCase()}` : ''}`;
 
 export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiComparison {
+  return receiptComparison(inv, erp).comparison;
+}
+
+/**
+ * The comparison, and the invoice fields that could not be compared because they were not read
+ * with certainty (each is asked as a question, like any other value not read).
+ */
+export function receiptComparison(
+  inv: InvoiceSide,
+  erp: ReceiptRecord,
+): { comparison: ApiComparison; unread: string[] } {
   const rows: Row[] = [];
   const push = (r: Omit<Row, 'note'> & { note?: string | null }) => rows.push({ note: null, ...r });
   /** Compare two values: not read → not checked (blocking); ERP lacks it → not checked. */
@@ -244,6 +259,7 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
     erpText: string | null,
     equal: boolean | null,
     note?: string,
+    path?: string,
   ) => {
     if (invoice === null)
       return push({
@@ -254,6 +270,7 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
         result: 'not_checked',
         blocking: true,
         note: 'Not read on the invoice with certainty.',
+        ...(path ? { path } : {}),
       });
     if (erpText === null || equal === null)
       return push({
@@ -288,8 +305,24 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
   });
 
   // Supplier.
-  cmp('Supplier', 'Name', inv.vendorName, erp.vendorName, sameName(inv.vendorName, erp.vendorName));
-  cmp('Supplier', 'GSTIN', inv.vendorGstin, null, null, 'The ERP record carries no GSTIN.');
+  cmp(
+    'Supplier',
+    'Name',
+    inv.vendorName,
+    erp.vendorName,
+    sameName(inv.vendorName, erp.vendorName),
+    undefined,
+    'header.vendorName',
+  );
+  cmp(
+    'Supplier',
+    'GSTIN',
+    inv.vendorGstin,
+    null,
+    null,
+    'The ERP record carries no GSTIN.',
+    'header.vendorGstin',
+  );
 
   // Invoice.
   cmp(
@@ -298,6 +331,8 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
     inv.invoiceNumber,
     erp.invoiceNo,
     inv.invoiceNumber !== null && invoiceNoKey(inv.invoiceNumber) === invoiceNoKey(erp.invoiceNo),
+    undefined,
+    'header.invoiceNumber',
   );
   const recorded = erp.erpInvoiceAmountPaise !== null && erp.erpInvoiceAmountPaise > 0;
   cmp(
@@ -309,6 +344,7 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
     recorded
       ? undefined
       : `The ERP has not recorded this invoice yet (its invoice amount is 0)${erp.erpInvoiceDate ? `, so its date ${dateText(erp.erpInvoiceDate)} is not compared` : ''}.`,
+    'header.invoiceDate',
   );
   cmp(
     'Purchase order',
@@ -317,6 +353,7 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
     erp.poRef ? `ERP reference ${erp.poRef}` : null,
     null,
     'The ERP record holds its internal order id, not the order number printed on the invoice.',
+    'header.poNumber',
   );
 
   // Lines: paired by item name, quantity and rate (the ERP may list them in another order).
@@ -368,8 +405,17 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
       e.name,
       sameName(l.description, e.name),
       'The item names differ.',
+      `lines[${l.lineNo}].description`,
     );
-    cmp(section, 'HSN/SAC', l.hsnSac, e.hsn, e.hsn === null ? null : l.hsnSac === e.hsn);
+    cmp(
+      section,
+      'HSN/SAC',
+      l.hsnSac,
+      e.hsn,
+      e.hsn === null ? null : l.hsnSac === e.hsn,
+      undefined,
+      `lines[${l.lineNo}].hsnSac`,
+    );
     cmp(
       section,
       'Quantity',
@@ -377,6 +423,7 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
       qty(e.qtyMilli, e.uom),
       e.qtyMilli === null ? null : l.qtyMilli === e.qtyMilli,
       'Quantity received differs from the invoice.',
+      `lines[${l.lineNo}].qtyMilli`,
     );
     cmp(
       section,
@@ -385,6 +432,7 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
       money(e.ratePaise),
       e.ratePaise === null ? null : l.unitPricePaise === e.ratePaise,
       'Rate differs.',
+      `lines[${l.lineNo}].unitPricePaise`,
     );
     cmp(
       section,
@@ -393,6 +441,7 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
       money(e.amountPaise),
       e.amountPaise === null ? null : l.taxablePaise === e.amountPaise,
       'Amount differs.',
+      `lines[${l.lineNo}].taxablePaise`,
     );
   });
 
@@ -414,7 +463,15 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
   ] as const) {
     const erpTax = sum(k);
     if (erpTax === 0 && (printed ?? 0) === 0) continue;
-    cmp('Totals', label, money(printed), money(erpTax), printed === erpTax);
+    cmp(
+      'Totals',
+      label,
+      money(printed),
+      money(erpTax),
+      printed === erpTax,
+      undefined,
+      `header.${k}`,
+    );
   }
   const others = erp.lines.flatMap((l) => l.other);
   for (const code of [...new Set(others.map((o) => o.code))])
@@ -442,6 +499,7 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
     `${money(erpTotal)}${inv.roundOffPaise ? ` (invoice rounds by ${money(inv.roundOffPaise)})` : ''}`,
     beforeRounding === erpTotal,
     'The invoice total differs from the ERP receipt’s total.',
+    'header.totalPaise',
   );
   cmp(
     'Totals',
@@ -450,6 +508,7 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
     recorded ? money(erp.erpInvoiceAmountPaise) : null,
     recorded ? inv.totalPaise === erp.erpInvoiceAmountPaise : null,
     recorded ? undefined : 'The ERP has not recorded the invoice amount yet (it is 0).',
+    'header.totalPaise',
   );
 
   const mismatches = rows.filter((r) => r.result === 'mismatch');
@@ -461,7 +520,7 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
       : 'cleared';
   const describe = (r: Row) =>
     `${r.section} – ${r.label}: invoice ${r.invoice ?? 'not read'}, ERP ${r.erp ?? 'none'}`;
-  return {
+  const comparison: ApiComparison = {
     source: 'erp_receipt',
     verdict,
     headline:
@@ -488,6 +547,8 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
       note: r.note,
     })),
   };
+  const unread = [...new Set(blocking.flatMap((r) => (r.path ? [r.path] : [])))];
+  return { comparison, unread };
 }
 
 /** The first three differences, then how many more (the table shows every one). */

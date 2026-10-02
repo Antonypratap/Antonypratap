@@ -40,10 +40,17 @@ export function Questions() {
                 </span>
                 <span className={styles.what}>
                   <span className={styles.kind}>
-                    {inv.question ? ASK_LABEL[inv.question.kind] : 'Veyrafy couldn’t finish'}
+                    {inv.question
+                      ? ASK_LABEL[inv.question.kind]
+                      : inv.failure
+                        ? 'Veyrafy couldn’t finish'
+                        : 'Checked against your ERP'}
                   </span>
                   <span className={styles.summary}>
-                    {inv.question?.headline ?? 'Check the file and try again, or reject it.'}
+                    {inv.question?.headline ??
+                      (inv.failure
+                        ? 'Check the file and try again, or reject it.'
+                        : 'It does not match your ERP yet. Review the differences, then reject it or check it again.')}
                   </span>
                   <span className={styles.evidence}>
                     {inv.question?.evidence ?? inv.failure?.reason}

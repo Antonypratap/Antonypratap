@@ -243,6 +243,38 @@ describe('the receipt check: invoices against the ERP’s own goods-receipt reco
     expect(after.comparison?.verdict).toBe('cleared');
   });
 
+  it('a value not read with certainty is asked; once answered, the invoice is compared and cleared', async () => {
+    // A two-digit year is not a valid date (RULES §1.4): the date is asked, never guessed.
+    reading = {
+      ...invoiceReading(),
+      header: { ...invoiceReading().header, invoiceDate: p('27-Sep-26') },
+    };
+    await importExport(erpExport({ pdf: 'B04-quantity-mismatch.pdf' }));
+    const inv = await checkAttached();
+    expect(inv.state).toBe('NEEDS_INPUT');
+    expect(inv.comparison?.verdict).toBe('incomplete');
+    expect(row(inv, 'Invoice date')).toMatchObject({ invoice: null, result: 'not_checked' });
+    const open = inv.questions.filter((q) => q.status === 'open');
+    expect(open.map((q) => q.code)).toEqual(['MD_FIELD']);
+    expect(open[0]?.headline).toBe('What is the invoice date?');
+    // The questions list says what is needed, not "couldn't finish".
+    const list = (await app.server.inject({ method: 'GET', url: '/api/v1/questions' })).json<
+      { id: string; invoiceId: string }[]
+    >();
+    const q = list.find((x) => x.invoiceId === inv.id);
+    expect(q?.id).toBe(open[0]?.id);
+    const res = await app.server.inject({
+      method: 'POST',
+      url: `/api/v1/questions/${q?.id}/answer`,
+      payload: { optionId: 'set:header.invoiceDate', input: '27/09/2026' },
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    await app.runner.drain();
+    const after = await detail(inv.id);
+    expect(after.comparison?.verdict).toBe('cleared');
+    expect(after.state).toBe('VERIFIED_PENDING_PAYMENT');
+  });
+
   it('a file that is not an ERP goods-receipt export is refused, saying why', async () => {
     const res = await importExport({ rows: [] });
     expect(res.statusCode).toBe(422);

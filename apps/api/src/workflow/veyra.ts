@@ -29,6 +29,7 @@ import { monthOf } from '../commercial/usage';
 import { INTERNAL_FAILURE_REASON, isInternalError, isRetryable } from './retry';
 import { readField, type JsonValue, type StoredField } from '../engine/fields';
 import { runEngine } from '../engine/run';
+import { mdField } from '../engine/questions';
 import type {
   AnsweredDecision,
   CommitPlan,
@@ -42,7 +43,7 @@ import { parseAnswerInput } from './answers';
 import { executeCommit, type CommitHooks } from './commit';
 import {
   ReceiptFileSchema,
-  compareWithReceipt,
+  receiptComparison,
   invoiceNoKey,
   normalizeReceipt,
   pickRecord,
@@ -1612,7 +1613,17 @@ export class Veyra {
     const side = await this.invoiceSide(invoiceId);
     const record = await this.receiptRecordFor(side);
     if (!record) return false;
-    const c = compareWithReceipt(side, record);
+    const { comparison: c, unread } = receiptComparison(side, record);
+    // A value not read with certainty is asked, exactly as on the ERP-checks path (RULES §5).
+    const fields = await this.loadFields(this.db, invoiceId);
+    const min = (await this.settings()).confidenceMinBp;
+    const questions = unread.map((path) => {
+      const read = readField(fields, path as never, min);
+      return mdField(path as never, {
+        state: read.state === 'usable' ? 'absent' : read.state,
+        shown: read.field?.value ?? null,
+      });
+    });
     const system: Actor = { type: 'system' };
     await this.db.transaction(async (tx) => {
       await this.transition(tx, invoiceId, 'MATCHING', 'RESOLVING', system);
@@ -1625,6 +1636,7 @@ export class Veyra {
         notChecked: c.notChecked,
         summary: c.summary.slice(0, 2000),
       });
+      await this.syncQuestions(tx, invoiceId, questions);
       if (c.verdict === 'cleared') {
         await this.transition(tx, invoiceId, 'VALIDATING', 'COMMITTING', system);
         await this.transition(tx, invoiceId, 'COMMITTING', 'VERIFIED_PENDING_PAYMENT', system);
