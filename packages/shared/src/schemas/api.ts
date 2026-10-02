@@ -154,6 +154,31 @@ export const ApiCheckSchema = z.object({
   message: z.string(),
 });
 
+/**
+ * The invoice compared with the ERP, value by value: what the invoice says, what the ERP (or the
+ * invoice's own arithmetic) says, and the result of the check that compared them. Built from the
+ * latest check run only; null before the invoice has been checked.
+ */
+export const ApiComparisonRowSchema = z.object({
+  section: z.string(),
+  label: z.string(),
+  invoice: z.string().nullable(),
+  erp: z.string().nullable(),
+  result: z.enum(['match', 'mismatch', 'not_checked']),
+  note: z.string().nullable(),
+});
+export const ApiComparisonSchema = z.object({
+  verdict: z.enum(['cleared', 'mismatch', 'incomplete']),
+  headline: z.string(),
+  /** One paragraph naming every mismatch with both values (used as a rejection reason). */
+  summary: z.string(),
+  matched: int,
+  mismatched: int,
+  notChecked: int,
+  rows: z.array(ApiComparisonRowSchema),
+});
+export type ApiComparison = z.infer<typeof ApiComparisonSchema>;
+
 export const ApiInvoiceDetailSchema = ApiInvoiceSummarySchema.extend({
   supplier: ApiPartySchema,
   buyer: ApiPartySchema,
@@ -176,6 +201,7 @@ export const ApiInvoiceDetailSchema = ApiInvoiceSummarySchema.extend({
   unclearPaths: z.array(z.string()),
   questions: z.array(ApiQuestionSchema),
   checks: z.array(ApiCheckSchema),
+  comparison: ApiComparisonSchema.nullable(),
   erp: z.object({
     vendor: z.string().nullable(),
     poNumber: z.string().nullable(),

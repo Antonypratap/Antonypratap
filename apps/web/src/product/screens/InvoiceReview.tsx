@@ -3,6 +3,7 @@ import type { ApiInvoiceDetail, ApiOption, ApiQuestion } from '@veyra/shared';
 import { Icon, StatusPill, Struck } from '../../design-system';
 import { api, ApiError, documentInfo, documentPageUrl, documentUrl } from '../api/client';
 import { AnswerForm } from '../components/AnswerForm';
+import { ErpComparison } from '../components/ErpComparison';
 import { InvoiceDocument } from '../components/InvoiceDocument';
 import { formatDate, inr } from '../format';
 import { hrefFor, navigate } from '../router';
@@ -449,6 +450,22 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
           )}
         </aside>
       </div>
+
+      {invoice.comparison && (
+        <ErpComparison
+          comparison={invoice.comparison}
+          busy={busy}
+          {...(allowed('invoices.reject') &&
+          status !== 'rejected' &&
+          status !== 'handled' &&
+          status !== 'ready'
+            ? {
+                onReject: (reason: string) =>
+                  void act(() => api.reject(invoice.id, reason), notify.rejected),
+              }
+            : {})}
+        />
+      )}
     </div>
   );
 }

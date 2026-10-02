@@ -18,6 +18,7 @@ import * as t from '../db/schema';
 import { readField, type StoredField } from '../engine/fields';
 import { dateText, displayValue, fieldLabel, rupees } from '../engine/questions';
 import { storedField, type Veyra } from '../workflow/veyra';
+import { buildComparison } from './comparison';
 
 type InvoiceRow = typeof t.invoices.$inferSelect;
 type DocumentRow = typeof t.documents.$inferSelect;
@@ -181,6 +182,78 @@ export class Presenter {
           }
         : null,
     };
+  }
+
+  /** The invoice compared with the ERP, value by value (built from the latest check run). */
+  private async comparison(
+    inv: InvoiceRow,
+    f: Map<string, StoredField>,
+    checks: Parameters<typeof buildComparison>[0]['checks'],
+    lineRows: { lineNo: number; itemErpId: string | null; poLineErpId: string | null }[],
+    companyGstin: string,
+  ) {
+    if (checks.length === 0) return null;
+    const str = (p: string) => this.shown<string>(f, p);
+    const num = (p: string) => this.shown<number>(f, p);
+    const erp = this.v.erp;
+    const vendor = inv.vendorErpId ? await erp.getVendor(inv.vendorErpId as never) : null;
+    const po = inv.poErpId ? await erp.getPurchaseOrder(inv.poErpId as never) : null;
+    const poVendor = po ? await erp.getVendor(po.vendorId) : null;
+    const grns = po ? await erp.listGrnsForPo(po.id) : [];
+    const lines = await Promise.all(
+      lineRows.map(async (l) => {
+        const poLine = po?.lines.find((pl) => pl.id === l.poLineErpId) ?? null;
+        const item = l.itemErpId
+          ? await erp.getItem(l.itemErpId as never)
+          : poLine
+            ? await erp.getItem(poLine.itemId)
+            : null;
+        const path = (k: string) => `lines[${l.lineNo}].${k}`;
+        return {
+          lineNo: l.lineNo,
+          description: str(path('description')),
+          hsnSac: str(path('hsnSac')),
+          uom: str(path('uom')),
+          qtyMilli: num(path('qtyMilli')),
+          unitPricePaise: num(path('unitPricePaise')),
+          taxablePaise: num(path('taxablePaise')),
+          gstRateBp: num(path('gstRateBp')),
+          item,
+          poLine,
+          acceptedMilli: poLine
+            ? grns
+                .flatMap((g) => g.lines)
+                .filter((gl) => gl.poLineId === poLine.id)
+                .reduce((s, gl) => s + gl.acceptedQtyMilli, 0)
+            : null,
+        };
+      }),
+    );
+    const date = str('header.invoiceDate');
+    return buildComparison({
+      cleared: inv.state === 'VERIFIED_PENDING_PAYMENT' || inv.state === 'COMMITTING',
+      checks,
+      header: {
+        vendorName: str('header.vendorName'),
+        vendorGstin: str('header.vendorGstin'),
+        buyerGstin: str('header.buyerGstin'),
+        invoiceNumber: str('header.invoiceNumber'),
+        invoiceDate: date ? dateText(date) : null,
+        poNumber: str('header.poNumber'),
+        taxablePaise: num('header.taxablePaise'),
+        cgstPaise: num('header.cgstPaise'),
+        sgstPaise: num('header.sgstPaise'),
+        igstPaise: num('header.igstPaise'),
+        roundOffPaise: num('header.roundOffPaise'),
+        totalPaise: num('header.totalPaise'),
+      },
+      companyGstin,
+      vendor,
+      po,
+      poVendorName: poVendor?.name ?? null,
+      grns,
+      lines,
+    });
   }
 
   async poNumberOf(inv: InvoiceRow): Promise<string | null> {
@@ -497,6 +570,7 @@ export class Presenter {
         .filter((q) => q.status !== 'superseded')
         .map((q) => questionDto(q, invoiceBrief)),
       checks,
+      comparison: await this.comparison(inv, f, checks, lineNos, company.gstin),
       erp: {
         vendor: vendor ? `${vendor.name} (${vendor.code})` : null,
         poNumber: await this.poNumberOf(inv),

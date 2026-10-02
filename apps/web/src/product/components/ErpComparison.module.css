@@ -1,0 +1,246 @@
+/* The invoice checked against the ERP: a verdict, then every value with ✓ or ✗. */
+.panel {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px var(--color-line);
+}
+.panel[data-verdict='cleared'] {
+  box-shadow: inset 0 0 0 1.5px var(--color-accent-line);
+}
+.panel[data-verdict='mismatch'] {
+  box-shadow: inset 0 0 0 1.5px var(--color-error-line);
+}
+.panel[data-verdict='incomplete'] {
+  box-shadow: inset 0 0 0 1.5px var(--color-attention-line);
+}
+
+.verdict {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-5);
+  align-items: center;
+  padding: var(--space-5);
+  border-radius: var(--radius-md);
+}
+.panel[data-verdict='cleared'] .verdict {
+  background: var(--color-accent-soft);
+}
+.panel[data-verdict='mismatch'] .verdict {
+  background: var(--color-error-soft);
+}
+.panel[data-verdict='incomplete'] .verdict {
+  background: var(--color-attention-soft);
+}
+.seal {
+  display: grid;
+  place-items: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 50%;
+  color: #fff;
+}
+.panel[data-verdict='cleared'] .seal {
+  background: var(--color-accent);
+}
+.panel[data-verdict='mismatch'] .seal {
+  background: var(--color-error);
+}
+.panel[data-verdict='incomplete'] .seal {
+  background: var(--color-attention-strong);
+}
+.verdictText {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.eyebrow {
+  font-size: var(--text-xsmall);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+}
+.headline {
+  font-size: 1.375rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1.25;
+}
+.panel[data-verdict='cleared'] .headline {
+  color: var(--color-accent);
+}
+.panel[data-verdict='mismatch'] .headline {
+  color: var(--color-error);
+}
+.panel[data-verdict='incomplete'] .headline {
+  color: var(--color-attention);
+}
+.summary {
+  font-size: var(--text-small);
+  color: var(--color-ink-2);
+}
+.score {
+  display: flex;
+  gap: var(--space-4);
+}
+.score > div {
+  display: grid;
+  justify-items: center;
+  min-width: 3.5rem;
+}
+.score dt {
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-3);
+}
+.score dd {
+  font-size: 1.5rem;
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+.score [data-tone='match'] dd {
+  color: var(--color-accent);
+}
+.score [data-tone='mismatch'] dd {
+  color: var(--color-error);
+}
+.score [data-tone='not_checked'] dd {
+  color: var(--color-attention);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--text-small);
+}
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+.count {
+  color: var(--color-ink-3);
+}
+.reject {
+  margin-left: auto;
+  height: 2.25rem;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-error);
+  color: #fff;
+  font: inherit;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+.reject:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.empty {
+  padding: var(--space-4);
+  color: var(--color-accent);
+  font-weight: var(--weight-medium);
+}
+
+.scroll {
+  overflow-x: auto;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-small);
+}
+.table thead th {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-line-strong);
+  font-size: var(--text-xsmall);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--color-ink-3);
+}
+.resultHead {
+  text-align: center !important;
+}
+.sectionRow th {
+  padding: var(--space-4) var(--space-3) var(--space-2);
+  font-weight: var(--weight-semibold);
+  text-align: left;
+  color: var(--color-ink);
+}
+.table tbody tr:not(.sectionRow) {
+  border-bottom: 1px solid var(--color-line);
+}
+.table tbody tr[data-result='mismatch'] {
+  background: var(--color-error-soft);
+}
+.label,
+.value,
+.result {
+  padding: var(--space-3);
+  vertical-align: top;
+  text-align: left;
+}
+.label {
+  font-weight: var(--weight-medium);
+  color: var(--color-ink-2);
+}
+.note {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--text-xsmall);
+  font-weight: normal;
+  color: var(--color-ink-3);
+}
+.value {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+tr[data-result='mismatch'] .value {
+  color: var(--color-error);
+  font-weight: var(--weight-semibold);
+}
+.result {
+  text-align: center;
+}
+.mark {
+  display: inline-grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  color: #fff;
+}
+tr[data-result='match'] .mark {
+  background: var(--color-accent);
+}
+tr[data-result='mismatch'] .mark {
+  background: var(--color-error);
+}
+tr[data-result='not_checked'] .mark {
+  background: var(--color-surface-sunken);
+  color: var(--color-ink-3);
+}
+
+@media (max-width: 640px) {
+  .panel {
+    padding: var(--space-4);
+  }
+  .verdict {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .score {
+    grid-column: 1 / -1;
+    justify-content: space-around;
+  }
+  .reject {
+    width: 100%;
+    margin-left: 0;
+  }
+}
