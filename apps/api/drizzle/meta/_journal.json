@@ -43,6 +43,13 @@
       "when": 1790919201461,
       "tag": "0005_erp_receipt_records",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790933825535,
+      "tag": "0006_document_retention",
+      "breakpoints": true
     }
   ]
 }

@@ -102,6 +102,16 @@ export const notify = {
       'success',
       `${plural(n, 'ERP receipt', 'ERP receipts')} imported. Matching invoices are checked against ${n === 1 ? 'it' : 'them'}.`,
     ),
+  passwordChanged: () =>
+    show('account', 'success', 'Password changed. You were signed out everywhere else.'),
+  teamUpdated: () => show('team', 'success', 'Team updated.'),
+  retentionSaved: () => show('retention', 'success', 'Document retention saved.'),
+  documentDeleted: () =>
+    show(
+      'document',
+      'info',
+      'Original invoice document deleted. Its processing record and audit history remain.',
+    ),
   signedIn: () => show('session', 'success', 'Signed in.'),
   signedOut: () => show('session', 'info', 'You have signed out.'),
   offline: () =>

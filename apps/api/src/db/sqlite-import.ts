@@ -84,6 +84,9 @@ const ORGANIZATION_ID = '00000000000000000000000001';
  * without a password (it cannot sign in). The email is lower-cased like 0001 does.
  */
 function legacyValue(table: string, column: string, row: Row): { value: unknown } | null {
+  // Documents from before retention existed: available, and kept (no retention mode).
+  if (table === 'documents' && column === 'status') return { value: 'AVAILABLE' };
+  if (table === 'documents' && column === 'retention_mode') return { value: 'KEEP' };
   if (table !== 'users') return null;
   if (column === 'organization_id') return { value: ORGANIZATION_ID };
   if (column === 'role') return { value: 'ADMIN' };

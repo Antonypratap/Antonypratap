@@ -850,6 +850,15 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
       ];
     case 'invoice.rejected':
       return make('You rejected the invoice', s('reason'));
+    case 'document.deleted':
+      return make(
+        e.actorType === 'user'
+          ? 'You deleted the original invoice document'
+          : 'Original invoice document deleted',
+        `${s('reason')}. The processing record and this history remain.`,
+      );
+    case 'settings.changed':
+      return make('Document retention changed', retentionText(d.to));
     case 'creation.discarded':
       return s('reason') === 'invoice rejected'
         ? make(
@@ -970,4 +979,14 @@ function readMethods(methods: readonly string[]): string {
   };
   const parts = methods.map((m) => text[m]).filter((t): t is string => t !== undefined);
   return parts.length ? `Read from ${parts.join(' and ')}. ` : '';
+}
+
+/** A retention policy in words (audit trail). */
+function retentionText(p: unknown): string {
+  const v = (p ?? {}) as { mode?: string; days?: number | null };
+  if (v.mode === 'DELETE_AFTER_SUCCESS')
+    return 'Original documents are deleted after successful processing and delivery';
+  if (v.mode === 'DELETE_AFTER_DAYS')
+    return `Original documents are deleted ${String(v.days)} days after upload, once processed successfully`;
+  return 'Original documents are kept';
 }

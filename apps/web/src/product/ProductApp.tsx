@@ -7,6 +7,7 @@ import { Inbox } from './screens/Inbox';
 import { InvoiceReview } from './screens/InvoiceReview';
 import { Invoices } from './screens/Invoices';
 import { Questions } from './screens/Questions';
+import { Settings } from './screens/Settings';
 
 function Screen({ route }: { route: Route }) {
   switch (route.name) {
@@ -20,6 +21,8 @@ function Screen({ route }: { route: Route }) {
       return <Erp tab={route.tab} />;
     case 'audit':
       return <Audit id={route.id} />;
+    case 'settings':
+      return <Settings tab={route.tab} />;
     default:
       return <Inbox />;
   }

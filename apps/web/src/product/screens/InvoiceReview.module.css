@@ -73,7 +73,7 @@
 }
 .file {
   display: inline-flex;
-  flex: 1;
+  flex: 1 1 14rem;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
@@ -686,4 +686,72 @@
 }
 .pageFailed p {
   margin: 0;
+}
+
+.docStatus {
+  flex-shrink: 0;
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-3);
+}
+.docStatus[data-deleted='true'] {
+  color: var(--color-error);
+  font-weight: var(--weight-medium);
+}
+.deletedTitle {
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+.removeLink {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-3);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.removeLink:hover {
+  color: var(--color-error);
+}
+.remove {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px var(--color-error-line);
+  background: var(--color-error-soft);
+}
+.removeTitle {
+  margin: 0;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+.removeNote {
+  margin: 0;
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-2);
+}
+.removeActions {
+  display: flex;
+  gap: var(--space-2);
+}
+.removeButton {
+  height: 1.75rem;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-error);
+  color: #ffffff;
+  font: inherit;
+  font-size: var(--text-xsmall);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+.removeButton:disabled {
+  opacity: 0.55;
+  cursor: progress;
 }

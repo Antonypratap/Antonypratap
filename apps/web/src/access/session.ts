@@ -119,6 +119,11 @@ export async function demoSignIn(pin: string): Promise<void> {
   notify.signedIn();
 }
 
+/** Changes the signed-in user's own password; every other session of theirs ends. */
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  apply(await call('/password', post({ currentPassword, newPassword })));
+}
+
 export async function signOut(): Promise<void> {
   const demo = state.status === 'signedIn' && state.session.demoSignIn;
   await fetch(`${BASE}/logout`, { ...post({}), credentials: API_CREDENTIALS }).catch(() => null);

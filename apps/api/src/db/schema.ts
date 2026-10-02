@@ -25,6 +25,8 @@ import {
   INVOICE_STATES,
   JOB_STATUSES,
   JOB_TYPES,
+  DOCUMENT_RETENTION_MODES,
+  DOCUMENT_STATUSES,
   MATCH_ENTITIES,
   MATCH_OUTCOMES,
   QUESTION_KINDS,
@@ -220,8 +222,20 @@ export const documents = pgTable(
       .notNull()
       .references(() => users.id),
     uploadedAt: isoTimestamp('uploaded_at').notNull(),
+    /** AVAILABLE, or DELETED: the file is gone; the invoice record and audit trail stay. */
+    status: text('status').notNull().default('AVAILABLE'),
+    deletedAt: isoTimestamp('deleted_at'),
+    /**
+     * The retention policy in force when the document was uploaded (a later change of policy never
+     * applies to it). Null for documents uploaded before retention existed: kept.
+     */
+    retentionMode: text('retention_mode'),
+    retentionDays: integer('retention_days'),
   },
   (t) => [
+    check('documents_status', inList(t.status, DOCUMENT_STATUSES)),
+    // NULL passes a CHECK: documents from before retention existed.
+    check('documents_retention_mode', inList(t.retentionMode, DOCUMENT_RETENTION_MODES)),
     check('documents_mime', inList(t.mime, ['application/pdf', 'image/jpeg', 'image/png'])),
     check('documents_size', sql`${t.sizeBytes} > 0`),
     // Phase 8A: invoices uploaded this month (the commercial monthly limit and usage).

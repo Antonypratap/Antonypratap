@@ -12,9 +12,13 @@ import {
   type FieldPath,
   type FieldSource,
   type HeaderFieldKey,
+  type DocumentRetentionMode,
   type InvoiceState,
+  type JobType,
   type LineFieldKey,
   type QuestionCode,
+  RETENTION_DAYS_MAX,
+  RETENTION_DAYS_MIN,
 } from '@veyra/shared';
 import { isErpConnectorError, type ErpConnector } from '@veyra/erp-connector';
 import { can, type Permission } from '@veyra/shared';
@@ -102,6 +106,26 @@ const SETTING_KEYS = {
   poAutoCreateEnabled: 'po_auto_create_enabled',
   poAutoCreateBelowPaise: 'po_auto_create_below_paise',
 } as const satisfies Record<keyof VeyraSettings, string>;
+
+/** How long original documents are kept (the customer's choice; settings key below). */
+export interface RetentionPolicy {
+  mode: DocumentRetentionMode;
+  /** DELETE_AFTER_DAYS only: days after upload. */
+  days: number | null;
+}
+const RETENTION_KEY = 'document_retention';
+/** Conservative default: documents are kept, as before retention existed. */
+const KEEP: RetentionPolicy = { mode: 'KEEP', days: null };
+/** While Veyrafy works on an invoice its document is never deleted, not even by a person. */
+const WORKING_STATES: readonly InvoiceState[] = [
+  'UPLOADED',
+  'EXTRACTING',
+  'MATCHING',
+  'RESOLVING',
+  'VALIDATING',
+  'COMMITTING',
+];
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export class VeyraError extends Error {
   constructor(
@@ -389,6 +413,8 @@ export class Veyra {
     if (updated.length !== 1)
       throw new VeyraError('INVALID_STATE', `invoice ${invoiceId} is no longer ${from}`);
     await this.audit(db, invoiceId, actor, 'invoice.state_changed', {}, { from, to });
+    // Successful completion (and only that) can make the original document due for deletion.
+    if (to === 'VERIFIED_PENDING_PAYMENT') await this.scheduleRetention(db, invoiceId);
   }
 
   /**
@@ -402,7 +428,7 @@ export class Veyra {
     return row;
   }
 
-  async enqueue(db: Db, invoiceId: string, type: 'pipeline' | 'commit'): Promise<void> {
+  async enqueue(db: Db, invoiceId: string, type: JobType, runAfter?: string): Promise<void> {
     const pending = (
       await db
         .select()
@@ -420,7 +446,7 @@ export class Veyra {
       type,
       status: 'queued',
       attempts: 0,
-      runAfter: now,
+      runAfter: runAfter && runAfter > now ? runAfter : now,
       lockedAt: null,
       lastError: null,
       createdAt: now,
@@ -489,6 +515,8 @@ export class Veyra {
     await this.storage.put(storageKey, bytes, { mime, sha256 });
     const filename = safeFilename(file.filename, ext);
     const userId = actorId ?? (await this.designatedUserId());
+    // The policy in force now applies to this document for good (a later change does not).
+    const retention = await this.retentionPolicy();
     const now = this.now();
     try {
       await this.db.transaction(async (tx) => {
@@ -504,6 +532,8 @@ export class Veyra {
           storagePath: storageKey,
           uploadedByUserId: userId,
           uploadedAt: now,
+          retentionMode: retention.mode,
+          retentionDays: retention.mode === 'DELETE_AFTER_DAYS' ? retention.days : null,
         });
         await tx.insert(t.invoices).values({
           id: invoiceId,
@@ -577,6 +607,187 @@ export class Veyra {
   }
 
   /** The original uploaded bytes, verified against the checksum recorded at upload. */
+  // ── Document retention ───────────────────────────────────────────────────
+
+  async retentionPolicy(db: Db = this.db): Promise<RetentionPolicy> {
+    const row = (
+      await db.select().from(t.settings).where(eq(t.settings.key, RETENTION_KEY)).limit(1)
+    )[0];
+    if (!row) return KEEP;
+    const v = JSON.parse(row.valueJson) as Partial<RetentionPolicy>;
+    if (v.mode === 'DELETE_AFTER_SUCCESS') return { mode: v.mode, days: null };
+    if (v.mode === 'DELETE_AFTER_DAYS' && typeof v.days === 'number')
+      return { mode: v.mode, days: v.days };
+    return KEEP;
+  }
+
+  /** Changes the policy for documents uploaded from now on (audited; never retroactive). */
+  async setRetentionPolicy(policy: RetentionPolicy, userId: string): Promise<RetentionPolicy> {
+    await this.requireActor(userId, 'settings.manage');
+    const days = policy.mode === 'DELETE_AFTER_DAYS' ? policy.days : null;
+    if (
+      policy.mode === 'DELETE_AFTER_DAYS' &&
+      (days === null ||
+        !Number.isInteger(days) ||
+        days < RETENTION_DAYS_MIN ||
+        days > RETENTION_DAYS_MAX)
+    )
+      throw new VeyraError(
+        'INVALID_INPUT',
+        `Choose between ${RETENTION_DAYS_MIN} and ${RETENTION_DAYS_MAX} days.`,
+        { field: 'days' },
+      );
+    const next: RetentionPolicy = { mode: policy.mode, days };
+    const now = this.now();
+    await this.db.transaction(async (tx) => {
+      const before = await this.retentionPolicy(tx);
+      await tx
+        .insert(t.settings)
+        .values({
+          key: RETENTION_KEY,
+          valueJson: JSON.stringify(next),
+          updatedByUserId: userId,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: t.settings.key,
+          set: { valueJson: JSON.stringify(next), updatedByUserId: userId, updatedAt: now },
+        });
+      await this.audit(tx, null, { type: 'user', userId }, 'settings.changed', {
+        setting: RETENTION_KEY,
+        from: { mode: before.mode, days: before.days },
+        to: { mode: next.mode, days: next.days },
+      });
+    });
+    return next;
+  }
+
+  private async documentOf(db: Db, invoiceId: string) {
+    const row = (
+      await db
+        .select()
+        .from(t.documents)
+        .innerJoin(t.invoices, eq(t.invoices.documentId, t.documents.id))
+        .where(eq(t.invoices.id, invoiceId))
+        .limit(1)
+    )[0];
+    if (!row) throw new VeyraError('NOT_FOUND', `invoice ${invoiceId} not found`);
+    return { doc: row.documents, inv: row.invoices };
+  }
+
+  /**
+   * Queues the deletion of the original document when the invoice reached successful completion
+   * (VERIFIED_PENDING_PAYMENT: every check passed and, where the ERP was written, the write was
+   * confirmed). Called in the same transaction as that transition, so success and the scheduled
+   * deletion are recorded together. KEEP (or a document from before retention existed): nothing.
+   */
+  private async scheduleRetention(db: Db, invoiceId: string): Promise<void> {
+    const { doc } = await this.documentOf(db, invoiceId);
+    if (doc.status !== 'AVAILABLE') return;
+    if (doc.retentionMode === 'DELETE_AFTER_SUCCESS')
+      await this.enqueue(db, invoiceId, 'retention');
+    else if (doc.retentionMode === 'DELETE_AFTER_DAYS' && doc.retentionDays)
+      await this.enqueue(db, invoiceId, 'retention', this.retentionDueAt(doc));
+  }
+
+  private retentionDueAt(doc: { uploadedAt: string; retentionDays: number | null }): string {
+    return new Date(Date.parse(doc.uploadedAt) + (doc.retentionDays ?? 0) * DAY_MS).toISOString();
+  }
+
+  /**
+   * The retention job. Deletes the original document only when the policy the document was
+   * uploaded under says so AND the invoice completed successfully, with no ERP write of unknown
+   * outcome. Anything else leaves the document in place. Safe to run any number of times.
+   */
+  async runRetention(invoiceId: string): Promise<void> {
+    const { doc, inv } = await this.documentOf(this.db, invoiceId);
+    // Already deleted (a retry after the file could not be removed): finish removing the file.
+    if (doc.status === 'DELETED') {
+      await this.storage.delete(this.documentKey(doc));
+      return;
+    }
+    const mode = doc.retentionMode;
+    if (mode !== 'DELETE_AFTER_SUCCESS' && mode !== 'DELETE_AFTER_DAYS') return;
+    if (inv.state !== 'VERIFIED_PENDING_PAYMENT') return;
+    if (await this.hasUnresolvedErpWrite(invoiceId)) return;
+    if (mode === 'DELETE_AFTER_DAYS') {
+      const due = this.retentionDueAt(doc);
+      if (this.now() < due) {
+        await this.enqueue(this.db, invoiceId, 'retention', due);
+        return;
+      }
+    }
+    await this.deleteDocumentFor(
+      invoiceId,
+      { type: 'system' },
+      {
+        reason:
+          mode === 'DELETE_AFTER_SUCCESS'
+            ? 'Retention policy: delete after successful processing and delivery'
+            : `Retention policy: delete ${doc.retentionDays} day${doc.retentionDays === 1 ? '' : 's'} after upload`,
+        policy: mode,
+      },
+    );
+  }
+
+  /** A person deletes the original document (the invoice record and audit trail stay). */
+  async deleteDocument(invoiceId: string, userId: string, reason?: string): Promise<boolean> {
+    await this.requireActor(userId, 'documents.delete');
+    return this.deleteDocumentFor(
+      invoiceId,
+      { type: 'user', userId },
+      { reason: reason?.trim() || 'Deleted by a person', policy: 'MANUAL' },
+    );
+  }
+
+  /**
+   * Marks the document DELETED and records why (one transaction), then removes the file. Idempotent:
+   * a document already deleted gets no second audit event, only another attempt at removing the
+   * file. If the file cannot be removed now, a retention job finishes it (retried, never looping
+   * on an already-missing file: removing a missing file succeeds).
+   */
+  private async deleteDocumentFor(
+    invoiceId: string,
+    actor: Actor,
+    why: { reason: string; policy: DocumentRetentionMode | 'MANUAL' },
+  ): Promise<boolean> {
+    const result = await this.db.transaction(async (tx) => {
+      const inv = await this.invoiceRow(tx, invoiceId, true);
+      const { doc } = await this.documentOf(tx, invoiceId);
+      if (doc.status === 'DELETED') return { doc, deleted: false };
+      if (WORKING_STATES.includes(inv.state as InvoiceState))
+        throw new VeyraError(
+          'INVALID_STATE',
+          'Veyrafy is still working on this invoice. Delete the document once it has finished.',
+        );
+      const now = this.now();
+      await tx
+        .update(t.documents)
+        .set({ status: 'DELETED', deletedAt: now })
+        .where(and(eq(t.documents.id, doc.id), eq(t.documents.status, 'AVAILABLE')));
+      await this.audit(tx, invoiceId, actor, 'document.deleted', {
+        documentId: doc.id,
+        reason: why.reason,
+        policy: why.policy,
+        invoiceState: inv.state,
+        delivery: inv.erpPurchaseInvoiceId
+          ? `recorded in the ERP (${inv.erpPurchaseInvoiceId})`
+          : inv.state === 'VERIFIED_PENDING_PAYMENT'
+            ? 'verified; nothing to deliver'
+            : 'not delivered',
+      });
+      return { doc, deleted: true };
+    });
+    try {
+      await this.storage.delete(this.documentKey(result.doc));
+    } catch (error) {
+      if (actor.type === 'system') throw error; // the retention job retries
+      await this.enqueue(this.db, invoiceId, 'retention');
+      this.onEnqueue();
+    }
+    return result.deleted;
+  }
+
   async readDocument(doc: { storagePath: string; sha256: string }): Promise<Uint8Array> {
     return this.storage.get(this.documentKey(doc), { sha256: doc.sha256 });
   }
@@ -1424,6 +1635,11 @@ export class Veyra {
     const inv = await this.invoiceRow(this.db, invoiceId);
     if (inv.state !== 'FAILED')
       throw new VeyraError('INVALID_STATE', 'Only failed invoices can be processed again.');
+    if ((await this.documentOf(this.db, invoiceId)).doc.status === 'DELETED')
+      throw new VeyraError(
+        'INVALID_STATE',
+        'The original document was deleted, so Veyrafy cannot read it again.',
+      );
     const extracted = (
       await this.db
         .select()
@@ -1748,7 +1964,7 @@ export class Veyra {
   async claimJob(): Promise<{
     id: string;
     invoiceId: string;
-    type: 'pipeline' | 'commit';
+    type: JobType;
     attempts: number;
     readyAt: string;
   } | null> {
@@ -1787,7 +2003,7 @@ export class Veyra {
       return {
         id: job.id,
         invoiceId: job.invoiceId,
-        type: job.type as 'pipeline' | 'commit',
+        type: job.type as JobType,
         attempts: job.attempts + 1,
         // When it became ready to run: queue wait is measured from here.
         readyAt: job.runAfter > job.createdAt ? job.runAfter : job.createdAt,

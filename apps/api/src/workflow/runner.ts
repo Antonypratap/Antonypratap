@@ -84,6 +84,7 @@ export class JobRunner {
     const work = withScope(
       async () => {
         if (job.type === 'pipeline') await this.veyra.runPipeline(job.invoiceId);
+        else if (job.type === 'retention') await this.veyra.runRetention(job.invoiceId);
         else await this.veyra.runCommit(job.invoiceId);
       },
       (s) => {
@@ -97,6 +98,10 @@ export class JobRunner {
       this.#log.info({ ...context, durationMs: Date.now() - started, stages }, 'job succeeded');
     } catch (error) {
       if (error instanceof CrashSignal) throw error; // the "process" died: leave the job running
+      if (job.type === 'retention') {
+        await this.#retentionFailed(job, error, { ...context, durationMs: Date.now() - started });
+        return true;
+      }
       await this.#handleFailure(job, error, {
         ...context,
         durationMs: Date.now() - started,
@@ -107,6 +112,27 @@ export class JobRunner {
       this.#current = null;
     }
     return true;
+  }
+
+  /**
+   * A retention job that failed never touches the invoice (it completed successfully: deleting its
+   * document is housekeeping). Retried a few times with growing waits, then left failed and logged;
+   * the document stays until a person deletes it or the job is re-queued.
+   */
+  async #retentionFailed(
+    job: { id: string; invoiceId: string; attempts: number },
+    error: unknown,
+    context: object,
+  ): Promise<void> {
+    const code = safeErrorCode(error);
+    if (job.attempts < MAX_ATTEMPTS) {
+      const delayMs = job.attempts * 60_000;
+      await this.veyra.finishJob(job.id, { status: 'retry', error: code, delayMs });
+      this.#log.warn({ ...context, errorCode: code, delayMs }, 'document deletion will be retried');
+      return;
+    }
+    await this.veyra.finishJob(job.id, { status: 'failed', error: code });
+    this.#log.error({ ...context, errorCode: code }, 'document deletion failed');
   }
 
   async #handleFailure(

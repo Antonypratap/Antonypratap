@@ -39,6 +39,10 @@ export const PERMISSIONS = [
   'exports.download',
   /** Create, disable and reset users. */
   'users.manage',
+  /** Change the organization's settings (document retention). */
+  'settings.manage',
+  /** Delete an original invoice document (its processing record and audit trail stay). */
+  'documents.delete',
   /** Sign-ins, sign-outs, user changes, denied access, document access. */
   'security.audit',
   /** Demo tooling (reset, scenarios); only exists outside production. */

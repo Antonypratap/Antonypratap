@@ -6,6 +6,7 @@ import type { ApiInvoiceDetail } from '@veyra/shared';
 import type { createApp } from '../app';
 import { DEMO_NOW } from '../test/harness';
 import { createTestApp } from '../test/app';
+import { testSession } from '../test/auth';
 
 /**
  * The receipt check end to end: the ERP's own goods-receipt JSON export is imported, an invoice
@@ -273,6 +274,61 @@ describe('the receipt check: invoices against the ERP’s own goods-receipt reco
     const after = await detail(inv.id);
     expect(after.comparison?.verdict).toBe('cleared');
     expect(after.state).toBe('VERIFIED_PENDING_PAYMENT');
+  });
+
+  it('the original document can be deleted by an administrator; the invoice record stays', async () => {
+    await importExport(erpExport({ rate: '18.00', pdf: 'B05-rate-mismatch.pdf' }));
+    const inv = await checkAttached();
+    const finance = await testSession(app, { role: 'FINANCE' });
+    const del = (headers?: Record<string, string>) =>
+      app.server.inject({
+        method: 'POST',
+        url: `/api/v1/documents/${inv.documentId}/delete`,
+        payload: {},
+        ...(headers ? { headers } : {}),
+      });
+    expect((await del(finance.headers)).statusCode).toBe(403);
+    expect(
+      (
+        await app.server.inject({
+          method: 'PUT',
+          url: '/api/v1/settings/retention',
+          payload: { mode: 'DELETE_AFTER_SUCCESS' },
+          headers: finance.headers,
+        })
+      ).statusCode,
+    ).toBe(403);
+    const res = await del();
+    expect(res.statusCode, res.body).toBe(200);
+    expect((await del()).json()).toMatchObject({ status: 'DELETED', deleted: false }); // idempotent
+    // The invoice, its comparison and its history are still there; the original is not.
+    const after = await detail(inv.id);
+    expect([after.state, after.comparison?.verdict]).toEqual(['NEEDS_INPUT', 'mismatch']);
+    const doc = (
+      await app.server.inject({ method: 'GET', url: `/api/v1/documents/${inv.documentId}` })
+    ).json<{ status: string; deletedAt: string | null }>();
+    expect(doc).toMatchObject({ status: 'DELETED', deletedAt: expect.any(String) });
+    for (const url of [
+      `/api/v1/documents/${inv.documentId}/file`,
+      `/api/v1/documents/${inv.documentId}/pages/1`,
+    ])
+      expect((await app.server.inject({ method: 'GET', url })).statusCode).toBe(404);
+    const audit = JSON.stringify(
+      (await app.server.inject({ method: 'GET', url: `/api/v1/audit?invoiceId=${inv.id}` })).json(),
+    );
+    expect(audit).toContain('You deleted the original invoice document');
+    // The policy: readable by anyone signed in, set by an administrator, range-checked.
+    const put = (payload: Record<string, unknown>) =>
+      app.server.inject({ method: 'PUT', url: '/api/v1/settings/retention', payload });
+    expect((await put({ mode: 'DELETE_AFTER_DAYS', days: 0 })).statusCode).toBe(422);
+    expect((await put({ mode: 'DELETE_AFTER_DAYS', days: 45 })).json()).toEqual({
+      mode: 'DELETE_AFTER_DAYS',
+      days: 45,
+    });
+    expect(
+      (await app.server.inject({ method: 'GET', url: '/api/v1/settings/retention' })).json(),
+    ).toEqual({ mode: 'DELETE_AFTER_DAYS', days: 45 });
+    await put({ mode: 'KEEP' });
   });
 
   it('a file that is not an ERP goods-receipt export is refused, saying why', async () => {

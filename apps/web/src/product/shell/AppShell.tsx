@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Permission } from '@veyra/shared';
 import { signOut, useSession } from '../../access/session';
 import { Icon, Logo, type IconName } from '../../design-system';
@@ -6,11 +6,12 @@ import { WEBSITE_ADDRESS, classifyHost } from '../../site/host';
 import { hrefFor, type Route } from '../router';
 import { api } from '../api/client';
 import { useProductData } from '../state/data';
+import { ROLE_TEXT } from '../state/roles';
 import styles from './AppShell.module.css';
 import { DemoProvider, DemoTrigger } from './DemoPanel';
 import { UploadsProvider, useUploads } from '../upload/Uploads';
 
-type Section = 'inbox' | 'questions' | 'invoices' | 'erp' | 'audit';
+type Section = 'inbox' | 'questions' | 'invoices' | 'erp' | 'audit' | 'settings';
 
 const NAV: {
   key: Section;
@@ -55,6 +56,8 @@ export function sectionOf(route: Route): Section {
       return 'erp';
     case 'audit':
       return 'audit';
+    case 'settings':
+      return 'settings';
     default:
       return 'inbox';
   }
@@ -77,6 +80,80 @@ function TopbarUpload() {
   );
 }
 
+/** The signed-in person: who they are, their role, settings and sign-out. */
+function AccountMenu({
+  name,
+  email,
+  role,
+  organization,
+  initials,
+}: {
+  name: string;
+  email: string;
+  role: string;
+  organization: string;
+  initials: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (
+        e instanceof KeyboardEvent ? e.key === 'Escape' : !box.current?.contains(e.target as Node)
+      )
+        setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', close);
+    };
+  }, [open]);
+  return (
+    <div className={styles.account} ref={box}>
+      <button
+        type="button"
+        className={styles.user}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Account: ${name}`}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {initials}
+      </button>
+      {open && (
+        <div className={styles.menu} role="menu">
+          <div className={styles.menuWho}>
+            <span className={styles.menuName}>{name}</span>
+            <span className={styles.menuSub}>{email}</span>
+            <span className={styles.menuSub}>
+              {ROLE_TEXT[role]?.label ?? role} · {organization}
+            </span>
+          </div>
+          <a
+            role="menuitem"
+            className={styles.menuItem}
+            href={hrefFor({ name: 'settings', tab: 'account' })}
+            onClick={() => setOpen(false)}
+          >
+            Settings
+          </a>
+          <button
+            type="button"
+            role="menuitem"
+            className={styles.menuItem}
+            onClick={() => void signOut()}
+          >
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** The website, from a client address; the local homepage in development. */
 function websiteHref(): string {
   return classifyHost(window.location.hostname).kind === 'development' ? '#top' : WEBSITE_ADDRESS;
@@ -87,6 +164,8 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
   const hasData = (inbox?.counts.received ?? 0) > 0;
   const waiting = inbox?.counts.needsYou ?? 0;
   const active = route.name === 'invoice' ? null : sectionOf(route);
+  // Wide screens only (narrower ones show the icon rail or the tab bar); not remembered.
+  const [collapsed, setCollapsed] = useState(false);
   const session = useSession();
   const me = session.status === 'signedIn' ? session.session : null;
   const may = (p: Permission) => me?.permissions.includes(p) ?? false;
@@ -101,7 +180,7 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
   return (
     <DemoProvider>
       <UploadsProvider enabled={may('documents.upload')}>
-        <div className={styles.shell}>
+        <div className={styles.shell} data-collapsed={collapsed}>
           <aside className={styles.sidebar}>
             <a
               href={hrefFor({ name: 'inbox' })}
@@ -131,8 +210,32 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
                 ))}
               </ul>
             </nav>
+            <button
+              type="button"
+              className={styles.collapse}
+              onClick={() => setCollapsed((v) => !v)}
+              aria-label={collapsed ? 'Show the full menu' : 'Collapse the menu'}
+              title={collapsed ? 'Show the full menu' : 'Collapse the menu'}
+            >
+              <Icon name={collapsed ? 'chevronRight' : 'chevronLeft'} size={16} />
+              <span className={styles.navLabel}>Collapse</span>
+            </button>
             <div className={styles.sidebarFoot}>
-              {me && <p className={styles.organization}>{me.organization.name}</p>}
+              {me && (
+                <a
+                  className={styles.me}
+                  href={hrefFor({ name: 'settings', tab: 'account' })}
+                  aria-current={route.name === 'settings' ? 'page' : undefined}
+                >
+                  <span className={styles.meName}>{me.user.name}</span>
+                  <span className={styles.meSub}>
+                    {ROLE_TEXT[me.user.role]?.label ?? me.user.role} · {me.organization.name}
+                  </span>
+                </a>
+              )}
+              <a className={styles.siteLink} href={hrefFor({ name: 'settings', tab: 'account' })}>
+                Settings
+              </a>
               {me?.demoSignIn && (
                 <p className={styles.demoNote}>Demo workspace. Sample ERP; no payments are made.</p>
               )}
@@ -182,16 +285,15 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
               </label>
               {may('demo.manage') && <DemoTrigger className={styles.demoButton} />}
               <TopbarUpload />
-              <span
-                className={styles.user}
-                title={
-                  me
-                    ? `${me.user.name} (${me.user.role.toLowerCase()}) · ${me.organization.name}`
-                    : undefined
-                }
-              >
-                {initials}
-              </span>
+              {me && (
+                <AccountMenu
+                  name={me.user.name}
+                  email={me.user.email}
+                  role={me.user.role}
+                  organization={me.organization.name}
+                  initials={initials}
+                />
+              )}
             </header>
             <main
               className={styles.content}

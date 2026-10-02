@@ -2,6 +2,8 @@ import { z } from 'zod';
 import {
   ApiCapabilitiesSchema,
   type ApiCapabilities,
+  ApiUserSchema,
+  type ApiUser,
   ApiAuditEntrySchema,
   ApiDemoScenarioSchema,
   type ApiDemoScenario,
@@ -116,6 +118,23 @@ export type ReceiptRecordView = z.output<typeof ReceiptRecords>[number];
 export const api = {
   /** What this organization may use (Phase 8A): availability and usage, never the plan. */
   capabilities: (): Promise<ApiCapabilities> => request(ApiCapabilitiesSchema, '/capabilities'),
+  /** The team (ADMIN: users.manage). */
+  users: {
+    list: (): Promise<ApiUser[]> => request(z.array(ApiUserSchema), '/users'),
+    invite: (body: { name: string; email: string; role: string; password: string }) =>
+      request(ApiUserSchema, '/users', json(body)),
+    update: (id: string, patch: { role?: string; active?: boolean; name?: string }) =>
+      request(ApiUserSchema, `/users/${encodeURIComponent(id)}`, {
+        ...json(patch),
+        method: 'PATCH',
+      }),
+    resetPassword: (id: string, password: string) =>
+      request(
+        z.object({ ok: z.boolean() }),
+        `/users/${encodeURIComponent(id)}/password`,
+        json({ password }),
+      ),
+  },
   inbox: (): Promise<ApiInbox> => request(ApiInboxSchema, '/invoices'),
   invoice: (id: string): Promise<ApiInvoiceDetail> =>
     request(ApiInvoiceDetailSchema, `/invoices/${encodeURIComponent(id)}`),
@@ -211,6 +230,9 @@ export const api = {
 /** How the original document was read: its page count and everything else printed on it. */
 const DocumentInfo = z
   .object({
+    /** AVAILABLE, or DELETED: the original is gone; the invoice record stays. */
+    status: z.enum(['AVAILABLE', 'DELETED']).default('AVAILABLE'),
+    deletedAt: z.string().nullable().optional(),
     extraction: z
       .object({
         pages: z.number().int().positive().nullable(),
@@ -229,6 +251,28 @@ export const documentInfo = (documentId: string): Promise<DocumentInfo> =>
 /** One page of the original, as uploaded (a PDF page drawn as an image; a photo as itself). */
 export const documentPageUrl = (documentId: string, page: number): string =>
   `${BASE}/documents/${encodeURIComponent(documentId)}/pages/${page}`;
+
+/** Deletes the ORIGINAL document only (administrators); the invoice record and history stay. */
+export const deleteDocument = (documentId: string) =>
+  request(
+    z.object({ status: z.literal('DELETED') }).loose(),
+    `/documents/${encodeURIComponent(documentId)}/delete`,
+    json({}),
+  );
+
+export const RetentionPolicySchema = z.object({
+  mode: z.enum(['KEEP', 'DELETE_AFTER_SUCCESS', 'DELETE_AFTER_DAYS']),
+  days: z.number().nullable(),
+});
+export type RetentionPolicy = z.output<typeof RetentionPolicySchema>;
+export const retention = {
+  get: () => request(RetentionPolicySchema, '/settings/retention'),
+  set: (p: RetentionPolicy) =>
+    request(RetentionPolicySchema, '/settings/retention', {
+      ...json(p.mode === 'DELETE_AFTER_DAYS' ? { mode: p.mode, days: p.days } : { mode: p.mode }),
+      method: 'PUT',
+    }),
+};
 
 export const documentUrl = (documentId: string): string =>
   `${BASE}/documents/${encodeURIComponent(documentId)}/file`;

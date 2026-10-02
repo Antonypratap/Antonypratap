@@ -1,7 +1,14 @@
 import { useState, type SyntheticEvent } from 'react';
 import type { ApiInvoiceDetail, ApiOption, ApiQuestion } from '@veyra/shared';
 import { Icon, StatusPill, Struck } from '../../design-system';
-import { api, ApiError, documentInfo, documentPageUrl, documentUrl } from '../api/client';
+import {
+  api,
+  ApiError,
+  deleteDocument,
+  documentInfo,
+  documentPageUrl,
+  documentUrl,
+} from '../api/client';
 import { AnswerForm } from '../components/AnswerForm';
 import { ErpComparison } from '../components/ErpComparison';
 import { InvoiceDocument } from '../components/InvoiceDocument';
@@ -64,6 +71,7 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
     `document:${invoice.documentId}`,
   );
   const pageCount = doc?.extraction?.pages ?? 1;
+  const originalDeleted = doc?.status === 'DELETED';
   const otherFields = doc?.extraction?.otherFields ?? [];
   const [local, setLocal] = useState<LocalAnswer | null>(null);
   const [pending, setPending] = useState<ApiOption | null>(null);
@@ -194,33 +202,46 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
                 {invoice.source === 'Photo' ? 'Phone photo' : 'PDF'} · {invoice.filename}
               </span>
             </span>
-            <button
-              type="button"
-              className={styles.zoom}
-              onClick={() => setAsRead((v) => !v)}
-              aria-pressed={asRead}
-            >
-              {asRead ? 'Show original' : 'Show as read'}
-            </button>
-            <a
-              className={styles.zoom}
-              href={documentUrl(invoice.documentId)}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open file
-            </a>
-            <button
-              type="button"
-              className={styles.zoom}
-              onClick={() => setFullSize((v) => !v)}
-              aria-pressed={fullSize}
-            >
-              {fullSize ? 'Fit to width' : 'Zoom in'}
-            </button>
+            <span className={styles.docStatus} data-deleted={originalDeleted}>
+              Original document: {originalDeleted ? 'Deleted' : 'Available'}
+            </span>
+            {!originalDeleted && (
+              <>
+                <button
+                  type="button"
+                  className={styles.zoom}
+                  onClick={() => setAsRead((v) => !v)}
+                  aria-pressed={asRead}
+                >
+                  {asRead ? 'Show original' : 'Show as read'}
+                </button>
+                <a
+                  className={styles.zoom}
+                  href={documentUrl(invoice.documentId)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open file
+                </a>
+                <button
+                  type="button"
+                  className={styles.zoom}
+                  onClick={() => setFullSize((v) => !v)}
+                  aria-pressed={fullSize}
+                >
+                  {fullSize ? 'Fit to width' : 'Zoom in'}
+                </button>
+              </>
+            )}
           </div>
           <div className={styles.stage} data-full={fullSize}>
-            {asRead ? (
+            {originalDeleted ? (
+              <div className={styles.pageFailed} role="status">
+                <p className={styles.deletedTitle}>Original document · Document deleted</p>
+                <p>Veyrafy no longer retains the original invoice document.</p>
+                <p>The invoice record, its checks and its history below are kept.</p>
+              </div>
+            ) : asRead ? (
               <div className={styles.sheet}>
                 <InvoiceDocument invoice={invoice} />
               </div>
@@ -478,6 +499,14 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
               See what happened to this invoice
             </a>
           )}
+          {allowed('documents.delete') && doc && !originalDeleted && status !== 'processing' && (
+            <DeleteOriginal
+              busy={busy}
+              onDelete={() =>
+                void act(() => deleteDocument(invoice.documentId), notify.documentDeleted)
+              }
+            />
+          )}
         </aside>
       </div>
 
@@ -510,6 +539,44 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
         />
       )}
     </div>
+  );
+}
+
+/** Deletes the original document after an explicit confirmation (never one accidental click). */
+function DeleteOriginal({ busy, onDelete }: { busy: boolean; onDelete: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  if (!confirming)
+    return (
+      <button type="button" className={styles.removeLink} onClick={() => setConfirming(true)}>
+        Delete original invoice
+      </button>
+    );
+  return (
+    <section className={styles.remove} role="alertdialog" aria-labelledby="delete-title">
+      <p id="delete-title" className={styles.removeTitle}>
+        Delete original invoice?
+      </p>
+      <p className={styles.removeNote}>
+        The original invoice document will be permanently deleted from Veyrafy. Your processing
+        record and audit history will remain.
+      </p>
+      <div className={styles.removeActions}>
+        <button
+          type="button"
+          className={styles.removeButton}
+          disabled={busy}
+          onClick={() => {
+            setConfirming(false);
+            onDelete();
+          }}
+        >
+          Delete permanently
+        </button>
+        <button type="button" className={styles.zoom} onClick={() => setConfirming(false)}>
+          Cancel
+        </button>
+      </div>
+    </section>
   );
 }
 

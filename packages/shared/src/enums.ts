@@ -163,11 +163,30 @@ export const AUDIT_EVENTS = [
   // ERP goods-receipt records (the ERP's own JSON export) and invoices checked against them.
   'receipts.imported',
   'receipt.checked',
+  // Document retention: the original file deleted (by a person, or by the retention policy).
+  'document.deleted',
 ] as const;
 export type AuditEventType = (typeof AUDIT_EVENTS)[number];
 
-export const JOB_TYPES = ['pipeline', 'commit'] as const;
+export const JOB_TYPES = ['pipeline', 'commit', 'retention'] as const;
 export type JobType = (typeof JOB_TYPES)[number];
+
+/**
+ * How long Veyrafy keeps an original invoice document (the customer's choice). The processing
+ * record and the audit trail are kept regardless.
+ */
+export const DOCUMENT_RETENTION_MODES = [
+  'KEEP',
+  'DELETE_AFTER_SUCCESS',
+  'DELETE_AFTER_DAYS',
+] as const;
+export type DocumentRetentionMode = (typeof DOCUMENT_RETENTION_MODES)[number];
+/** The allowed range for DELETE_AFTER_DAYS (guards against a mistyped 0 or 99999). */
+export const RETENTION_DAYS_MIN = 1;
+export const RETENTION_DAYS_MAX = 3650;
+
+export const DOCUMENT_STATUSES = ['AVAILABLE', 'DELETED'] as const;
+export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number];
 
 export const JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed'] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];

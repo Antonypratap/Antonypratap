@@ -645,6 +645,9 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       invoiceId: inv?.id ?? null,
       state: inv?.state ?? null,
       failureReason: inv?.failureReason ?? null,
+      // AVAILABLE, or DELETED: the original is gone; the processing record stays.
+      status: d.status,
+      deletedAt: d.deletedAt ?? null,
       extraction: inv ? await latestExtraction(inv.id) : null,
     };
   });
@@ -693,8 +696,16 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   // Server-mediated, authorized, audited: never a public URL or a storage path. The file is
   // untrusted: its type was decided by its bytes at upload, it is never executed, and it is
   // served with nosniff, a CSP that allows nothing active, and (images) a sandbox.
+  /** The original's bytes; a deleted original is gone (never a broken or substitute file). */
+  const availableDocument = async (id: string) => {
+    const d = await documentRow(id);
+    if (d.status === 'DELETED')
+      throw new VeyraError('NOT_FOUND', 'The original invoice document was deleted.');
+    return d;
+  };
+
   app.get('/api/v1/documents/:id/file', may('documents.view'), async (req, reply) => {
-    const d = await documentRow(Id.parse(req.params).id);
+    const d = await availableDocument(Id.parse(req.params).id);
     const bytes = Buffer.from(await veyra.readDocument(d));
     await users.record('document.accessed', ctx(req), { documentId: d.id });
     const ascii = d.filename.replace(/[^\x20-\x7e]|["\\]/g, '_');
@@ -721,7 +732,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     const { id, page } = z
       .object({ id: z.string().min(1).max(64), page: z.coerce.number().int().min(1).max(500) })
       .parse(req.params);
-    const d = await documentRow(id);
+    const d = await availableDocument(id);
     const bytes = await veyra.readDocument(d);
     if (page === 1) await users.record('document.accessed', ctx(req), { documentId: d.id });
     let body: Uint8Array;
@@ -759,6 +770,35 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       .parse(req.body ?? {});
     await veyra.reject(id, reason, actorOf(req));
     return { invoiceId: id, state: (await veyra.invoiceRow(veyra.db, id)).state };
+  });
+
+  // Deletes the ORIGINAL document only: the invoice record, its checks and its audit trail stay.
+  app.post('/api/v1/documents/:id/delete', may('documents.delete'), async (req) => {
+    const d = await documentRow(Id.parse(req.params).id);
+    const { reason } = z
+      .object({ reason: z.string().trim().max(300).optional() })
+      .parse(req.body ?? {});
+    const inv = (
+      await veyra.db.select().from(t.invoices).where(eq(t.invoices.documentId, d.id)).limit(1)
+    )[0];
+    if (!inv) throw new VeyraError('NOT_FOUND', 'Document not found.');
+    const deleted = await veyra.deleteDocument(inv.id, actorOf(req), reason);
+    return { documentId: d.id, status: 'DELETED', deleted };
+  });
+
+  // ── Document retention (the customer's choice) ───────────────────────────
+  const RetentionBody = z.discriminatedUnion('mode', [
+    z.object({ mode: z.literal('KEEP') }),
+    z.object({ mode: z.literal('DELETE_AFTER_SUCCESS') }),
+    z.object({ mode: z.literal('DELETE_AFTER_DAYS'), days: z.number().int() }),
+  ]);
+  app.get('/api/v1/settings/retention', may('invoices.view'), async () => veyra.retentionPolicy());
+  app.put('/api/v1/settings/retention', may('settings.manage'), async (req) => {
+    const body = RetentionBody.parse(req.body ?? {});
+    return veyra.setRetentionPolicy(
+      { mode: body.mode, days: body.mode === 'DELETE_AFTER_DAYS' ? body.days : null },
+      actorOf(req),
+    );
   });
 
   app.post('/api/v1/invoices/:id/reprocess', may('invoices.reprocess'), async (req) => {

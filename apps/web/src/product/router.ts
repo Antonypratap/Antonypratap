@@ -40,6 +40,8 @@ export const OPS_SECTIONS = [
   'settings',
 ] as const;
 export type OpsSection = (typeof OPS_SECTIONS)[number];
+export const SETTINGS_TABS = ['account', 'team', 'retention', 'plan'] as const;
+export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export type Route =
   | { name: 'home' }
@@ -49,7 +51,8 @@ export type Route =
   | { name: 'invoices'; filter: InvoiceFilter }
   | { name: 'invoice'; id: string }
   | { name: 'erp'; tab: ErpTab }
-  | { name: 'audit'; id: string | null };
+  | { name: 'audit'; id: string | null }
+  | { name: 'settings'; tab: SettingsTab };
 
 const isOneOf = <T extends string>(list: readonly T[], v: string | undefined): v is T =>
   list.includes(v as T);
@@ -80,6 +83,8 @@ export function parseHash(hash: string): Route {
       return { name: 'erp', tab: isOneOf(ERP_TABS, arg) ? arg : 'vendors' };
     case 'audit':
       return { name: 'audit', id: arg ?? null };
+    case 'settings':
+      return { name: 'settings', tab: isOneOf(SETTINGS_TABS, arg) ? arg : 'account' };
     default:
       return { name: 'inbox' };
   }
@@ -103,6 +108,8 @@ export function hrefFor(route: Route): string {
       return `#/app/erp/${route.tab}`;
     case 'audit':
       return route.id ? `#/app/audit/${route.id}` : '#/app/audit';
+    case 'settings':
+      return `#/app/settings/${route.tab}`;
   }
 }
 
