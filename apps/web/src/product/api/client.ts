@@ -233,6 +233,8 @@ const DocumentInfo = z
     /** AVAILABLE, or DELETED: the original is gone; the invoice record stays. */
     status: z.enum(['AVAILABLE', 'DELETED']).default('AVAILABLE'),
     deletedAt: z.string().nullable().optional(),
+    /** Available, but its stored copy is missing (lost by storage): uploading it again restores it. */
+    fileMissing: z.boolean().default(false),
     extraction: z
       .object({
         pages: z.number().int().positive().nullable(),

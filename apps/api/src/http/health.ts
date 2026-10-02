@@ -28,6 +28,12 @@ export interface ReadinessReport {
     failedLast24h: number;
     oldestQueuedAgeMs: number | null;
   } | null;
+  /**
+   * Recent originals whose stored file is missing: anything above 0 means document storage is
+   * losing files (e.g. the data directory is not a persistent volume). Reported, not "not ready":
+   * missing files cannot come back by restarting.
+   */
+  documents: { checked: number; missing: number } | null;
   /** Connection pool counts (null with the embedded development database). */
   pool: { total: number; idle: number; waiting: number; max: number } | null;
 }
@@ -75,6 +81,10 @@ export function readinessCheck(deps: {
         jobs = null;
       }
     }
+    const documents =
+      database.status === 'ok' && storage.status === 'ok'
+        ? await deps.veyra.missingDocumentFiles().catch(() => null)
+        : null;
     const ready = database.status === 'ok' && storage.status === 'ok' && workerOk;
     return {
       status: ready ? 'ready' : 'not_ready',
@@ -90,6 +100,7 @@ export function readinessCheck(deps: {
         erp,
       },
       jobs,
+      documents,
       // Counts only (Phase 7): connections open, idle, and requests waiting for one.
       pool: deps.poolStats?.() ?? null,
     };

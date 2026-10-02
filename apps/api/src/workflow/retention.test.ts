@@ -259,4 +259,38 @@ describe('original document retention', () => {
       to: { mode: 'DELETE_AFTER_DAYS', days: 90 },
     });
   });
+
+  it('a file lost by storage is reported, and uploading the same file again restores it', async () => {
+    await start();
+    const s = scenarioById('S03');
+    if (!s) throw new Error('S03');
+    const bytes = renderScenario(s);
+    const { invoiceId } = await h.veyra.upload({ filename: s.file, bytes });
+    await h.runner.drain();
+    // Storage loses the file (a data directory that was not a persistent volume).
+    await h.veyra.storage.delete(h.veyra.documentKey(await documentOf(invoiceId)));
+    expect(await h.veyra.missingDocumentFiles()).toEqual({ checked: 1, missing: 1 });
+    expect(await h.veyra.documentFileExists(await documentOf(invoiceId))).toBe(false);
+    // The same file again: put back on the same invoice, nothing else changes.
+    const again = await h.veyra.upload({ filename: s.file, bytes }, DEMO_USER.id);
+    expect(again).toMatchObject({ invoiceId, restored: true });
+    expect(await fileExists(invoiceId)).toBe(true);
+    expect(await h.veyra.missingDocumentFiles()).toEqual({ checked: 1, missing: 0 });
+    expect(await h.state(invoiceId)).toBe('NEEDS_INPUT');
+    const restored = await h.veyra.db
+      .select()
+      .from(t.auditEvents)
+      .where(eq(t.auditEvents.event, 'document.restored'));
+    expect(restored).toHaveLength(1);
+    // With the file present it is an ordinary duplicate; a deliberately deleted original is
+    // never brought back by uploading it again.
+    await expect(h.veyra.upload({ filename: s.file, bytes })).rejects.toMatchObject({
+      code: 'DUPLICATE_UPLOAD',
+    });
+    await h.veyra.deleteDocument(invoiceId, DEMO_USER.id);
+    await expect(h.veyra.upload({ filename: s.file, bytes })).rejects.toMatchObject({
+      code: 'DUPLICATE_UPLOAD',
+    });
+    expect((await documentOf(invoiceId)).status).toBe('DELETED');
+  });
 });

@@ -648,6 +648,8 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       // AVAILABLE, or DELETED: the original is gone; the processing record stays.
       status: d.status,
       deletedAt: d.deletedAt ?? null,
+      // An available original whose stored copy is missing (lost by storage, not deleted).
+      fileMissing: !(await veyra.documentFileExists(d)) && d.status === 'AVAILABLE',
       extraction: inv ? await latestExtraction(inv.id) : null,
     };
   });

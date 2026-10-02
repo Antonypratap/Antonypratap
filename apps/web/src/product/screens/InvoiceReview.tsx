@@ -72,6 +72,7 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
   );
   const pageCount = doc?.extraction?.pages ?? 1;
   const originalDeleted = doc?.status === 'DELETED';
+  const fileMissing = doc?.fileMissing === true;
   const otherFields = doc?.extraction?.otherFields ?? [];
   const [local, setLocal] = useState<LocalAnswer | null>(null);
   const [pending, setPending] = useState<ApiOption | null>(null);
@@ -202,10 +203,11 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
                 {invoice.source === 'Photo' ? 'Phone photo' : 'PDF'} · {invoice.filename}
               </span>
             </span>
-            <span className={styles.docStatus} data-deleted={originalDeleted}>
-              Original document: {originalDeleted ? 'Deleted' : 'Available'}
+            <span className={styles.docStatus} data-deleted={originalDeleted || fileMissing}>
+              Original document:{' '}
+              {originalDeleted ? 'Deleted' : fileMissing ? 'Missing' : 'Available'}
             </span>
-            {!originalDeleted && (
+            {!originalDeleted && !fileMissing && (
               <>
                 <button
                   type="button"
@@ -240,6 +242,18 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
                 <p className={styles.deletedTitle}>Original document · Document deleted</p>
                 <p>Veyrafy no longer retains the original invoice document.</p>
                 <p>The invoice record, its checks and its history below are kept.</p>
+              </div>
+            ) : fileMissing && !asRead ? (
+              <div className={styles.pageFailed} role="status">
+                <p className={styles.deletedTitle}>Original document · File missing</p>
+                <p>
+                  Veyrafy&rsquo;s storage no longer has this file, although it was never deleted.
+                  The invoice record, its checks and its history are kept.
+                </p>
+                <p>Upload the same file again to restore it: it is reattached to this invoice.</p>
+                <button type="button" className={styles.zoom} onClick={() => setAsRead(true)}>
+                  Show as read
+                </button>
               </div>
             ) : asRead ? (
               <div className={styles.sheet}>

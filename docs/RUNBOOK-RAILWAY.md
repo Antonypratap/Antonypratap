@@ -69,6 +69,10 @@ For **veyrafy-demo** and for **veyrafy-toit**, separately:
 2. Open the app service (**veyrafy-demo** or **veyrafy-toit**) → **Settings → Volumes → Add
    volume**, mount path **`/var/lib/veyra`**, size 5 GB to start. This keeps uploaded invoice files
    when the service restarts or is redeployed.
+   **Without it, every deploy deletes every uploaded invoice file** while the database still lists
+   them: invoices then show "Original document · File missing". Veyrafy logs `document files are
+   missing from storage` at start when this happens. Add the volume, then upload the same files
+   again: each is reattached to its invoice.
 
 **veyrafy-site** needs **no** database and **no** volume.
 

@@ -857,6 +857,11 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
           : 'Original invoice document deleted',
         `${s('reason')}. The processing record and this history remain.`,
       );
+    case 'document.restored':
+      return make(
+        'Original invoice document restored',
+        'The same file was uploaded again after its stored copy went missing.',
+      );
     case 'settings.changed':
       return make('Document retention changed', retentionText(d.to));
     case 'creation.discarded':

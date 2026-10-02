@@ -165,6 +165,8 @@ export const AUDIT_EVENTS = [
   'receipt.checked',
   // Document retention: the original file deleted (by a person, or by the retention policy).
   'document.deleted',
+  // The same file uploaded again when its stored copy had gone missing: the copy is restored.
+  'document.restored',
 ] as const;
 export type AuditEventType = (typeof AUDIT_EVENTS)[number];
 

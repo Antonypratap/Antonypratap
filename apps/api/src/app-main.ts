@@ -113,6 +113,18 @@ log.info(
 );
 if (config.environment === 'development')
   console.log(`Veyrafy API on http://${config.host}:${config.port}/api/v1`);
+// Storage that lost files (a data directory that is not a persistent volume) is said loudly at
+// start, before anyone opens an invoice and finds its original missing.
+void app.veyra
+  .missingDocumentFiles()
+  .then(({ checked, missing }) => {
+    if (missing > 0)
+      log.error(
+        { checked, missing },
+        'document files are missing from storage: is VEYRA_DATA_DIR a persistent volume?',
+      );
+  })
+  .catch(() => undefined);
 
 let stopping = false;
 const stop = async (signal: string) => {

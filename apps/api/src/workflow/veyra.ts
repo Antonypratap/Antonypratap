@@ -474,7 +474,7 @@ export class Veyra {
   private async store(
     file: { filename: string; bytes: Uint8Array },
     actorId: string | undefined,
-  ): Promise<{ documentId: string; invoiceId: string }> {
+  ): Promise<{ documentId: string; invoiceId: string; restored?: boolean }> {
     const { bytes } = file;
     if (actorId) await this.requireActor(actorId, 'documents.upload');
     if (bytes.length === 0) throw new VeyraError('UNSUPPORTED_FILE', 'The file is empty.');
@@ -498,6 +498,21 @@ export class Veyra {
           .where(eq(t.invoices.documentId, existing.id))
           .limit(1)
       )[0];
+      // The same file again, while its stored copy is missing (storage lost it): put it back. The
+      // bytes are identical (same SHA-256), so the invoice and its record are unchanged. A file
+      // deleted on purpose (retention) is never brought back this way.
+      const key = this.documentKey(existing);
+      if (inv && existing.status === 'AVAILABLE' && !(await this.storage.exists(key))) {
+        await this.storage.put(key, bytes, { mime: existing.mime, sha256 });
+        await this.audit(
+          this.db,
+          inv.id,
+          actorId ? { type: 'user', userId: actorId } : { type: 'system' },
+          'document.restored',
+          { documentId: existing.id, sha256 },
+        );
+        return { documentId: existing.id, invoiceId: inv.id, restored: true };
+      }
       throw new VeyraError('DUPLICATE_UPLOAD', 'This exact file was already uploaded.', {
         documentId: existing.id,
         invoiceId: inv?.id ?? null,
@@ -786,6 +801,28 @@ export class Veyra {
       this.onEnqueue();
     }
     return result.deleted;
+  }
+
+  /** Whether the stored copy of an available original is really there. */
+  async documentFileExists(doc: { storagePath: string; status: string }): Promise<boolean> {
+    return doc.status === 'AVAILABLE' && (await this.storage.exists(this.documentKey(doc)));
+  }
+
+  /**
+   * Of the most recent available originals, how many have no stored file: storage that loses
+   * files (a data directory that is not a persistent volume) shows up here, not only when someone
+   * opens an invoice.
+   */
+  async missingDocumentFiles(sample = 25): Promise<{ checked: number; missing: number }> {
+    const docs = await this.db
+      .select()
+      .from(t.documents)
+      .where(eq(t.documents.status, 'AVAILABLE'))
+      .orderBy(desc(t.documents.seq))
+      .limit(sample);
+    let missing = 0;
+    for (const d of docs) if (!(await this.storage.exists(this.documentKey(d)))) missing++;
+    return { checked: docs.length, missing };
   }
 
   async readDocument(doc: { storagePath: string; sha256: string }): Promise<Uint8Array> {
