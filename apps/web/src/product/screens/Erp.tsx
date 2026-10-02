@@ -14,6 +14,7 @@ import {
   capabilityList,
   connectionIdentity,
   connectionStatusText,
+  systemName,
   type ErpConnectionView,
 } from '../state/connection';
 import styles from './Erp.module.css';
@@ -157,7 +158,7 @@ function Connection({ connection }: { connection: ErpConnectionView | null }) {
       <p className={styles.eyebrow}>Your business system</p>
       <div className={styles.systemHead}>
         <div>
-          <h2 className={styles.systemName}>{connection.displayName}</h2>
+          <h2 className={styles.systemName}>{systemName(connection)}</h2>
           <p className={styles.company}>{connection.company?.name ?? 'Company not available'}</p>
         </div>
         <StatusPill status={connected ? 'handled' : 'attention'}>
@@ -220,7 +221,7 @@ export function Erp({ tab }: { tab: ErpTab }) {
         title="ERP"
         sub={
           <>
-            Business records Veyrafy checks invoices against.
+            The records every invoice is checked against.
             {connection && (
               <>
                 {' '}

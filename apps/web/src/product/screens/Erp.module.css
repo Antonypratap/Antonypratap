@@ -108,7 +108,8 @@ button.action {
 }
 
 .identity {
-  display: inline-block;
+  display: block;
+  margin-top: var(--space-1);
   color: var(--color-ink-3);
   font-weight: var(--weight-medium);
 }

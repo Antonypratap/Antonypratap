@@ -18,10 +18,10 @@ const connection = ApiErpSchema.connection.parse({
 describe('ERP connection (Phase 4)', () => {
   it('names the system, the business and the status in one line', () => {
     expect(connectionIdentity(connection)).toBe(
-      'Fake ERP · Veyra Demo Industries Pvt Ltd · Connected',
+      'Sample ERP · Veyra Demo Industries Pvt Ltd · Connected',
     );
     expect(connectionIdentity({ ...connection, status: 'UNAVAILABLE', company: null })).toBe(
-      'Fake ERP · Not reachable',
+      'Sample ERP · Not reachable',
     );
   });
 

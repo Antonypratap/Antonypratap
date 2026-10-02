@@ -16,9 +16,14 @@ export function connectionStatusText(status: ErpConnectionView['status']): strin
   return STATUS_TEXT[status];
 }
 
-/** "Fake ERP · Veyra Demo Industries Pvt Ltd · Connected": which system, which business. */
+/** "Sample ERP · Veyra Demo Industries Pvt Ltd · Connected": which system, which business. */
+/** The business system's name as people see it (the demo's built-in system is "Sample ERP"). */
+export function systemName(c: Pick<ErpConnectionView, 'type' | 'displayName'>): string {
+  return c.type === 'fake-erp' ? 'Sample ERP' : c.displayName;
+}
+
 export function connectionIdentity(c: ErpConnectionView): string {
-  return [c.displayName, c.company?.name, connectionStatusText(c.status)]
+  return [systemName(c), c.company?.name, connectionStatusText(c.status)]
     .filter(Boolean)
     .join(' · ');
 }
