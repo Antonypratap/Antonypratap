@@ -183,13 +183,15 @@ export function Erp({ tab }: { tab: ErpTab }) {
   // Demo only: the same reset as the sidebar's (the sample ERP and every invoice together, so no
   // invoice is left pointing at records that no longer exist).
   const canReset = useAllowed('demo.manage');
-  const resetErp = () => {
+  const resetErp = (erp: 'demo' | 'empty') => {
     if (
       window.confirm(
-        'Reset the sample ERP? This restores its original records and clears every invoice.',
+        erp === 'empty'
+          ? 'Empty the ERP? Every supplier, item, order and receipt is removed (only your company stays), and every invoice is cleared.'
+          : 'Restore the sample ERP? Its original records come back and every invoice is cleared.',
       )
     )
-      void api.resetDemo().then(() => refresh());
+      void api.resetDemo(erp).then(() => refresh());
   };
   const { data: connection } = useResource(() => api.erp.connection(), 'erp:connection');
   const spec = HEAD[tab];
@@ -229,9 +231,14 @@ export function Erp({ tab }: { tab: ErpTab }) {
           tab === 'data' || tab === 'connection' ? undefined : (
             <>
               {canReset && (
-                <button type="button" className={styles.action} onClick={resetErp}>
-                  Reset sample ERP
-                </button>
+                <>
+                  <button type="button" className={styles.action} onClick={() => resetErp('empty')}>
+                    Empty the ERP
+                  </button>
+                  <button type="button" className={styles.action} onClick={() => resetErp('demo')}>
+                    Restore sample ERP
+                  </button>
+                </>
               )}
               <a className={styles.action} href={hrefFor({ name: 'erp', tab: 'data' })}>
                 Import business records

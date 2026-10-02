@@ -123,7 +123,9 @@ export const api = {
     request(Moved, `/invoices/${encodeURIComponent(invoiceId)}/reject`, json({ reason })),
   reprocess: (invoiceId: string) =>
     request(Moved, `/invoices/${encodeURIComponent(invoiceId)}/reprocess`, { method: 'POST' }),
-  resetDemo: () => request(z.object({ ok: z.boolean() }).loose(), '/dev/reset', { method: 'POST' }),
+  /** Demo only. `demo`: the sample business back; `empty`: an ERP with only the company in it. */
+  resetDemo: (erp: 'demo' | 'empty' = 'demo') =>
+    request(z.object({ ok: z.boolean() }).loose(), '/dev/reset', json({ erp })),
   demo: {
     /** Demo scenarios (demo builds only; the list is empty elsewhere). */
     scenarios: async (): Promise<ApiDemoScenario[]> => {
