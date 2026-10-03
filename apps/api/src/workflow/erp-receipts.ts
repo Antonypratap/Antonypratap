@@ -7,6 +7,7 @@ import {
   paise,
   type ApiComparison,
 } from '@veyra/shared';
+import { computeTax, lineTaxableAmount, validateGstin } from '@veyra/india-tax';
 import { dateText } from '../engine/questions';
 
 /**
@@ -225,7 +226,15 @@ export interface InvoiceSide {
     qtyMilli: number | null;
     unitPricePaise: number | null;
     taxablePaise: number | null;
+    /** GST rate in basis points, as read (for the invoice's own tax arithmetic). */
+    gstRateBp?: number | null;
   }[];
+}
+
+/** What else Veyrafy knows that the receipt record cannot tell it. */
+export interface ReceiptContext {
+  /** Other invoices already in Veyrafy with this supplier's invoice number (not rejected). */
+  duplicates?: readonly string[];
 }
 
 type Row = ApiComparison['rows'][number] & {
@@ -237,8 +246,12 @@ const money = (p: number | null) => (p === null ? null : formatInr(paise(p)));
 const qty = (m: number | null, uom: string | null) =>
   m === null ? null : `${formatQty(milliQty(m))}${uom ? ` ${uom.toUpperCase()}` : ''}`;
 
-export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiComparison {
-  return receiptComparison(inv, erp).comparison;
+export function compareWithReceipt(
+  inv: InvoiceSide,
+  erp: ReceiptRecord,
+  context: ReceiptContext = {},
+): ApiComparison {
+  return receiptComparison(inv, erp, context).comparison;
 }
 
 /**
@@ -248,6 +261,7 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
 export function receiptComparison(
   inv: InvoiceSide,
   erp: ReceiptRecord,
+  context: ReceiptContext = {},
 ): {
   comparison: ApiComparison;
   unread: string[];
@@ -318,6 +332,21 @@ export function receiptComparison(
     note: 'Found by the supplier’s invoice number and name.',
   });
 
+  // Paying the same invoice twice: another copy (a second scan, or the ERP's attachment) of this
+  // supplier's invoice number already in Veyrafy is never cleared again.
+  const dups = context.duplicates ?? [];
+  push({
+    section: 'ERP receipt',
+    label: 'Not already in Veyrafy',
+    invoice: inv.invoiceNumber,
+    erp: dups.length ? `Also in Veyrafy: ${dups.join(', ')}` : 'No other copy',
+    result: dups.length ? 'mismatch' : 'match',
+    blocking: false,
+    note: dups.length
+      ? 'The same supplier invoice number is already in Veyrafy. Check it is not a duplicate before paying.'
+      : null,
+  });
+
   // Supplier.
   cmp(
     'Supplier',
@@ -337,6 +366,22 @@ export function receiptComparison(
     'The ERP record carries no GSTIN.',
     'header.vendorGstin',
   );
+  // The GSTIN itself (format, checksum, state code), whether or not the ERP holds one.
+  if (inv.vendorGstin !== null) {
+    const valid = validateGstin(inv.vendorGstin).ok;
+    push({
+      section: 'Supplier',
+      label: 'GSTIN valid',
+      invoice: inv.vendorGstin,
+      erp: valid ? 'Valid format, state and checksum' : 'Not a valid GSTIN',
+      result: valid ? 'match' : 'mismatch',
+      blocking: false,
+      note: valid
+        ? null
+        : 'The GSTIN fails the format or checksum test: input tax credit is at risk.',
+      path: 'header.vendorGstin',
+    });
+  }
 
   // Invoice.
   cmp(
@@ -459,6 +504,86 @@ export function receiptComparison(
     );
   });
 
+  // The invoice's own arithmetic, whatever the ERP says: a receipt that agrees with a wrongly
+  // calculated invoice must not clear it.
+  for (const l of inv.lines) {
+    if (l.qtyMilli === null || l.unitPricePaise === null || l.taxablePaise === null) continue;
+    const expected = lineTaxableAmount(milliQty(l.qtyMilli), paise(l.unitPricePaise)) as number;
+    push({
+      section: 'Invoice arithmetic',
+      label: `Line ${l.lineNo}: quantity × rate`,
+      invoice: money(l.taxablePaise),
+      erp: `${money(expected)} calculated`,
+      result: expected === l.taxablePaise ? 'match' : 'mismatch',
+      blocking: false,
+      note: expected === l.taxablePaise ? null : 'The line amount is not quantity × rate.',
+      path: `lines[${l.lineNo}].taxablePaise`,
+    });
+  }
+  const lineTaxable = inv.lines.every((l) => l.taxablePaise !== null)
+    ? inv.lines.reduce((s, l) => s + (l.taxablePaise ?? 0), 0)
+    : null;
+  const printedTax = (inv.cgstPaise ?? 0) + (inv.sgstPaise ?? 0) + (inv.igstPaise ?? 0);
+  const unreadRate = inv.lines.find((l) => l.gstRateBp === null || l.gstRateBp === undefined);
+  if ((inv.freightPaise ?? 0) !== 0) {
+    push({
+      section: 'Invoice arithmetic',
+      label: 'GST calculated from the rates',
+      invoice: money(printedTax),
+      erp: null,
+      result: 'not_checked',
+      blocking: false,
+      note: 'Freight is taxed on its own, so the tax is compared with the ERP instead.',
+    });
+  } else if (unreadRate) {
+    push({
+      section: 'Invoice arithmetic',
+      label: 'GST calculated from the rates',
+      invoice: money(printedTax),
+      erp: null,
+      result: 'not_checked',
+      blocking: true,
+      note: 'The GST rate was not read with certainty on every line.',
+      path: `lines[${unreadRate.lineNo}].gstRateBp`,
+    });
+  } else if (lineTaxable !== null) {
+    // Indian invoices compute GST per line or on each rate's total; either rounding is accepted.
+    const supply = (inv.igstPaise ?? 0) > 0 ? 'inter_state' : 'intra_state';
+    const perLine = inv.lines.reduce((s, l) => {
+      const h = computeTax(paise(l.taxablePaise ?? 0), (l.gstRateBp ?? 0) as never, supply);
+      return s + (h.cgstPaise as number) + (h.sgstPaise as number) + (h.igstPaise as number);
+    }, 0);
+    const groups = new Map<number, number>();
+    for (const l of inv.lines)
+      groups.set(l.gstRateBp ?? 0, (groups.get(l.gstRateBp ?? 0) ?? 0) + (l.taxablePaise ?? 0));
+    const perRate = [...groups].reduce((s, [rate, taxable]) => {
+      const h = computeTax(paise(taxable), rate as never, supply);
+      return s + (h.cgstPaise as number) + (h.sgstPaise as number) + (h.igstPaise as number);
+    }, 0);
+    const ok = printedTax === perLine || printedTax === perRate;
+    push({
+      section: 'Invoice arithmetic',
+      label: 'GST calculated from the rates',
+      invoice: money(printedTax),
+      erp: `${money(perRate)} calculated`,
+      result: ok ? 'match' : 'mismatch',
+      blocking: false,
+      note: ok ? null : 'The tax printed is not the GST rate applied to the line amounts.',
+    });
+  }
+  if (lineTaxable !== null && inv.totalPaise !== null) {
+    const expected = lineTaxable + printedTax + (inv.freightPaise ?? 0) + (inv.roundOffPaise ?? 0);
+    push({
+      section: 'Invoice arithmetic',
+      label: 'Lines + tax + round-off = total',
+      invoice: money(inv.totalPaise),
+      erp: `${money(expected)} calculated`,
+      result: expected === inv.totalPaise ? 'match' : 'mismatch',
+      blocking: false,
+      note: expected === inv.totalPaise ? null : 'The invoice total does not add up.',
+    });
+  }
+
   // Charges and totals.
   const sum = (k: 'freightPaise' | 'cgstPaise' | 'sgstPaise' | 'igstPaise' | 'amountPaise') =>
     erp.lines.reduce((s, l) => s + (l[k] ?? 0), 0);
@@ -532,6 +657,8 @@ export function receiptComparison(
     : blocking.length
       ? 'incomplete'
       : 'cleared';
+  const matchedCount = rows.filter((r) => r.result === 'match').length;
+  const notCompared = rows.filter((r) => r.result === 'not_checked').length;
   const describe = (r: Row) =>
     `${r.section} – ${r.label}: invoice ${r.invoice ?? 'not read'}, ERP ${r.erp ?? 'none'}`;
   const comparison: ApiComparison = {
@@ -539,7 +666,9 @@ export function receiptComparison(
     verdict,
     headline:
       verdict === 'cleared'
-        ? `Cleared: every value matches ERP receipt GRN ${erp.grnNo}`
+        ? notCompared > 0
+          ? `Cleared: ${matchedCount} values match ERP receipt GRN ${erp.grnNo}`
+          : `Cleared: every value matches ERP receipt GRN ${erp.grnNo}`
         : verdict === 'mismatch'
           ? `${mismatches.length} value${mismatches.length === 1 ? ' does' : 's do'} not match ERP receipt GRN ${erp.grnNo}`
           : `Not cleared yet: ${blocking.length} value${blocking.length === 1 ? '' : 's'} could not be compared`,
@@ -547,7 +676,7 @@ export function receiptComparison(
       verdict === 'mismatch'
         ? `Does not match ERP receipt GRN ${erp.grnNo}. ${listed(mismatches.map(describe))}.`
         : verdict === 'cleared'
-          ? `Every value read on the invoice matches ERP receipt GRN ${erp.grnNo}; total ${money(inv.totalPaise)}.`
+          ? `${notCompared > 0 ? `${matchedCount} values match ERP receipt GRN ${erp.grnNo} and the invoice's own checks; ${notCompared} not held by the ERP were not compared (${listed(rows.filter((r) => r.result === 'not_checked').map((r) => r.label))})` : `Every value read on the invoice matches ERP receipt GRN ${erp.grnNo}`}; total ${money(inv.totalPaise)}.`
           : `To compare: ${blocking.map((r) => `${r.section} – ${r.label}`).join('; ')}.`,
     matched: rows.filter((r) => r.result === 'match').length,
     mismatched: mismatches.length,

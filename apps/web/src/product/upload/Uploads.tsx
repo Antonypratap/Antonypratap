@@ -49,9 +49,9 @@ export function useUploads(): Uploads {
 const RECENT = 6;
 
 /**
- * An ERP goods-receipt export dropped or chosen with the invoices: imported as ERP records, then
- * the invoice attached to each record is added and checked against it (the same as Import and
- * export → Check attached invoice). The same file twice changes nothing.
+ * An ERP goods-receipt export dropped or chosen with the invoices: imported as ERP records only.
+ * Uploaded invoices are checked against their record, whichever came first. The same file twice
+ * changes nothing.
  */
 async function importReceiptFile(file: File): Promise<Partial<UploadItem>> {
   if (!allowed('imports.manage'))
@@ -68,26 +68,18 @@ async function importReceiptFile(file: File): Promise<Partial<UploadItem>> {
       message: e instanceof ApiError ? e.message : 'The ERP receipt file could not be imported.',
     };
   }
+  // The ERP export only adds ERP records: invoices are the ones you upload, each matched to its
+  // record by number and supplier. An invoice attached inside the export is never added on its
+  // own (it would block uploading the actual invoice); it stays available under ERP.
   const grns = result.records.map((r) => r.grnNo).join(', ');
-  const note = `ERP receipt${result.records.length === 1 ? '' : 's'} GRN ${grns} · `;
-  let invoiceId: string | undefined;
-  let problem: string | null = null;
-  for (const r of result.records.filter((x) => x.hasAttachment)) {
-    try {
-      invoiceId ??= (await api.receipts.checkAttached(r.id)).invoiceId;
-    } catch (e) {
-      // Already in Veyrafy: link to it rather than calling it a failure.
-      const existing = e instanceof ApiError ? e.details.invoiceId : undefined;
-      if (typeof existing === 'string') invoiceId ??= existing;
-      else problem = e instanceof ApiError ? e.message : 'The attached invoice could not be added.';
-    }
-  }
-  if (invoiceId) return { state: 'added', invoiceId, note };
-  if (problem) return { state: 'refused', message: `${note}${problem}` };
-  return {
-    state: 'added',
-    note: `${note}imported (no invoice attached: upload the invoice to check it).`,
-  };
+  const attached = result.records.some((r) => r.hasAttachment);
+  const rechecked = result.rechecked;
+  const note = `ERP receipt${result.records.length === 1 ? '' : 's'} GRN ${grns} imported. ${
+    rechecked > 0
+      ? `${rechecked === 1 ? '1 invoice' : `${rechecked} invoices`} already here checked against ${result.records.length === 1 ? 'it' : 'them'}.`
+      : `Upload the invoice to check it${attached ? ', or use the copy attached in ERP › Goods receipts' : ''}.`
+  }`;
+  return { state: 'added', note };
 }
 let counter = 0;
 

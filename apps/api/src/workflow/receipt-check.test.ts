@@ -157,6 +157,25 @@ const detail = async (id: string) =>
   (
     await app.server.inject({ method: 'GET', url: `/api/v1/invoices/${id}` })
   ).json<ApiInvoiceDetail>();
+/** Uploads an invoice file (synthetic; the fake AI reading above is what it "says"). */
+async function upload(name: string): Promise<string> {
+  const boundary = '----veyra-receipt-test';
+  const payload = Buffer.concat([
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${name}"\r\nContent-Type: application/pdf\r\n\r\n`,
+    ),
+    readFileSync(new URL(name, DOCS)),
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+  const res = await app.server.inject({
+    method: 'POST',
+    url: '/api/v1/documents',
+    payload,
+    headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+  });
+  expect(res.statusCode, res.body).toBe(201);
+  return res.json<{ invoiceId: string }>().invoiceId;
+}
 const row = (inv: ApiInvoiceDetail, label: string) =>
   inv.comparison?.rows.find((r) => r.label === label);
 
@@ -181,11 +200,15 @@ describe('the receipt check: invoices against the ERP’s own goods-receipt reco
     // Cleared without asking to create a supplier, item or order: the ERP record is the reference.
     expect(inv.state).toBe('VERIFIED_PENDING_PAYMENT');
     expect(inv.questions).toEqual([]);
-    expect(inv.comparison).toMatchObject({
-      verdict: 'cleared',
-      mismatched: 0,
-      headline: 'Cleared: every value matches ERP receipt GRN 501',
-    });
+    // Honest: what the ERP record does not hold (here its GSTIN) is not called a match.
+    expect(inv.comparison).toMatchObject({ verdict: 'cleared', mismatched: 0 });
+    expect(inv.comparison?.headline).toMatch(/^Cleared: \d+ values match ERP receipt GRN 501$/);
+    expect(inv.comparison?.summary).toMatch(/not held by the ERP were not compared \(GSTIN/);
+    // The invoice's own checks ran too: the GSTIN itself, the line, the tax and the total.
+    expect(row(inv, 'GSTIN valid')).toMatchObject({ result: 'match' });
+    expect(row(inv, 'GST calculated from the rates')).toMatchObject({ result: 'match' });
+    expect(row(inv, 'Lines + tax + round-off = total')).toMatchObject({ result: 'match' });
+    expect(row(inv, 'Not already in Veyrafy')).toMatchObject({ result: 'match' });
     expect(row(inv, 'Matched ERP record')).toMatchObject({ erp: 'GRN 501 of 28 Sep 2026' });
     expect(row(inv, 'Item')).toMatchObject({ result: 'match' });
     expect(row(inv, 'CGST')).toMatchObject({
@@ -229,15 +252,12 @@ describe('the receipt check: invoices against the ERP’s own goods-receipt reco
     await importExport(erpExport({ rate: '18.00', pdf: 'B03-ambiguous-supplier.pdf' }));
     const inv = await checkAttached();
     expect(inv.state).toBe('NEEDS_INPUT');
-    await importExport(
+    // Importing the corrected record checks the waiting invoice again by itself.
+    const fixed = await importExport(
       { ...erpExport(), data: erpExport().data.map((d) => ({ ...d, images: [] })) },
       'grn-501-fixed.json',
     );
-    const res = await app.server.inject({
-      method: 'POST',
-      url: `/api/v1/invoices/${inv.id}/recheck`,
-    });
-    expect(res.statusCode, res.body).toBe(200);
+    expect(fixed.json()).toMatchObject({ imported: 1, rechecked: 1 });
     await app.runner.drain();
     const after = await detail(inv.id);
     expect(after.state).toBe('VERIFIED_PENDING_PAYMENT');
@@ -351,6 +371,94 @@ describe('the receipt check: invoices against the ERP’s own goods-receipt reco
       await app.server.inject({ method: 'GET', url: '/api/v1/erp/receipt-records' })
     ).json<unknown[]>();
     expect(list).toHaveLength(2);
+  });
+
+  it('the invoice uploaded first, the ERP export after: the invoice is checked against it', async () => {
+    const up = await upload('B04-quantity-mismatch.pdf');
+    await app.runner.drain();
+    expect((await detail(up)).state).toBe('NEEDS_INPUT'); // no ERP record yet
+    const res = await importExport(
+      { ...erpExport(), data: erpExport().data.map((d) => ({ ...d, images: [] })) },
+      'grn-501.json',
+    );
+    expect(res.json()).toMatchObject({ imported: 1, rechecked: 1 });
+    await app.runner.drain();
+    const inv = await detail(up);
+    expect(inv.state).toBe('VERIFIED_PENDING_PAYMENT');
+    expect(inv.comparison?.verdict).toBe('cleared');
+  });
+
+  it('importing the ERP export never adds an invoice by itself', async () => {
+    await importExport(erpExport()); // it carries the invoice PDF inside
+    const inbox = (await app.server.inject({ method: 'GET', url: '/api/v1/invoices' })).json<{
+      invoices: unknown[];
+    }>();
+    expect(inbox.invoices).toEqual([]);
+  });
+
+  it('a second copy of an invoice already cleared is not cleared again: possible duplicate', async () => {
+    await importExport(erpExport());
+    const first = await checkAttached();
+    expect(first.state).toBe('VERIFIED_PENDING_PAYMENT');
+    // The same invoice uploaded again as another file (a second scan): same number, same supplier.
+    const again = await upload('B05-rate-mismatch.pdf');
+    await app.runner.drain();
+    const inv = await detail(again);
+    expect(inv.state).toBe('NEEDS_INPUT');
+    expect(row(inv, 'Not already in Veyrafy')).toMatchObject({
+      result: 'mismatch',
+      erp: 'Also in Veyrafy: KL-101.pdf',
+    });
+    expect(inv.finding).toMatchObject({
+      type: 'duplicate',
+      label: 'Possible duplicate',
+      action: 'Resolve duplicate',
+      impact: '₹43,660.00 could be paid twice',
+    });
+  });
+
+  it('an invalid supplier GSTIN is never cleared, even when everything matches the ERP', async () => {
+    reading = {
+      ...invoiceReading(),
+      header: { ...invoiceReading().header, vendorGstin: p('29AABCM2468K1Z5') },
+    };
+    await importExport(erpExport());
+    const inv = await checkAttached();
+    expect(inv.state).toBe('NEEDS_INPUT');
+    expect(row(inv, 'GSTIN valid')).toMatchObject({ result: 'mismatch', erp: 'Not a valid GSTIN' });
+    expect(inv.finding).toMatchObject({
+      label: 'Invalid supplier GSTIN',
+      action: 'Check supplier',
+    });
+  });
+
+  it('tax that is wrong on the invoice and in the ERP alike is caught by the invoice’s own arithmetic', async () => {
+    // 18% of ₹37,000 is ₹6,660 (₹3,330 each head); both sides say ₹3,400 each.
+    reading = invoiceReading('18.50', '37,000.00', '3,400.00', '43,800.00');
+    const base = erpExport();
+    const wrong = {
+      ...base,
+      data: base.data.map((d) => ({
+        ...d,
+        items: d.items.map((it) => ({
+          ...it,
+          other_charges: [
+            { code: 'GTC0000001', value: '3400.00' },
+            { code: 'GTC0000002', value: '3400.00' },
+          ],
+        })),
+      })),
+    };
+    await importExport(wrong);
+    const inv = await checkAttached();
+    expect(row(inv, 'CGST')).toMatchObject({ result: 'match' }); // the ERP agrees…
+    expect(row(inv, 'GST calculated from the rates')).toMatchObject({
+      result: 'mismatch',
+      invoice: '₹6,800.00',
+      erp: '₹6,660.00 calculated',
+    });
+    expect(inv.state).toBe('NEEDS_INPUT'); // …but the invoice is not cleared
+    expect(inv.finding).toMatchObject({ label: "Tax doesn't add up" });
   });
 
   it('a file that is not an ERP goods-receipt export is refused, saying why', async () => {

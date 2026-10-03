@@ -222,6 +222,7 @@ export const api = {
               }),
             )
             .default([]),
+          rechecked: z.number().default(0),
         }),
         '/erp/receipt-records',
         json({ filename, content }),

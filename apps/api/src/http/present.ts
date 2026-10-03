@@ -20,7 +20,6 @@ import { readField, type StoredField } from '../engine/fields';
 import { dateText, displayValue, fieldLabel, rupees } from '../engine/questions';
 import { storedField, type Veyra } from '../workflow/veyra';
 import { buildComparison } from './comparison';
-import { compareWithReceipt, receiptComparison } from '../workflow/erp-receipts';
 import { buildFinding } from './finding';
 
 type InvoiceRow = typeof t.invoices.$inferSelect;
@@ -196,9 +195,9 @@ export class Presenter {
   ): Promise<ApiInvoiceDetail['comparison']> {
     const [inv] = args;
     if (['UPLOADED', 'EXTRACTING'].includes(inv.state)) return null;
-    const side = await this.v.invoiceSide(inv.id);
-    const record = await this.v.receiptRecordFor(side);
-    return record ? compareWithReceipt(side, record) : this.comparison(...args);
+    // Exactly the comparison the decision was made on (duplicates and own checks included).
+    const view = await this.v.receiptView(inv.id);
+    return view ? view.comparison : this.comparison(...args);
   }
 
   /** The invoice compared with the ERP, value by value (built from the latest check run). */
@@ -491,10 +490,9 @@ export class Presenter {
       .orderBy(asc(t.validationResults.seq));
     let receipt = null;
     if (open.length === 0) {
-      const side = await this.v.invoiceSide(inv.id);
-      const record = await this.v.receiptRecordFor(side);
-      if (record) {
-        const r = receiptComparison(side, record);
+      const r = await this.v.receiptView(inv.id);
+      if (r) {
+        const record = r.record;
         receipt = {
           grnNo: record.grnNo,
           differences: r.differences,

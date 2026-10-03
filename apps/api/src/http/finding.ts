@@ -341,27 +341,73 @@ const RECEIPT_ACTION: Partial<Record<ApiFinding['type'], string>> = {
   item: 'Check item',
 };
 
+/** The invoice's own checks on the receipt path, named as the screen names them. */
+const RECEIPT_OWN: Record<string, { type: ApiFinding['type']; label: string; action: string }> = {
+  'Not already in Veyrafy': {
+    type: 'duplicate',
+    label: 'Possible duplicate',
+    action: 'Resolve duplicate',
+  },
+  'GSTIN valid': { type: 'supplier', label: 'Invalid supplier GSTIN', action: 'Check supplier' },
+  'GST calculated from the rates': {
+    type: 'tax',
+    label: "Tax doesn't add up",
+    action: 'Check tax',
+  },
+  'Lines + tax + round-off = total': {
+    type: 'totals',
+    label: "Totals don't add up",
+    action: 'Check totals',
+  },
+};
+
 function fromReceipt(input: FindingInput, r: ReceiptDifferences): ApiFinding | null {
-  // The value behind the difference (a line or a supplier value) before the totals it moves.
+  // Most serious first: a duplicate, an invalid GSTIN, then the value behind a difference (a
+  // line or supplier value) before the totals it moves, then the invoice's own arithmetic.
   const first =
-    r.differences.find((d) => d.section !== 'Totals' && d.label !== 'Amount') ?? r.differences[0];
+    r.differences.find((d) => d.label === 'Not already in Veyrafy') ??
+    r.differences.find((d) => d.label === 'GSTIN valid') ??
+    r.differences.find(
+      (d) => d.section !== 'Totals' && d.section !== 'Invoice arithmetic' && d.label !== 'Amount',
+    ) ??
+    r.differences[0];
   if (!first) return null;
-  const type = RECEIPT_TYPE[first.label] ?? 'totals';
+  const own =
+    RECEIPT_OWN[first.label] ??
+    (first.section === 'Invoice arithmetic'
+      ? { type: 'totals' as const, label: "Line amount doesn't add up", action: 'Check line' }
+      : null);
+  const type = own?.type ?? RECEIPT_TYPE[first.label] ?? 'totals';
   const delta = r.totalDeltaPaise;
   const others = r.differences.length - 1;
   return {
     type,
     state: 'review',
     label:
-      type === 'totals'
+      own?.label ??
+      (type === 'totals'
         ? `${first.label} difference`
-        : `${type[0]?.toUpperCase()}${type.slice(1)} difference`,
-    action: RECEIPT_ACTION[type] ?? 'Check totals',
-    impactPaise: delta,
-    impact: impactText(delta, `ERP receipt GRN ${r.grnNo}`),
-    explanation: `${first.section}: the invoice says ${first.invoice ?? 'nothing'}, your ERP receipt GRN ${r.grnNo} says ${first.erp ?? 'nothing'}.`,
+        : `${type[0]?.toUpperCase()}${type.slice(1)} difference`),
+    action: own?.action ?? RECEIPT_ACTION[type] ?? 'Check totals',
+    impactPaise: type === 'duplicate' ? input.totalPaise : delta,
+    impact:
+      type === 'duplicate'
+        ? input.totalPaise === null
+          ? 'May be paid twice'
+          : `${rupees(input.totalPaise)} could be paid twice`
+        : impactText(delta, `ERP receipt GRN ${r.grnNo}`),
+    explanation: own
+      ? `${first.label === 'Not already in Veyrafy' ? `${first.erp ?? 'Another copy is in Veyrafy'}.` : `The invoice says ${first.invoice ?? 'nothing'}; ${first.erp ?? ''}.`}`
+      : `${first.section}: the invoice says ${first.invoice ?? 'nothing'}, your ERP receipt GRN ${r.grnNo} says ${first.erp ?? 'nothing'}.`,
     compare: [
-      { label: `ERP receipt GRN ${r.grnNo}`, value: first.erp ?? 'Not in the receipt' },
+      {
+        label: own
+          ? first.section === 'Invoice arithmetic'
+            ? 'Calculated'
+            : 'Veyrafy found'
+          : `ERP receipt GRN ${r.grnNo}`,
+        value: first.erp ?? 'Not in the receipt',
+      },
       { label: 'Invoice', value: first.invoice ?? 'Not on the invoice', tone: 'attention' },
     ],
     difference: null,

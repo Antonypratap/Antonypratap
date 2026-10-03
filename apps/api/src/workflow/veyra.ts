@@ -51,6 +51,7 @@ import {
   invoiceNoKey,
   normalizeReceipt,
   pickRecord,
+  sameName,
   toPaise,
   type InvoiceSide,
   type ReceiptRecord,
@@ -1713,6 +1714,8 @@ export class Veyra {
     imported: number;
     /** Every record in the file (new, or the identical one already imported), for checking. */
     records: { id: string; grnNo: string; hasAttachment: boolean; alreadyImported: boolean }[];
+    /** Invoices already uploaded and waiting, now checked again against a new record. */
+    rechecked: number;
   }> {
     await this.requireActor(userId, 'imports.manage');
     const parsed = ReceiptFileSchema.safeParse(json);
@@ -1789,7 +1792,47 @@ export class Veyra {
         records: records.filter((r) => !r.alreadyImported).length,
       });
     });
-    return { imported: records.filter((r) => !r.alreadyImported).length, records };
+    const rechecked = await this.recheckWaitingFor(
+      records.filter((r) => !r.alreadyImported).map((r) => r.id),
+    );
+    return { imported: records.filter((r) => !r.alreadyImported).length, records, rechecked };
+  }
+
+  /**
+   * Invoices already uploaded and waiting for a person, whose supplier invoice number (and name)
+   * matches a newly imported ERP receipt record, are checked again against that record. The
+   * invoices are uploaded first and the ERP export after, or the other way round: the result is
+   * the same.
+   */
+  private async recheckWaitingFor(recordIds: readonly string[]): Promise<number> {
+    if (recordIds.length === 0) return 0;
+    const imported = await this.db
+      .select({ key: t.erpReceiptRecords.invoiceNoKey, vendor: t.erpReceiptRecords.vendorName })
+      .from(t.erpReceiptRecords)
+      .where(inArray(t.erpReceiptRecords.id, [...recordIds]));
+    const waiting = await this.db
+      .select({ id: t.invoices.id })
+      .from(t.invoices)
+      .where(eq(t.invoices.state, 'NEEDS_INPUT'));
+    let n = 0;
+    for (const { id } of waiting) {
+      const side = await this.invoiceSide(id);
+      if (!side.invoiceNumber) continue;
+      const key = invoiceNoKey(side.invoiceNumber);
+      if (
+        !imported.some(
+          (r) => r.key === key && (side.vendorName === null || sameName(r.vendor, side.vendorName)),
+        )
+      )
+        continue;
+      await this.db.transaction(async (tx) => {
+        await this.transition(tx, id, 'NEEDS_INPUT', 'MATCHING', { type: 'system' });
+        await this.enqueue(tx, id, 'pipeline');
+      });
+      n++;
+    }
+    if (n) this.onEnqueue();
+    return n;
   }
 
   async listReceipts() {
@@ -1880,8 +1923,59 @@ export class Veyra {
         qtyMilli: v<number>(`lines[${lineNo}].qtyMilli`),
         unitPricePaise: v<number>(`lines[${lineNo}].unitPricePaise`),
         taxablePaise: v<number>(`lines[${lineNo}].taxablePaise`),
+        gstRateBp: v<number>(`lines[${lineNo}].gstRateBp`),
       })),
     };
+  }
+
+  /**
+   * Other invoices in Veyrafy with this supplier's invoice number (same number, same supplier
+   * name; rejected ones excluded): a second copy must never be cleared as if it were new.
+   */
+  async receiptDuplicates(invoiceId: string, side: InvoiceSide): Promise<string[]> {
+    if (!side.invoiceNumber) return [];
+    const key = invoiceNoKey(side.invoiceNumber);
+    const rows = await this.db
+      .select({
+        id: t.invoices.id,
+        state: t.invoices.state,
+        path: t.extractedFields.path,
+        value: t.extractedFields.valueJson,
+        filename: t.documents.filename,
+      })
+      .from(t.invoices)
+      .innerJoin(t.extractedFields, eq(t.extractedFields.invoiceId, t.invoices.id))
+      .innerJoin(t.documents, eq(t.documents.id, t.invoices.documentId))
+      .where(inArray(t.extractedFields.path, ['header.invoiceNumber', 'header.vendorName']));
+    const by = new Map<string, { state: string; number?: string; vendor?: string; file: string }>();
+    for (const r of rows) {
+      if (r.id === invoiceId) continue;
+      const e = by.get(r.id) ?? { state: r.state, file: r.filename };
+      const v = JSON.parse(r.value) as unknown;
+      if (typeof v === 'string') {
+        if (r.path === 'header.invoiceNumber') e.number = v;
+        else e.vendor = v;
+      }
+      by.set(r.id, e);
+    }
+    return [...by.values()]
+      .filter(
+        (e) =>
+          e.state !== 'REJECTED' &&
+          e.number !== undefined &&
+          invoiceNoKey(e.number) === key &&
+          (side.vendorName === null || !e.vendor || sameName(e.vendor, side.vendorName)),
+      )
+      .map((e) => e.file);
+  }
+
+  /** The receipt comparison for an invoice, exactly as it is decided and shown. */
+  async receiptView(invoiceId: string) {
+    const side = await this.invoiceSide(invoiceId);
+    const record = await this.receiptRecordFor(side);
+    if (!record) return null;
+    const duplicates = await this.receiptDuplicates(invoiceId, side);
+    return { side, record, ...receiptComparison(side, record, { duplicates }) };
   }
 
   /** The ERP receipt record this invoice belongs to, if the ERP exported one. */
@@ -1905,10 +1999,9 @@ export class Veyra {
    * ERP); any difference, or a value not read with certainty, waits for a person.
    */
   private async receiptCheck(invoiceId: string): Promise<boolean> {
-    const side = await this.invoiceSide(invoiceId);
-    const record = await this.receiptRecordFor(side);
-    if (!record) return false;
-    const { comparison: c, unread } = receiptComparison(side, record);
+    const view = await this.receiptView(invoiceId);
+    if (!view) return false;
+    const { record, comparison: c, unread } = view;
     // A value not read with certainty is asked, exactly as on the ERP-checks path (RULES §5).
     const fields = await this.loadFields(this.db, invoiceId);
     const min = (await this.settings()).confidenceMinBp;
