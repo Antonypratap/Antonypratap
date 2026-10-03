@@ -4,8 +4,8 @@
  * file (vite.config.ts), so they can never say different things. Every statement here must be
  * true of the product today: no claim Veyrafy cannot back.
  *
- * Audience: finance controllers, CFOs and accounts payable teams at Indian businesses that buy
- * against purchase orders (manufacturers, distributors, breweries, retailers).
+ * Audience: owners, finance controllers and accounts teams at Indian breweries, brewpubs and
+ * restaurant groups (and other businesses that buy against orders and record what arrives).
  */
 export const SITE_URL = 'https://veyrafy.com/';
 
@@ -28,7 +28,8 @@ export const SEO = {
     'GSTR-2B reconciliation',
     'MSME payment 43B(h)',
     'vendor invoice automation',
-    'finance automation for manufacturers',
+    'brewery invoice management',
+    'restaurant supplier invoice checking',
   ],
   shareTitle: 'Veyrafy · Every invoice checked before you pay',
   shareDescription:
@@ -43,7 +44,7 @@ export const FAQ: readonly { q: string; a: string }[] = [
   },
   {
     q: 'Who is Veyrafy for?',
-    a: 'Finance and accounts payable teams at Indian businesses that buy against purchase orders: manufacturers, distributors, breweries, retailers and their finance controllers and CFOs.',
+    a: 'Breweries, brewpubs and restaurant groups in India, and any business that orders from suppliers and records what arrives: their owners, finance controllers and accounts teams.',
   },
   {
     q: 'What is three-way matching?',
@@ -77,9 +78,9 @@ export const FAQ: readonly { q: string; a: string }[] = [
 
 /** The homepage as plain HTML, for crawlers that do not run JavaScript (same words as the page). */
 export const CRAWLABLE_SUMMARY = {
-  kicker: 'Accounts payable for Indian businesses',
+  kicker: 'For breweries, brewpubs and restaurants',
   h1: 'Every invoice checked before you pay.',
-  lede: 'Veyrafy reads each supplier invoice, matches it to the purchase order, the goods receipt and GST, then records it in your ERP. Your team only sees the decisions.',
+  lede: 'Short deliveries billed in full. Rates above what you agreed. The same bill twice. Veyrafy checks every supplier bill against your order, what actually arrived and GST, and shows your team only the ones that are wrong.',
   points: [
     'Reads PDFs, scans and phone photos of supplier invoices',
     'Validates GSTIN, CGST, SGST and IGST, HSN and SAC codes',

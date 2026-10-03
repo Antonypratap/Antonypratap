@@ -12,7 +12,7 @@ const TILES = Array.from({ length: RECEIVED }, (_, i) => ({ i, needsYou: NEED_YO
 export function Showcase() {
   const [ref, inView] = useInView<HTMLDivElement>({ threshold: 0.35 });
   // 1: invoices are worked through; 2: the handled ones fall away, the 11 remain.
-  const phase = useSequence(2, 1900, inView, 300, 4000);
+  const phase = useSequence(2, 2600, inView, 400, 6000);
 
   return (
     <section id="product" className={styles.section} aria-labelledby="showcase-title">
@@ -62,29 +62,29 @@ export function Showcase() {
           >
             <div className={styles.cardHead}>
               <div>
-                <p className={styles.cardId}>Invoice #4821</p>
-                <p className={styles.cardVendor}>Brightwater Supplies</p>
+                <p className={styles.cardId}>Prawns · CCS-2291</p>
+                <p className={styles.cardVendor}>Coastal Catch Seafoods</p>
               </div>
               <StatusPill status="attention">Needs you</StatusPill>
             </div>
             <dl className={styles.compare}>
               <div>
-                <dt>Invoice quantity</dt>
-                <dd>100</dd>
+                <dt>Billed</dt>
+                <dd>20 kg</dd>
               </div>
               <div>
-                <dt>Received</dt>
-                <dd>90</dd>
+                <dt>Delivered</dt>
+                <dd>18 kg</dd>
               </div>
             </dl>
             <p className={styles.difference}>
               <Icon name="attention" size={16} />
               <span>
-                <strong>10 units</strong> need your attention
+                <strong>₹1,400</strong> billed for prawns that never arrived
               </span>
             </p>
             <div className={styles.cardFoot}>
-              <span className={styles.note}>Everything else on this invoice checks out.</span>
+              <span className={styles.note}>Everything else on this bill checks out.</span>
               <span className={styles.review}>Review</span>
             </div>
           </div>

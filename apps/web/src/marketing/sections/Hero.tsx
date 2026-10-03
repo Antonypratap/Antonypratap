@@ -13,14 +13,15 @@ export function Hero() {
         <div className={styles.copy}>
           <p className={styles.kicker}>
             <span className={styles.dot} aria-hidden="true" />
-            Accounts payable for Indian businesses
+            For breweries, brewpubs and restaurants
           </p>
           <h1 id="hero-title" className={styles.title}>
             Every invoice checked <span className={styles.accent}>before you pay.</span>
           </h1>
           <p className={styles.lede}>
-            Veyrafy reads each supplier invoice, matches it to the purchase order, the goods receipt
-            and GST, then records it in your ERP. Your team only sees the decisions.
+            Short deliveries billed in full. Rates above what you agreed. The same bill twice.
+            Veyrafy checks every supplier bill against your order, what actually arrived and GST,
+            and shows your team only the ones that are wrong.
           </p>
           <div className={styles.ctas}>
             <ButtonLink href={demoEntryHref()} size="lg" arrow>

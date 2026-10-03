@@ -72,9 +72,9 @@
   background: var(--color-surface-sunken);
   box-shadow: inset 0 0 0 1px var(--color-line-strong);
   transition:
-    background-color 360ms var(--ease-out) var(--d),
-    box-shadow 360ms var(--ease-out) var(--d),
-    opacity 900ms var(--ease-out) calc(var(--d) / 2);
+    background-color 900ms var(--ease-in-out) var(--d),
+    box-shadow 900ms var(--ease-in-out) var(--d),
+    opacity 1400ms var(--ease-in-out) calc(var(--d) / 2);
 }
 .field:not([data-phase='0']) .tile {
   background: var(--color-accent);

@@ -4,10 +4,10 @@ import styles from './Outcomes.module.css';
 
 function LessWork({ on }: { on: boolean }) {
   const work = [
-    'Keying in invoice details',
-    'Checking every total',
-    'Finding the matching order',
-    'Chasing sign-offs',
+    'Typing bills into the books',
+    'Checking every rate and total',
+    'Matching bills to deliveries',
+    'Chasing the kitchen for sign-offs',
   ];
   return (
     <ul className={styles.work}>
@@ -23,7 +23,7 @@ function LessWork({ on }: { on: boolean }) {
 }
 
 function Attention({ on }: { on: boolean }) {
-  const handled = ['Kestrel Packaging', 'Northline Logistics', 'Sable Office Co.'];
+  const handled = ['Fresh Fields Produce', 'Malabar Malt House', 'Southern Gas Co.'];
   return (
     <div className={styles.queue} data-on={on}>
       {handled.map((h) => (
@@ -34,10 +34,10 @@ function Attention({ on }: { on: boolean }) {
       ))}
       <div className={styles.loud}>
         <span>
-          <strong>Invoice #4821</strong>
-          <span className={styles.loudSub}>Brightwater Supplies</span>
+          <strong>Prawns · CCS-2291</strong>
+          <span className={styles.loudSub}>Coastal Catch Seafoods</span>
         </span>
-        <StatusPill status="attention">10 units short</StatusPill>
+        <StatusPill status="attention">2 kg short</StatusPill>
       </div>
     </div>
   );
@@ -46,10 +46,10 @@ function Attention({ on }: { on: boolean }) {
 function Control() {
   return (
     <div className={styles.control}>
-      <p className={styles.controlQuestion}>Accept 90 units instead of 100?</p>
+      <p className={styles.controlQuestion}>20 kg billed, 18 kg delivered. What now?</p>
       <div className={styles.controlActions}>
-        <span className={styles.accept}>Accept 90 units</span>
-        <span className={styles.ask}>Hold for review</span>
+        <span className={styles.accept}>Reject: 2 kg short</span>
+        <span className={styles.ask}>Record 2 kg more received</span>
       </div>
       <p className={styles.controlNote}>Veyrafy waits for your answer.</p>
     </div>

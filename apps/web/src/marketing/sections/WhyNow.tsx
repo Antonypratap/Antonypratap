@@ -24,7 +24,7 @@ const RISKS: { icon: keyof typeof ICONS; title: string; body: string; answer: st
   {
     icon: 'copy',
     title: 'Paying twice, or paying for more',
-    body: 'The same invoice sent twice. More billed than arrived. A rate higher than the order. They get paid when nobody has time to compare.',
+    body: 'The same bill sent twice. 20 kg billed when 18 kg arrived. A rate above what you agreed. They get paid when nobody has time to compare.',
     answer: 'compares every invoice with the order and the goods receipt, and stops duplicates.',
   },
 ];
@@ -41,8 +41,8 @@ export function WhyNow() {
             </h2>
           </div>
           <p className={styles.lede}>
-            Every month, the same three things get past a busy finance team. None of them is visible
-            until it is too late to fix cheaply.
+            Every month, the same three things get past a busy accounts desk at a brewery or
+            restaurant. None of them is visible until it is too late to fix cheaply.
           </p>
         </div>
         <div className={styles.grid}>
