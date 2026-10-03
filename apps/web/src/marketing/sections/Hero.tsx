@@ -1,6 +1,5 @@
 import { ButtonLink, Container, Icon } from '../../design-system';
 import { demoEntryHref } from '../../access/demoAccess';
-import { CONTACT_PHONE_HREF } from '../../site/host';
 import { InvoiceStory } from '../visuals/InvoiceStory';
 import styles from './Hero.module.css';
 
@@ -13,22 +12,23 @@ export function Hero() {
         <div className={styles.copy}>
           <p className={styles.kicker}>
             <span className={styles.dot} aria-hidden="true" />
-            For breweries, brewpubs and restaurants
+            Invoice verification before payment
           </p>
           <h1 id="hero-title" className={styles.title}>
-            Every invoice checked <span className={styles.accent}>before you pay.</span>
+            Check every invoice against your accounting records{' '}
+            <span className={styles.accent}>before you pay.</span>
           </h1>
           <p className={styles.lede}>
-            Short deliveries billed in full. Rates above what you agreed. The same bill twice.
-            Veyrafy checks every supplier bill against your order, what actually arrived and GST,
-            and shows your team only the ones that are wrong.
+            Veyrafy reads each supplier invoice, checks it against your accounting and purchasing
+            records (the order, the goods received, the agreed rates and GST) and puts every
+            difference in front of your team before it becomes a payment problem.
           </p>
           <div className={styles.ctas}>
             <ButtonLink href={demoEntryHref()} size="lg" arrow>
-              See Veyrafy in action
+              Check an invoice
             </ButtonLink>
-            <ButtonLink href={CONTACT_PHONE_HREF} size="lg" variant="secondary">
-              Book a walkthrough
+            <ButtonLink href="#how-veyrafy-checks" size="lg" variant="secondary">
+              See how it works
             </ButtonLink>
           </div>
           <ul className={styles.principles}>

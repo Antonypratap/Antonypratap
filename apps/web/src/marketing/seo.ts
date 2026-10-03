@@ -10,9 +10,9 @@
 export const SITE_URL = 'https://veyrafy.com/';
 
 export const SEO = {
-  title: 'Veyrafy · Accounts Payable Automation for Indian Businesses | GST Invoice Verification',
+  title: 'Veyrafy · Invoice verification against your accounting records, before payment',
   description:
-    'Veyrafy automates accounts payable for Indian finance teams: it reads supplier invoices (PDF, scan or photo), checks GSTIN and GST, matches each invoice to the purchase order and goods receipt, catches duplicates and records verified invoices in your ERP. Your team only handles the exceptions.',
+    'Veyrafy checks every supplier invoice against your accounting/ERP and purchasing records before it is approved for payment: the purchase order, the goods received, agreed rates, GST and duplicates. Differences are put in front of your team to resolve; Veyrafy never pays anything.',
   keywords: [
     'accounts payable automation India',
     'AP automation',
@@ -31,16 +31,16 @@ export const SEO = {
     'brewery invoice management',
     'restaurant supplier invoice checking',
   ],
-  shareTitle: 'Veyrafy · Every invoice checked before you pay',
+  shareTitle: 'Veyrafy · Check every invoice against your accounting records before you pay',
   shareDescription:
-    'Accounts payable automation for Indian businesses. Veyrafy reads, checks and records supplier invoices against your POs, goods receipts and GST. Your team only sees the decisions.',
+    'Veyrafy checks supplier invoices against your accounting/ERP records, purchase orders and goods receipts, and surfaces every difference before payment.',
 } as const;
 
 /** The homepage's questions, shown on the page and given to search engines as FAQ data. */
 export const FAQ: readonly { q: string; a: string }[] = [
   {
     q: 'What does Veyrafy do?',
-    a: 'Veyrafy automates the routine work of accounts payable. It reads each supplier invoice, checks it against your purchase order, goods receipt and GST rules, and records the verified invoice in your ERP. Your finance team only sees the invoices that need a decision.',
+    a: 'Veyrafy checks each supplier invoice against your accounting/ERP and purchasing records (the purchase order, the goods received, the agreed rates and GST) before it is approved for payment. Invoices that pass every check move on; anything that does not match is put in front of your team to resolve.',
   },
   {
     q: 'Who is Veyrafy for?',
@@ -78,15 +78,16 @@ export const FAQ: readonly { q: string; a: string }[] = [
 
 /** The homepage as plain HTML, for crawlers that do not run JavaScript (same words as the page). */
 export const CRAWLABLE_SUMMARY = {
-  kicker: 'For breweries, brewpubs and restaurants',
-  h1: 'Every invoice checked before you pay.',
-  lede: 'Short deliveries billed in full. Rates above what you agreed. The same bill twice. Veyrafy checks every supplier bill against your order, what actually arrived and GST, and shows your team only the ones that are wrong.',
+  kicker: 'Invoice verification before payment',
+  h1: 'Check every invoice against your accounting records before you pay.',
+  lede: 'Veyrafy reads each supplier invoice, checks it against your accounting and purchasing records (the order, the goods received, the agreed rates and GST) and puts every difference in front of your team before it becomes a payment problem.',
   points: [
-    'Reads PDFs, scans and phone photos of supplier invoices',
+    'Checks every invoice against your accounting/ERP records before payment',
     'Validates GSTIN, CGST, SGST and IGST, HSN and SAC codes',
     'Three-way matching against purchase orders and goods receipts',
     'Catches duplicate invoices, short supplies and rates above the order',
-    'Records verified invoices in your ERP; never pays anything',
+    'Puts every difference in front of your team; never approves or pays anything itself',
+    'Reads PDFs, scans and phone photos of supplier invoices',
     'Every check, question and decision kept in an audit trail',
   ],
 } as const;

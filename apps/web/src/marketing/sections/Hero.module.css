@@ -7,9 +7,9 @@
 
 .grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
   align-items: center;
-  gap: clamp(2.5rem, 1rem + 5vw, 5.5rem);
+  gap: clamp(2.5rem, 1rem + 4vw, 4.5rem);
 }
 
 .copy {
@@ -21,7 +21,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-5);
   padding: 0.4375rem 0.875rem;
   border-radius: 999px;
   border: 1px solid var(--color-line-strong);
@@ -38,10 +38,10 @@
 }
 
 .title {
-  max-width: 13ch;
-  font-size: clamp(2.625rem, 1.4rem + 4.4vw, 4.75rem);
-  line-height: 1;
-  letter-spacing: -0.035em;
+  max-width: 17ch;
+  font-size: clamp(2.25rem, 1.3rem + 2.9vw, 3.75rem);
+  line-height: 1.04;
+  letter-spacing: -0.03em;
   font-weight: 700;
 }
 .accent {
@@ -50,8 +50,8 @@
 
 .lede {
   max-width: 34rem;
-  margin-top: var(--space-6);
-  font-size: clamp(1.0625rem, 0.95rem + 0.45vw, 1.3125rem);
+  margin-top: var(--space-5);
+  font-size: clamp(1.0625rem, 0.95rem + 0.4vw, 1.25rem);
   line-height: 1.55;
   color: var(--color-ink-2);
 }

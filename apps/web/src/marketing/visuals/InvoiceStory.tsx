@@ -62,7 +62,7 @@ export function InvoiceStory() {
                 style={{ transform: `scaleX(${s.checked / (STORY_ROWS.length - 1)})` }}
               />
             </span>
-            <span>Checking against your order and delivery…</span>
+            <span>Checking against your accounting records…</span>
           </div>
 
           <div className={styles.question}>

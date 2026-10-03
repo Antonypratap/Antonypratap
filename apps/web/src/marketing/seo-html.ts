@@ -78,7 +78,7 @@ export function seoHead(): string {
     `<meta property="og:image" content="${image}" />`,
     `<meta property="og:image:width" content="1200" />`,
     `<meta property="og:image:height" content="630" />`,
-    `<meta property="og:image:alt" content="Veyrafy: every invoice checked before you pay" />`,
+    `<meta property="og:image:alt" content="Veyrafy: check every invoice against your accounting records before you pay" />`,
     `<meta name="twitter:card" content="summary_large_image" />`,
     `<meta name="twitter:title" content="${esc(SEO.shareTitle)}" />`,
     `<meta name="twitter:description" content="${esc(SEO.shareDescription)}" />`,

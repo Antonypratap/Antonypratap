@@ -36,7 +36,7 @@ export function SiteFooter() {
               <Logo tone="inverse" />
             </a>
             <p className={styles.tagline}>
-              Every invoice checked before you pay. Accounts payable for Indian businesses.
+              Invoice verification before payment, against your accounting records.
             </p>
             <a href={CONTACT_PHONE_HREF} className={styles.phone}>
               {CONTACT_PHONE}

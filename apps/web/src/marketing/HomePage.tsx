@@ -12,9 +12,13 @@ import { Roadmap } from './sections/Roadmap';
 import { Showcase } from './sections/Showcase';
 import { SiteFooter } from './sections/SiteFooter';
 import { Trust } from './sections/Trust';
+import { Verification } from './sections/Verification';
 import { WhyNow } from './sections/WhyNow';
 
-/** WHY → WHAT → HOW → TRUST → NEXT → QUESTIONS → CTA */
+/**
+ * WHAT it does (hero) → WHAT it checks against (verification) → WHEN something doesn't match
+ * (problem) → WHY before payment (why now) → HOW the exception is handled → TRUST → CTA
+ */
 export function HomePage() {
   return (
     <div className={styles.site}>
@@ -25,8 +29,9 @@ export function HomePage() {
       <main id="main">
         <div id="top" />
         <Hero />
-        <WhyNow />
+        <Verification />
         <Problem />
+        <WhyNow />
         <Outcomes />
         <Showcase />
         <HowItWorks />
