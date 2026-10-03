@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { ExtractionResultSchema, type ExtractionResult } from '@veyra/shared';
 import { ExtractorError, type Extractor, type ExtractorInput } from '../extractor';
 import { decodeImage, encodePng, removeRules } from './image';
+import { rotationNote, uprightGray } from './orientation';
 import { wordsToSegments, type PageText } from './layout';
 import type { OllamaAssist } from './ollama';
 import { TesseractOcr, type OcrEngine } from './ocr';
@@ -110,7 +111,9 @@ export class LocalDocumentExtractor implements Extractor {
       diagnostics.imagePages = read.diagnostics.scanImagePages + read.diagnostics.renderedPages;
       diagnostics.rendered = read.diagnostics.renderedPages > 0;
     } else {
-      const lines = await this.#ocr.recognize(encodePng(removeRules(decodeImage(bytes, mime))));
+      const up = uprightGray(decodeImage(bytes, mime));
+      if (up.rotation) warnings.push(rotationNote(1, up.rotation));
+      const lines = await this.#ocr.recognize(encodePng(removeRules(up.image)));
       pages = [{ page: 1, segments: wordsToSegments(lines, 1) }];
       warnings.push('Read by OCR.');
       diagnostics.imagePages = 1;

@@ -14,6 +14,7 @@ import {
 import { ExtractorError, type Extractor, type ExtractorInput } from '../extractor';
 import { imageSize } from '../local/image';
 import { parseAmount, parseDate } from '../local/parse';
+import { rotationNote, uprightImage, type Rotation } from '../local/orientation';
 
 /**
  * The AI vision reader (Gemini). It reads the original document (PDF pages or a photo) the way a
@@ -403,6 +404,8 @@ interface VisionDocument {
   rendered: boolean;
   /** A photo or image file (not a PDF). */
   image: boolean;
+  /** Pages that were turned upright before being sent. */
+  rotated: { page: number; rotation: Rotation }[];
 }
 
 /**
@@ -416,14 +419,24 @@ async function visionDocument(bytes: Buffer, mime: string): Promise<VisionDocume
     inline_data: { mime_type: m, data: b.toString('base64') },
   });
   if (mime !== 'application/pdf') {
-    const size = imageSize(new Uint8Array(bytes));
+    // A photo is sent upright; its size (for evidence boxes) is the upright image's.
+    let photo = bytes;
+    let size = imageSize(new Uint8Array(bytes));
+    let rotation: Rotation = 0;
+    if (mime === 'image/png' || mime === 'image/jpeg') {
+      const up = await uprightImage(bytes, mime);
+      photo = up.bytes;
+      rotation = up.rotation;
+      size = { width: up.width, height: up.height };
+    }
     return {
-      parts: [inline(mime, bytes)],
-      bytes: bytes.length,
+      parts: [inline(mime, photo)],
+      bytes: photo.length,
       pages: 1,
       sizes: new Map(size ? [[1, size]] : []),
       rendered: false,
       image: true,
+      rotated: rotation ? [{ page: 1, rotation }] : [],
     };
   }
   const { pdfPagesForVision } = await import('../local/pdf');
@@ -437,6 +450,7 @@ async function visionDocument(bytes: Buffer, mime: string): Promise<VisionDocume
       sizes,
       rendered,
       image: false,
+      rotated: [],
     };
   const parts: Part[] = [];
   let total = 0;
@@ -445,7 +459,10 @@ async function visionDocument(bytes: Buffer, mime: string): Promise<VisionDocume
     parts.push({ text: `Page ${p.page} of ${pages.length}:` }, inline('image/jpeg', p.jpeg));
     total += p.jpeg.length;
   }
-  return { parts, bytes: total, pages: pages.length, sizes, rendered, image: false };
+  const rotated = pages
+    .filter((p) => p.rotation)
+    .map((p) => ({ page: p.page, rotation: p.rotation }));
+  return { parts, bytes: total, pages: pages.length, sizes, rendered, image: false, rotated };
 }
 
 class AiHttpError extends Error {
@@ -564,9 +581,13 @@ export class GeminiExtractor implements Extractor {
       ...read,
       // The page count is the document's own, never the model's.
       pages: doc.pages,
-      warnings: doc.rendered
-        ? [...read.warnings, 'The PDF has no readable text layer: every page was read as an image.']
-        : read.warnings,
+      warnings: [
+        ...read.warnings,
+        ...(doc.rendered
+          ? ['The PDF has no readable text layer: every page was read as an image.']
+          : []),
+        ...doc.rotated.map((r) => rotationNote(r.page, r.rotation)),
+      ],
       diagnostics: {
         readers: [this.id],
         textPages: doc.rendered || doc.image ? 0 : doc.pages,

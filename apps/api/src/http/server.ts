@@ -37,7 +37,7 @@ import {
   milliQty,
   paise,
 } from '@veyra/shared';
-import { renderPdfPage } from '@veyra/extractor';
+import { renderPdfPage, uprightImage } from '@veyra/extractor';
 import { stateName } from '@veyra/india-tax';
 import {
   CAPABILITY_LABEL,
@@ -746,7 +746,11 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       mime = 'image/png';
     } else {
       if (page !== 1) throw new VeyraError('NOT_FOUND', 'The document has no such page.');
-      body = bytes;
+      // Shown upright, exactly as it was read (the same check), so evidence boxes line up.
+      body =
+        d.mime === 'image/png' || d.mime === 'image/jpeg'
+          ? (await uprightImage(Buffer.from(bytes), d.mime)).bytes
+          : bytes;
     }
     return reply
       .header('content-type', mime)

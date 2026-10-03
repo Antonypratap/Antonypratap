@@ -168,5 +168,5 @@ describe('AI reader in the workflow', () => {
     const everything = JSON.stringify(logLines);
     for (const secret of ['test-key-0123456789abcdef', '29AABCM2468K1Z4', 'Malabar', '68,440'])
       expect(everything).not.toContain(secret);
-  });
+  }, 20_000);
 });

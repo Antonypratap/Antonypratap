@@ -14,6 +14,7 @@ export {
   type LocalExtractorOptions,
 } from './local/local-extractor';
 export { checkImageSize, imageSize } from './local/image';
+export { detectRotation, uprightImage, type Rotation } from './local/orientation';
 /** Test support: a PDF turned into image strips with no text layer (synthetic fixtures only). */
 export { imageOnlyStripPdf } from './local/image-only-pdf';
 export {

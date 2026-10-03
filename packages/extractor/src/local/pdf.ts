@@ -13,6 +13,7 @@ import {
 import { textRunsToSegments, wordsToSegments, type PageText } from './layout';
 import { LIMITS } from './limits';
 import type { OcrEngine } from './ocr';
+import { rotationNote, uprightCanvas, uprightGray, type Rotation } from './orientation';
 
 interface PdfImage {
   width: number;
@@ -229,8 +230,10 @@ export async function readPdf(
         const coversPage =
           image !== null && Number.isFinite(dpi) && (image.height / dpi) * 72 >= pageHeightPt * 0.9;
         if (image && coversPage) {
+          const up = uprightGray(grayFromPdfImage(image));
+          if (up.rotation) warnings.push(rotationNote(n, up.rotation));
           const lines = await ocr.recognize(
-            encodePng(removeRules(downscale(grayFromPdfImage(image), ocrScaleFactor(dpi)))),
+            encodePng(removeRules(downscale(up.image, ocrScaleFactor(dpi)))),
           );
           const segments = wordsToSegments(lines, n);
           if (segments.length > 0) {
@@ -255,7 +258,9 @@ export async function readPdf(
           kind: 3,
           data: pixels,
         });
-        const lines = await ocr.recognize(encodePng(removeRules(gray)));
+        const up = uprightGray(gray);
+        if (up.rotation) warnings.push(rotationNote(n, up.rotation));
+        const lines = await ocr.recognize(encodePng(removeRules(up.image)));
         pages.push({ page: n, segments: wordsToSegments(lines, n) });
         diagnostics.renderedPages++;
         warnings.push(`Page ${n} has no readable text layer: read as an image by OCR.`);
@@ -283,6 +288,8 @@ export interface VisionPage {
   hasText: boolean;
   /** The whole page as a JPEG, when the document needs to be read visually. */
   jpeg: Buffer | null;
+  /** How far the page was turned to be upright (sizes above are the upright page's). */
+  rotation: Rotation;
 }
 
 /**
@@ -308,7 +315,7 @@ export async function pdfPagesForVision(
       try {
         const { width, height } = page.getViewport({ scale: 1 });
         const { hasText } = await textRunsOf(page, n);
-        pages.push({ page: n, widthPt: width, heightPt: height, hasText, jpeg: null });
+        pages.push({ page: n, widthPt: width, heightPt: height, hasText, jpeg: null, rotation: 0 });
       } finally {
         page.cleanup();
       }
@@ -318,7 +325,11 @@ export async function pdfPagesForVision(
       for (const p of pages) {
         const page = await doc.getPage(p.page);
         try {
-          p.jpeg = (await renderPage(page, dpi)).toBuffer('image/jpeg', 90);
+          const up = await uprightCanvas(await renderPage(page, dpi));
+          p.jpeg = up.canvas.toBuffer('image/jpeg', 90);
+          p.rotation = up.rotation;
+          if (up.rotation === 90 || up.rotation === 270)
+            [p.widthPt, p.heightPt] = [p.heightPt, p.widthPt];
         } finally {
           page.cleanup();
         }
@@ -340,7 +351,9 @@ export async function renderPdfPagePng(
     if (!Number.isInteger(pageNo) || pageNo < 1 || pageNo > doc.numPages) return null;
     const page = await doc.getPage(pageNo);
     try {
-      return { png: (await renderPage(page, dpi)).toBuffer('image/png'), pages: doc.numPages };
+      // Upright, exactly as it was read (the same deterministic check), so evidence lines up.
+      const up = await uprightCanvas(await renderPage(page, dpi));
+      return { png: up.canvas.toBuffer('image/png'), pages: doc.numPages };
     } finally {
       page.cleanup();
     }

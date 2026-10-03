@@ -798,9 +798,13 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
       const aiFallback = ((d.warnings as string[] | undefined) ?? []).find((w) =>
         w.startsWith('The AI reader was '),
       );
+      // A page stored sideways or upside down is turned upright before reading; say so.
+      const turned = ((d.warnings as string[] | undefined) ?? []).filter((w) =>
+        / was turned upright before reading/.test(w),
+      );
       return make(
         'Read invoice',
-        `${how}${String(d.lines)} line${d.lines === 1 ? '' : 's'}, totals and tax${unclear.length ? `. Not clear: ${unclear.map(fieldLabel).join(', ')}` : ''}${aiFallback ? `. ${readerNote(aiFallback)}` : ''}`,
+        `${how}${String(d.lines)} line${d.lines === 1 ? '' : 's'}, totals and tax${unclear.length ? `. Not clear: ${unclear.map(fieldLabel).join(', ')}` : ''}${aiFallback ? `. ${readerNote(aiFallback)}` : ''}${turned.length ? `. ${turned.map((w) => w.replace(/\.$/, '')).join('. ')}` : ''}`,
       );
     }
     case 'field.derived':
