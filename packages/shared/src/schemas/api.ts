@@ -93,6 +93,57 @@ export const ApiQuestionSchema = z.object({
 });
 export type ApiQuestion = z.infer<typeof ApiQuestionSchema>;
 
+/** Where a value sits on the original document: page and box (PDF points, or photo pixels). */
+export const ApiEvidenceSchema = z.object({
+  label: z.string(),
+  value: z.string(),
+  /** On the invoice (with its place on the page when known), or in the ERP's records. */
+  source: z.enum(['invoice', 'erp']),
+  page: int.nullable(),
+  bbox: z.tuple([z.number(), z.number(), z.number(), z.number()]).nullable(),
+});
+export type ApiEvidence = z.infer<typeof ApiEvidenceSchema>;
+
+export const FINDING_TYPES = [
+  'rate',
+  'quantity',
+  'tax',
+  'totals',
+  'duplicate',
+  'supplier',
+  'order',
+  'item',
+  'receipt',
+  'value',
+  'other',
+] as const;
+
+/**
+ * The invoice's exception as a conclusion (decision → explanation → evidence): what kind of
+ * difference it is, what is at stake and why, built only from the invoice's own check results,
+ * questions and ERP comparison. Null when the invoice needs nothing from anyone.
+ */
+export const ApiFindingSchema = z.object({
+  type: z.enum(FINDING_TYPES),
+  /** A difference to review, or a value or match for a person to confirm. */
+  state: z.enum(['review', 'confirm']),
+  label: z.string(),
+  /** The contextual action ("Check rate", "Resolve duplicate"). */
+  action: z.string(),
+  /** Signed amount the difference adds to the invoice (paise); null when no amount follows. */
+  impactPaise: int.nullable(),
+  impact: z.string(),
+  explanation: z.string(),
+  /** The agreed or recorded value first, then the invoice's. */
+  compare: z.array(ApiFactSchema),
+  difference: z.string().nullable(),
+  calculation: z.string().nullable(),
+  evidence: z.array(ApiEvidenceSchema),
+  /** Other open questions on the same invoice after this one. */
+  more: int,
+});
+export type ApiFinding = z.infer<typeof ApiFindingSchema>;
+
 export const ApiInvoiceSummarySchema = z.object({
   id: z.string(),
   documentId: z.string(),
@@ -123,6 +174,8 @@ export const ApiInvoiceSummarySchema = z.object({
   /** Short note on what Veyra did, for finished invoices. */
   note: z.string().nullable(),
   failure: z.object({ stage: z.string(), reason: z.string() }).nullable(),
+  /** The exception, for an invoice that needs attention (inbox and invoice detail only). */
+  finding: ApiFindingSchema.nullable().optional(),
 });
 export type ApiInvoiceSummary = z.infer<typeof ApiInvoiceSummarySchema>;
 

@@ -1,0 +1,171 @@
+.finding {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-panel);
+}
+
+.state {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-label);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.state[data-state='review'] {
+  background: var(--color-attention-soft);
+  box-shadow: inset 0 0 0 1px var(--color-attention-line);
+  color: var(--color-attention);
+}
+.state[data-state='confirm'] {
+  background: var(--color-surface-sunken);
+  box-shadow: inset 0 0 0 1px var(--color-line-strong);
+  color: var(--color-ink-2);
+}
+
+.label {
+  font-size: 1.5rem;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+.impact {
+  font-size: 1.125rem;
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-2);
+}
+.finding[data-state='review'] .impact[data-amount='true'] {
+  color: var(--color-attention);
+}
+.who {
+  font-size: var(--text-small);
+  color: var(--color-ink-3);
+}
+
+/* The comparison: agreed or recorded, then the invoice, then the difference. */
+.compare {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+.side {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-canvas);
+  box-shadow: inset 0 0 0 1px var(--color-line);
+}
+.side[data-side='invoice'] {
+  background: var(--color-attention-soft);
+  box-shadow: inset 0 0 0 1px var(--color-attention-line);
+}
+.side dt {
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-3);
+}
+.side dd {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.side[data-side='invoice'] dd,
+.side[data-side='difference'] dd {
+  color: var(--color-attention);
+}
+.calculation {
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-2);
+}
+.explanation {
+  font-size: var(--text-body);
+  line-height: 1.55;
+  color: var(--color-ink);
+}
+.more {
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-3);
+}
+.actions {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+/* Evidence: crops of the actual upload, and the ERP's values. */
+.evidence {
+  display: grid;
+  gap: var(--space-3);
+}
+.evidenceItem {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px var(--color-line);
+}
+.evidenceLabel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-3);
+}
+.evidenceSource {
+  padding: 0 0.375rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink-2);
+}
+.evidenceItem[data-source='invoice'] .evidenceSource {
+  background: var(--color-attention-soft);
+  color: var(--color-attention);
+}
+.evidenceValue {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+}
+.crop {
+  display: block;
+  width: 100%;
+  max-width: 36rem;
+  max-height: 10rem;
+  border-radius: var(--radius-sm);
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--color-line);
+}
+.mark {
+  fill: rgb(214 140 0 / 0.14);
+  stroke: var(--color-attention);
+  stroke-width: 2;
+}
+.noEvidence {
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-3);
+}
+
+@media (max-width: 640px) {
+  .finding {
+    padding: var(--space-4);
+  }
+  .label {
+    font-size: 1.25rem;
+  }
+}

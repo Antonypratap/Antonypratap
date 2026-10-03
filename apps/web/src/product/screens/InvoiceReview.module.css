@@ -126,7 +126,7 @@
 .stage[data-full='true'] .original {
   width: 200%;
 }
-.page {
+.pageImage {
   display: block;
   width: 100%;
   height: auto;
@@ -763,4 +763,46 @@
 .removeButton:disabled {
   opacity: 0.55;
   cursor: progress;
+}
+
+/* One exception at a time: Previous / Next, and what sits behind disclosure. */
+.stepper {
+  display: inline-flex;
+  gap: var(--space-4);
+}
+.disclose {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+.disclose > summary,
+.originalFold > summary {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  height: 2.25rem;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px var(--color-line-strong);
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+  cursor: pointer;
+  list-style: none;
+}
+.disclose > summary::-webkit-details-marker,
+.originalFold > summary::-webkit-details-marker {
+  display: none;
+}
+.disclose[open] > summary,
+.originalFold[open] > summary {
+  background: var(--color-surface-sunken);
+}
+.originalFold {
+  display: grid;
+  gap: var(--space-4);
+}
+.originalBody {
+  display: grid;
+  gap: var(--space-6);
 }

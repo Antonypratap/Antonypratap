@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Icon, Struck } from '../../design-system';
+import { Icon } from '../../design-system';
+import type { ApiInvoiceSummary } from '@veyra/shared';
 import { AddInvoices } from '../components/AddInvoices';
 import { useDemo } from '../shell/DemoPanel';
 import { greetingFor, inr } from '../format';
@@ -17,16 +18,14 @@ export function Inbox() {
   const [showAll, setShowAll] = useState(false);
   const open = attentionQueue(inbox);
   const invoices = inbox?.invoices ?? [];
-  const counts = inbox?.counts;
-  const needsYou = counts?.needsYou ?? 0;
-  const handledByVeyra = counts?.handled ?? 0;
-  const decidedByYou = counts?.decidedByYou ?? 0;
+  const needsYou = inbox?.counts.needsYou ?? 0;
   const visible = showAll ? open : open.slice(0, INITIAL_VISIBLE);
   const processing = invoices.filter((i) => i.status === 'processing');
-  const decided = invoices
-    .filter((i) => i.decision && i.status !== 'attention')
-    .sort((a, b) => (b.decision?.at ?? '').localeCompare(a.decision?.at ?? ''));
-  const handled = invoices.filter((i) => i.status === 'handled').slice(0, 5);
+  const checked = invoices.filter((i) => i.status !== 'processing');
+  const cleared = invoices.filter((i) => i.status === 'handled' || i.status === 'ready');
+  const rejected = invoices.filter((i) => i.status === 'rejected');
+  const totalValue = checked.reduce((s, i) => s + (i.totalPaise ?? 0), 0);
+  const reviewValue = open.reduce((s, i) => s + (i.totalPaise ?? 0), 0);
 
   const canUpload = useAllowed('documents.upload');
   return (
@@ -48,31 +47,35 @@ export function Inbox() {
 
       {canUpload && <AddInvoices compact={invoices.length > 0} />}
 
-      <section className={styles.week} aria-label="Invoices">
-        <div className={styles.needs} data-zero={needsYou === 0}>
-          <span className={styles.needsNumber}>{needsYou}</span>
-          <span className={styles.needsLabel}>{needsYou === 1 ? 'needs you' : 'need you'}</span>
-        </div>
-        <div className={styles.rest}>
-          <p className={styles.restLine}>
-            <span className={styles.handledNumber}>{handledByVeyra}</span> handled by Veyrafy
-            {decidedByYou > 0 && (
-              <span className={styles.decidedByYou}> · {decidedByYou} decided by you</span>
-            )}
-            <span className={styles.of}>
-              {' '}
-              · {counts?.received ?? 0} invoice{counts?.received === 1 ? '' : 's'} received
-            </span>
-          </p>
-          <div className={styles.bar} aria-hidden="true">
-            <span className={styles.barHandled} style={{ flexGrow: handledByVeyra }} />
-            {decidedByYou > 0 && (
-              <span className={styles.barDecided} style={{ flexGrow: decidedByYou }} />
-            )}
-            {needsYou > 0 && <span className={styles.barNeeds} style={{ flexGrow: needsYou }} />}
-          </div>
-        </div>
-      </section>
+      {checked.length > 0 && (
+        <section className={styles.check} aria-labelledby="check-title">
+          <h2 id="check-title" className={styles.checkTitle}>
+            {processing.length > 0 ? 'Invoice check in progress' : 'Invoice check complete'}
+          </h2>
+          <dl className={styles.stats}>
+            <div className={styles.stat}>
+              <dt>Invoices checked</dt>
+              <dd>{checked.length}</dd>
+            </div>
+            <div className={styles.stat}>
+              <dt>Total value</dt>
+              <dd>{inr(totalValue)}</dd>
+            </div>
+            <div className={styles.stat} data-tone="cleared">
+              <dt>Cleared</dt>
+              <dd>{cleared.length}</dd>
+            </div>
+            <div className={styles.stat} data-tone={open.length ? 'attention' : 'cleared'}>
+              <dt>Need attention</dt>
+              <dd>{open.length}</dd>
+            </div>
+            <div className={styles.stat} data-tone={open.length ? 'attention' : 'cleared'}>
+              <dt>Value needing review</dt>
+              <dd>{inr(reviewValue)}</dd>
+            </div>
+          </dl>
+        </section>
+      )}
 
       <section className={styles.queue} aria-labelledby="queue-title">
         <div className={styles.queueHead}>
@@ -110,35 +113,10 @@ export function Inbox() {
             )}
           </div>
         ) : (
-          <ul className={styles.items}>
+          <ul className={styles.cards}>
             {visible.map((inv) => (
               <li key={inv.id}>
-                <a href={hrefFor({ name: 'invoice', id: inv.id })} className={styles.item}>
-                  <span className={styles.issue}>
-                    <span className={styles.issueTitle}>
-                      {inv.question?.summary ??
-                        (inv.failure ? 'Couldn’t finish' : 'Differs from the ERP record')}
-                    </span>
-                    <span className={styles.evidence}>
-                      {inv.question?.evidence ??
-                        inv.failure?.reason ??
-                        'Open it to see every value next to the ERP’s'}
-                    </span>
-                  </span>
-                  <span className={styles.who}>
-                    <span className={styles.supplier}>{inv.supplierName ?? inv.filename}</span>
-                    <span className={styles.number}>
-                      {inv.number ? `Invoice ${inv.number}` : inv.source}
-                    </span>
-                  </span>
-                  <span className={styles.amount}>
-                    {inv.totalPaise === null ? '' : inr(inv.totalPaise)}
-                  </span>
-                  <span className={styles.review}>
-                    Review
-                    <Icon name="chevronRight" size={14} />
-                  </span>
-                </a>
+                <ExceptionCard inv={inv} />
               </li>
             ))}
           </ul>
@@ -176,60 +154,141 @@ export function Inbox() {
         </section>
       )}
 
-      {decided.length > 0 && (
-        <section className={styles.decided} aria-labelledby="decided-title">
-          <h2 id="decided-title" className={styles.sectionLabel}>
-            Decided by you
-          </h2>
+      {cleared.length > 0 && (
+        <details className={styles.cleared}>
+          <summary className={styles.clearedSummary}>
+            <span className={styles.clearedMark} aria-hidden="true">
+              <Icon name="check" size={13} />
+            </span>
+            <span>
+              {cleared.length} invoice{cleared.length === 1 ? '' : 's'} cleared
+              <span className={styles.clearedQuiet}> · Nothing needs your attention</span>
+            </span>
+            <Icon name="chevronRight" size={14} className={styles.chev} />
+          </summary>
           <ul className={styles.quietList}>
-            {decided.map((inv) => (
-              <li key={inv.id} className={styles.quietRow}>
-                <a href={hrefFor({ name: 'invoice', id: inv.id })} className={styles.quietMain}>
-                  <Struck struck>{inv.decision?.summary}</Struck>
-                  <span className={styles.quietSupplier}>
-                    {inv.supplierName} ·{' '}
-                    {inv.status === 'processing'
-                      ? inv.decision?.result
-                      : (inv.note ?? inv.decision?.result)}
-                  </span>
-                </a>
-                <span className={styles.quietStatus} data-outcome={inv.status}>
-                  {STATUS_LABEL[inv.status]}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {handled.length > 0 && (
-        <section className={styles.handled} aria-labelledby="handled-title">
-          <h2 id="handled-title" className={styles.sectionLabel}>
-            Recently handled
-          </h2>
-          <ul className={styles.quietList}>
-            {handled.map((inv) => (
-              <li key={inv.id} className={styles.quietRow}>
-                <a href={hrefFor({ name: 'invoice', id: inv.id })} className={styles.quietMain}>
-                  <span className={styles.quietNumber}>Invoice {inv.number}</span>
-                  <span className={styles.quietSupplier}>
-                    {inv.supplierName} · {inv.note}
-                  </span>
-                </a>
-                <span className={styles.quietAmount}>
-                  {inv.totalPaise === null ? '' : inr(inv.totalPaise)}
-                </span>
-                <span className={styles.quietStatus} data-outcome="handled">
-                  <Icon name="check" size={13} /> Handled
-                </span>
-              </li>
+            {cleared.map((inv) => (
+              <QuietRow key={inv.id} inv={inv} />
             ))}
           </ul>
           <a className={styles.allLink} href={hrefFor({ name: 'invoices', filter: 'handled' })}>
             See handled invoices
           </a>
-        </section>
+        </details>
+      )}
+
+      {rejected.length > 0 && (
+        <details className={styles.cleared}>
+          <summary className={styles.clearedSummary}>
+            <span className={styles.rejectedMark} aria-hidden="true">
+              <Icon name="close" size={12} />
+            </span>
+            <span>
+              {rejected.length} invoice{rejected.length === 1 ? '' : 's'} rejected
+            </span>
+            <Icon name="chevronRight" size={14} className={styles.chev} />
+          </summary>
+          <ul className={styles.quietList}>
+            {rejected.map((inv) => (
+              <QuietRow key={inv.id} inv={inv} />
+            ))}
+          </ul>
+        </details>
       )}
     </div>
+  );
+}
+
+/** Three states, never more: cleared, a difference to review, or something to confirm. */
+export function stateOf(inv: ApiInvoiceSummary): 'cleared' | 'review' | 'confirm' {
+  if (inv.status !== 'attention') return 'cleared';
+  return inv.finding?.state === 'confirm' ||
+    (!inv.finding && inv.question && inv.question.kind !== 'VALIDATION_FAILURE')
+    ? 'confirm'
+    : 'review';
+}
+
+export const STATE_TEXT = {
+  cleared: 'Cleared',
+  review: 'Needs review',
+  confirm: 'Needs confirmation',
+} as const;
+
+export function StateBadge({ state }: { state: 'cleared' | 'review' | 'confirm' }) {
+  return (
+    <span className={styles.state} data-state={state}>
+      <span aria-hidden="true">{state === 'cleared' ? '✓' : state === 'review' ? '⚠' : '?'}</span>
+      {STATE_TEXT[state]}
+    </span>
+  );
+}
+
+/** One exception: what kind, what is at stake, whose invoice, why, and the one action. */
+function ExceptionCard({ inv }: { inv: ApiInvoiceSummary }) {
+  const f = inv.finding;
+  const state = stateOf(inv);
+  const label =
+    f?.label ??
+    inv.question?.summary ??
+    (inv.failure ? 'Couldn’t finish' : 'Differs from the ERP record');
+  const impact =
+    f?.impact ?? (inv.failure ? 'Needs review' : (inv.question?.evidence ?? 'Needs review'));
+  const explanation =
+    f?.explanation ??
+    inv.failure?.reason ??
+    inv.question?.headline ??
+    'Open it to see every value next to the ERP’s.';
+  return (
+    <a href={hrefFor({ name: 'invoice', id: inv.id })} className={styles.card} data-state={state}>
+      <span className={styles.cardTop}>
+        <StateBadge state={state} />
+        {f && f.more > 0 && <span className={styles.cardMore}>+{f.more} more on this invoice</span>}
+      </span>
+      <span className={styles.cardTitle}>{label}</span>
+      {/* A confirmation with no amount at stake says so once, in its badge. */}
+      {!(state === 'confirm' && !f?.impactPaise) && (
+        <span className={styles.cardImpact} data-tone={f?.impactPaise ? 'amount' : 'plain'}>
+          {impact}
+        </span>
+      )}
+      <span className={styles.cardWho}>
+        {inv.supplierName ?? inv.filename}
+        {inv.number ? ` · ${inv.number}` : ''}
+        {inv.totalPaise !== null ? ` · ${inr(inv.totalPaise)}` : ''}
+      </span>
+      <span className={styles.cardWhy}>{explanation}</span>
+      <span className={styles.cardAction}>
+        {f?.action ?? (inv.failure ? 'Open invoice' : 'Review')}
+        <Icon name="chevronRight" size={14} />
+      </span>
+    </a>
+  );
+}
+
+function QuietRow({ inv }: { inv: ApiInvoiceSummary }) {
+  return (
+    <li className={styles.quietRow}>
+      <a href={hrefFor({ name: 'invoice', id: inv.id })} className={styles.quietMain}>
+        <span className={styles.quietNumber}>
+          {inv.number ? `Invoice ${inv.number}` : inv.filename}
+        </span>
+        <span className={styles.quietSupplier}>
+          {inv.supplierName}
+          {(inv.note ?? inv.decision?.result) ? ` · ${inv.note ?? inv.decision?.result}` : ''}
+        </span>
+      </a>
+      <span className={styles.quietAmount}>
+        {inv.totalPaise === null ? '' : inr(inv.totalPaise)}
+      </span>
+      <span className={styles.quietStatus} data-outcome={inv.status}>
+        {inv.status === 'rejected' ? (
+          STATUS_LABEL.rejected
+        ) : (
+          <>
+            <Icon name="check" size={13} /> {STATUS_LABEL[inv.status]}
+          </>
+        )}
+      </span>
+    </li>
   );
 }

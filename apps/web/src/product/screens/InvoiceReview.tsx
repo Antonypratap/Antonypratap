@@ -1,4 +1,4 @@
-import { useState, type SyntheticEvent } from 'react';
+import { useState, type ReactNode, type SyntheticEvent } from 'react';
 import type { ApiInvoiceDetail, ApiOption, ApiQuestion } from '@veyra/shared';
 import { Icon, StatusPill, Struck } from '../../design-system';
 import {
@@ -11,6 +11,7 @@ import {
 } from '../api/client';
 import { AnswerForm } from '../components/AnswerForm';
 import { ErpComparison } from '../components/ErpComparison';
+import { EvidenceList, Finding } from '../components/Finding';
 import { InvoiceDocument } from '../components/InvoiceDocument';
 import { formatDate, inr } from '../format';
 import { hrefFor, navigate } from '../router';
@@ -162,6 +163,107 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
     }
   };
 
+  // One exception at a time: the conclusion first, the evidence and the original one click away.
+  const receiptOnly =
+    open === null &&
+    invoice.comparison?.source === 'erp_receipt' &&
+    invoice.comparison.verdict === 'mismatch';
+  const finding =
+    status === 'attention' && invoice.state === 'NEEDS_INPUT' && (question || receiptOnly)
+      ? (invoice.finding ?? null)
+      : null;
+  const previous =
+    position >= 0 && queue.length > 1 ? queue[(position - 1 + queue.length) % queue.length] : null;
+  const following = position >= 0 && queue.length > 1 ? queue[(position + 1) % queue.length] : null;
+
+  const decide = question && (
+    <section className={styles.decide} aria-labelledby="decide-title">
+      <h2 id="decide-title" className={styles.decideTitle}>
+        What would you like to do?
+      </h2>
+      <div className={styles.options}>
+        {question.options.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            className={styles.option}
+            data-emphasis={o.emphasis}
+            aria-pressed={pending?.id === o.id}
+            disabled={busy}
+            onClick={() => choose(o)}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      {pending?.input && (
+        <AnswerForm
+          key={pending.id}
+          spec={pending.input}
+          submitLabel={pending.label}
+          busy={busy}
+          onCancel={() => setPending(null)}
+          onSubmit={(input) => void submit(pending, input)}
+        />
+      )}
+      {problem && (
+        <p className={styles.problem} role="alert">
+          {problem}
+        </p>
+      )}
+      <p className={styles.decideNote}>
+        Nothing moves until you decide. {AFTER_DECISION[question.kind]}
+      </p>
+    </section>
+  );
+
+  const reject = (reason: string) =>
+    void act(
+      () => api.reject(invoice.id, reason),
+      () => {
+        notify.rejected();
+        advance();
+      },
+    );
+
+  // The ERP-receipt check has no question: its actions are the comparison's (check again, reject).
+  const receiptActions = receiptOnly && invoice.comparison && (
+    <section className={styles.decide}>
+      <div className={styles.options}>
+        {allowed('invoices.reprocess') && (
+          <button
+            type="button"
+            className={styles.option}
+            data-emphasis="primary"
+            disabled={busy}
+            onClick={() => void act(() => api.recheck(invoice.id), notify.reprocessing)}
+          >
+            The ERP was corrected. Check again
+          </button>
+        )}
+        {allowed('invoices.reject') && (
+          <button
+            type="button"
+            className={styles.option}
+            data-emphasis="quiet"
+            disabled={busy}
+            onClick={() => {
+              const summary = invoice.comparison?.summary ?? '';
+              reject(summary.length > 300 ? `${summary.slice(0, 297)}…` : summary);
+            }}
+          >
+            Reject this invoice
+          </button>
+        )}
+      </div>
+      {problem && (
+        <p className={styles.problem} role="alert">
+          {problem}
+        </p>
+      )}
+    </section>
+  );
+
   const title = invoice.number ?? invoice.filename;
   return (
     <div className={styles.page}>
@@ -171,11 +273,24 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
             <Icon name="chevronLeft" size={16} />
             Inbox
           </a>
-          {next && (
-            <a href={hrefFor({ name: 'invoice', id: next.id })} className={styles.nextLink}>
-              {nextNeedsYou ? 'Next invoice to decide' : 'Next invoice'}
-              <Icon name="chevronRight" size={16} />
-            </a>
+          {finding && previous && following ? (
+            <span className={styles.stepper}>
+              <a href={hrefFor({ name: 'invoice', id: previous.id })} className={styles.nextLink}>
+                <Icon name="chevronLeft" size={16} />
+                Previous
+              </a>
+              <a href={hrefFor({ name: 'invoice', id: following.id })} className={styles.nextLink}>
+                Next
+                <Icon name="chevronRight" size={16} />
+              </a>
+            </span>
+          ) : (
+            next && (
+              <a href={hrefFor({ name: 'invoice', id: next.id })} className={styles.nextLink}>
+                {nextNeedsYou ? 'Next invoice to decide' : 'Next invoice'}
+                <Icon name="chevronRight" size={16} />
+              </a>
+            )
           )}
         </div>
         <div className={styles.titleRow}>
@@ -187,372 +302,366 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
             <StatusPill status={STATUS_TONE[status]}>{STATUS_LABEL[status]}</StatusPill>
             {position >= 0 && (
               <span className={styles.position}>
-                Question {position + 1} of {queue.length}
+                {position + 1} of {queue.length}
               </span>
             )}
           </div>
         </div>
       </div>
 
-      <div className={styles.grid}>
-        <section className={styles.viewer} aria-label="Invoice document">
-          <div className={styles.viewerBar}>
-            <span className={styles.file}>
-              <Icon name={invoice.source === 'Photo' ? 'photo' : 'document'} size={15} />
-              <span className={styles.fileName}>
-                {invoice.source === 'Photo' ? 'Phone photo' : 'PDF'} · {invoice.filename}
-              </span>
-            </span>
-            <span className={styles.docStatus} data-deleted={originalDeleted || fileMissing}>
-              Original document:{' '}
-              {originalDeleted ? 'Deleted' : fileMissing ? 'Missing' : 'Available'}
-            </span>
-            {!originalDeleted && !fileMissing && (
-              <>
-                <button
-                  type="button"
-                  className={styles.zoom}
-                  onClick={() => setAsRead((v) => !v)}
-                  aria-pressed={asRead}
-                >
-                  {asRead ? 'Show original' : 'Show as read'}
-                </button>
-                <a
-                  className={styles.zoom}
-                  href={documentUrl(invoice.documentId)}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open file
-                </a>
-                <button
-                  type="button"
-                  className={styles.zoom}
-                  onClick={() => setFullSize((v) => !v)}
-                  aria-pressed={fullSize}
-                >
-                  {fullSize ? 'Fit to width' : 'Zoom in'}
-                </button>
-              </>
-            )}
-          </div>
-          <div className={styles.stage} data-full={fullSize}>
-            {originalDeleted ? (
-              <div className={styles.pageFailed} role="status">
-                <p className={styles.deletedTitle}>Original document · Document deleted</p>
-                <p>Veyrafy no longer retains the original invoice document.</p>
-                <p>The invoice record, its checks and its history below are kept.</p>
-              </div>
-            ) : fileMissing && !asRead ? (
-              <div className={styles.pageFailed} role="status">
-                <p className={styles.deletedTitle}>Original document · File missing</p>
-                <p>
-                  Veyrafy&rsquo;s storage no longer has this file, although it was never deleted.
-                  The invoice record, its checks and its history are kept.
-                </p>
-                <p>Upload the same file again to restore it: it is reattached to this invoice.</p>
-                <button type="button" className={styles.zoom} onClick={() => setAsRead(true)}>
-                  Show as read
-                </button>
-              </div>
-            ) : asRead ? (
-              <div className={styles.sheet}>
-                <InvoiceDocument invoice={invoice} />
-              </div>
-            ) : pageFailed ? (
-              <div className={styles.pageFailed}>
-                <p>The invoice page couldn&rsquo;t be shown here.</p>
-                <a href={documentUrl(invoice.documentId)} target="_blank" rel="noreferrer">
-                  Open the file
-                </a>
-                <button type="button" className={styles.zoom} onClick={() => setAsRead(true)}>
-                  Show as read
-                </button>
-              </div>
-            ) : (
-              <div className={styles.original}>
-                {Array.from({ length: pageCount }, (_, i) => (
-                  <img
-                    key={i}
-                    className={styles.page}
-                    src={documentPageUrl(invoice.documentId, i + 1)}
-                    alt={`Page ${i + 1} of ${pageCount} of the uploaded invoice`}
-                    loading={i === 0 ? 'eager' : 'lazy'}
-                    onError={() => setPageFailed(true)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-
-        <aside className={styles.panel} aria-label="Veyrafy review">
-          <dl className={styles.facts}>
-            <div className={styles.factWide}>
-              <dt>Supplier</dt>
-              <dd>
-                <span className={styles.factMain}>{invoice.supplier.name ?? '—'}</span>
-                <span className={styles.factSub}>
-                  {invoice.supplier.gstin && !invoice.unclearPaths.includes('header.vendorGstin')
-                    ? `GSTIN ${invoice.supplier.gstin}`
-                    : 'GSTIN not readable'}
-                </span>
-              </dd>
-            </div>
-            <div>
-              <dt>Invoice</dt>
-              <dd>
-                <span className={styles.factMain}>{invoice.number ?? '—'}</span>
-                <span className={styles.factSub}>
-                  {invoice.invoiceDate ? formatDate(invoice.invoiceDate) : ''}
-                </span>
-              </dd>
-            </div>
-            <div>
-              <dt>Order</dt>
-              <dd>
-                <span className={styles.factMain}>{invoice.poNumber ?? 'None on invoice'}</span>
-                <span className={styles.factSub}>
-                  {invoice.lines.length === 1 ? '1 line' : `${invoice.lines.length} lines`}
-                </span>
-              </dd>
-            </div>
-            <div className={styles.factWide}>
-              <dt>Amount</dt>
-              <dd className={styles.amount}>
-                {invoice.totalPaise === null ? '—' : inr(invoice.totalPaise)}
-              </dd>
-            </div>
-          </dl>
-
-          {otherFields.length > 0 && (
-            <details className={styles.printed} open={printedOpen} onToggle={togglePrinted}>
-              <summary>Also printed on the invoice ({otherFields.length})</summary>
-              <dl className={styles.evidence}>
-                {otherFields.map((f, i) => (
-                  <div key={i}>
-                    <dt>{f.label}</dt>
-                    <dd>
-                      {f.value}
-                      {f.page !== null && pageCount > 1 ? ` · page ${f.page}` : ''}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
+      {finding && (
+        <Finding
+          finding={finding}
+          supplier={invoice.supplierName}
+          number={invoice.number}
+          totalPaise={invoice.totalPaise}
+          actions={decide ?? receiptActions}
+          evidence={
+            <details className={styles.disclose}>
+              <summary>View evidence</summary>
+              <EvidenceList
+                evidence={finding.evidence}
+                documentId={invoice.documentId}
+                isPdf={invoice.source === 'PDF'}
+                original={!originalDeleted && !fileMissing}
+              />
             </details>
-          )}
-
-          {question && (
-            <>
-              <QuestionBlock question={question} resolved={false} />
-              <section className={styles.decide} aria-labelledby="decide-title">
-                <h2 id="decide-title" className={styles.decideTitle}>
-                  What would you like to do?
-                </h2>
-                <div className={styles.options}>
-                  {question.options.map((o) => (
-                    <button
-                      key={o.id}
-                      type="button"
-                      className={styles.option}
-                      data-emphasis={o.emphasis}
-                      aria-pressed={pending?.id === o.id}
-                      disabled={busy}
-                      onClick={() => choose(o)}
-                    >
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-                {pending?.input && (
-                  <AnswerForm
-                    key={pending.id}
-                    spec={pending.input}
-                    submitLabel={pending.label}
-                    busy={busy}
-                    onCancel={() => setPending(null)}
-                    onSubmit={(input) => void submit(pending, input)}
-                  />
-                )}
-                {problem && (
-                  <p className={styles.problem} role="alert">
-                    {problem}
-                  </p>
-                )}
-                <p className={styles.decideNote}>
-                  Nothing moves until you decide. {AFTER_DECISION[question.kind]}
-                </p>
-              </section>
-            </>
-          )}
-
-          {!question && invoice.state === 'FAILED' && invoice.failure && (
-            <>
-              <section className={styles.question} aria-labelledby="failed-title">
-                <p className={styles.questionLabel}>Needs your attention</p>
-                <h2 id="failed-title" className={styles.questionTitle}>
-                  Veyrafy couldn&rsquo;t finish this invoice.
-                </h2>
-                <dl className={styles.compare}>
-                  <div data-tone="attention">
-                    <dt>Reason</dt>
-                    <dd>{invoice.failure.reason}</dd>
-                  </div>
-                </dl>
-              </section>
-              <section className={styles.decide}>
-                <div className={styles.options}>
-                  <button
-                    type="button"
-                    className={styles.option}
-                    data-emphasis="primary"
-                    disabled={busy || !allowed('invoices.reprocess')}
-                    onClick={() => void act(() => api.reprocess(invoice.id), notify.reprocessing)}
-                  >
-                    Try again
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.option}
-                    data-emphasis="quiet"
-                    disabled={busy || !allowed('invoices.reject')}
-                    onClick={() =>
-                      void act(
-                        () => api.reject(invoice.id, 'Rejected after it could not be read'),
-                        () => {
-                          notify.rejected();
-                          advance();
-                        },
-                      )
-                    }
-                  >
-                    Reject this invoice
-                  </button>
-                </div>
-                {problem && (
-                  <p className={styles.problem} role="alert">
-                    {problem}
-                  </p>
-                )}
-              </section>
-            </>
-          )}
-
-          {!question && resolved && (
-            <>
-              <QuestionBlock question={resolved.question} resolved />
-              <section
-                className={styles.done}
-                data-outcome={rejected ? 'rejected' : 'ready'}
-                aria-live="polite"
-              >
-                <div className={styles.doneHead}>
-                  <span className={styles.doneIcon}>
-                    <Icon name={rejected ? 'undo' : 'person'} size={16} />
-                  </span>
-                  <div>
-                    <p className={styles.doneTitle}>You decided</p>
-                    <p className={styles.doneText}>
-                      {resolved.option.label}
-                      {resolved.entered ? `: ${resolved.entered}` : ''}
-                    </p>
-                  </div>
-                </div>
-                {/* What happens next is the workflow's real state, never assumed. */}
-                {rejected ? (
-                  <p className={styles.doneState}>Invoice rejected. Nothing was recorded.</p>
-                ) : working ? (
-                  <p className={styles.doneState} data-working="true">
-                    <span className={styles.pulse} aria-hidden="true" />
-                    Veyrafy is re-checking the invoice. {working}
-                  </p>
-                ) : null}
-                <div className={styles.doneActions}>
-                  {next ? (
-                    <button
-                      type="button"
-                      className={styles.nextButton}
-                      onClick={() => navigate({ name: 'invoice', id: next.id })}
-                    >
-                      {nextNeedsYou ? 'Next invoice to decide' : 'Next invoice'}
-                      <Icon name="chevronRight" size={16} />
-                    </button>
-                  ) : (
-                    <a className={styles.nextButton} href={hrefFor({ name: 'inbox' })}>
-                      {status === 'ready' || rejected
-                        ? 'All caught up. Back to inbox'
-                        : 'Back to inbox'}
-                    </a>
-                  )}
-                </div>
-              </section>
-            </>
-          )}
-
-          {!question && !resolved && working && (
-            <section className={styles.neutral} aria-live="polite">
-              <p className={styles.doneState} data-working="true">
-                <span className={styles.pulse} aria-hidden="true" />
-                {STATUS_LABEL.processing}
-              </p>
-              <p className={styles.handledNote}>{working}</p>
-            </section>
-          )}
-
-          {(status === 'handled' || status === 'ready') && <Ready invoice={invoice} />}
-
-          {status === 'rejected' && !resolved && (
-            <section className={styles.neutral}>
-              <p className={styles.handledTitle}>{STATUS_LABEL.rejected}</p>
-              <p className={styles.handledNote}>{invoice.note}</p>
-            </section>
-          )}
-
-          {status !== 'handled' && status !== 'ready' && (
-            <a className={styles.auditLink} href={hrefFor({ name: 'audit', id: invoice.id })}>
-              See what happened to this invoice
-            </a>
-          )}
-          {allowed('documents.delete') && doc && !originalDeleted && status !== 'processing' && (
-            <DeleteOriginal
-              busy={busy}
-              onDelete={() =>
-                void act(() => deleteDocument(invoice.documentId), notify.documentDeleted)
-              }
-            />
-          )}
-        </aside>
-      </div>
-
-      {invoice.comparison && (
-        <ErpComparison
-          comparison={invoice.comparison}
-          busy={busy}
-          {...(invoice.comparison.source === 'erp_receipt' &&
-          invoice.state === 'NEEDS_INPUT' &&
-          allowed('invoices.reprocess')
-            ? {
-                onRecheck: () => void act(() => api.recheck(invoice.id), notify.reprocessing),
-              }
-            : {})}
-          {...(allowed('invoices.reject') &&
-          status !== 'rejected' &&
-          status !== 'handled' &&
-          status !== 'ready'
-            ? {
-                onReject: (reason: string) =>
-                  void act(
-                    () => api.reject(invoice.id, reason),
-                    () => {
-                      notify.rejected();
-                      advance();
-                    },
-                  ),
-              }
-            : {})}
+          }
         />
       )}
+
+      <OriginalSection folded={finding !== null}>
+        <div className={styles.grid}>
+          <section className={styles.viewer} aria-label="Invoice document">
+            <div className={styles.viewerBar}>
+              <span className={styles.file}>
+                <Icon name={invoice.source === 'Photo' ? 'photo' : 'document'} size={15} />
+                <span className={styles.fileName}>
+                  {invoice.source === 'Photo' ? 'Phone photo' : 'PDF'} · {invoice.filename}
+                </span>
+              </span>
+              <span className={styles.docStatus} data-deleted={originalDeleted || fileMissing}>
+                Original document:{' '}
+                {originalDeleted ? 'Deleted' : fileMissing ? 'Missing' : 'Available'}
+              </span>
+              {!originalDeleted && !fileMissing && (
+                <>
+                  <button
+                    type="button"
+                    className={styles.zoom}
+                    onClick={() => setAsRead((v) => !v)}
+                    aria-pressed={asRead}
+                  >
+                    {asRead ? 'Show original' : 'Show as read'}
+                  </button>
+                  <a
+                    className={styles.zoom}
+                    href={documentUrl(invoice.documentId)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open file
+                  </a>
+                  <button
+                    type="button"
+                    className={styles.zoom}
+                    onClick={() => setFullSize((v) => !v)}
+                    aria-pressed={fullSize}
+                  >
+                    {fullSize ? 'Fit to width' : 'Zoom in'}
+                  </button>
+                </>
+              )}
+            </div>
+            <div className={styles.stage} data-full={fullSize}>
+              {originalDeleted ? (
+                <div className={styles.pageFailed} role="status">
+                  <p className={styles.deletedTitle}>Original document · Document deleted</p>
+                  <p>Veyrafy no longer retains the original invoice document.</p>
+                  <p>The invoice record, its checks and its history below are kept.</p>
+                </div>
+              ) : fileMissing && !asRead ? (
+                <div className={styles.pageFailed} role="status">
+                  <p className={styles.deletedTitle}>Original document · File missing</p>
+                  <p>
+                    Veyrafy&rsquo;s storage no longer has this file, although it was never deleted.
+                    The invoice record, its checks and its history are kept.
+                  </p>
+                  <p>Upload the same file again to restore it: it is reattached to this invoice.</p>
+                  <button type="button" className={styles.zoom} onClick={() => setAsRead(true)}>
+                    Show as read
+                  </button>
+                </div>
+              ) : asRead ? (
+                <div className={styles.sheet}>
+                  <InvoiceDocument invoice={invoice} />
+                </div>
+              ) : pageFailed ? (
+                <div className={styles.pageFailed}>
+                  <p>The invoice page couldn&rsquo;t be shown here.</p>
+                  <a href={documentUrl(invoice.documentId)} target="_blank" rel="noreferrer">
+                    Open the file
+                  </a>
+                  <button type="button" className={styles.zoom} onClick={() => setAsRead(true)}>
+                    Show as read
+                  </button>
+                </div>
+              ) : (
+                <div className={styles.original}>
+                  {Array.from({ length: pageCount }, (_, i) => (
+                    <img
+                      key={i}
+                      className={styles.pageImage}
+                      src={documentPageUrl(invoice.documentId, i + 1)}
+                      alt={`Page ${i + 1} of ${pageCount} of the uploaded invoice`}
+                      loading={i === 0 ? 'eager' : 'lazy'}
+                      onError={() => setPageFailed(true)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+
+          <aside className={styles.panel} aria-label="Veyrafy review">
+            <dl className={styles.facts}>
+              <div className={styles.factWide}>
+                <dt>Supplier</dt>
+                <dd>
+                  <span className={styles.factMain}>{invoice.supplier.name ?? '—'}</span>
+                  <span className={styles.factSub}>
+                    {invoice.supplier.gstin && !invoice.unclearPaths.includes('header.vendorGstin')
+                      ? `GSTIN ${invoice.supplier.gstin}`
+                      : 'GSTIN not readable'}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt>Invoice</dt>
+                <dd>
+                  <span className={styles.factMain}>{invoice.number ?? '—'}</span>
+                  <span className={styles.factSub}>
+                    {invoice.invoiceDate ? formatDate(invoice.invoiceDate) : ''}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt>Order</dt>
+                <dd>
+                  <span className={styles.factMain}>{invoice.poNumber ?? 'None on invoice'}</span>
+                  <span className={styles.factSub}>
+                    {invoice.lines.length === 1 ? '1 line' : `${invoice.lines.length} lines`}
+                  </span>
+                </dd>
+              </div>
+              <div className={styles.factWide}>
+                <dt>Amount</dt>
+                <dd className={styles.amount}>
+                  {invoice.totalPaise === null ? '—' : inr(invoice.totalPaise)}
+                </dd>
+              </div>
+            </dl>
+
+            {otherFields.length > 0 && (
+              <details className={styles.printed} open={printedOpen} onToggle={togglePrinted}>
+                <summary>Also printed on the invoice ({otherFields.length})</summary>
+                <dl className={styles.evidence}>
+                  {otherFields.map((f, i) => (
+                    <div key={i}>
+                      <dt>{f.label}</dt>
+                      <dd>
+                        {f.value}
+                        {f.page !== null && pageCount > 1 ? ` · page ${f.page}` : ''}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </details>
+            )}
+
+            {question && !finding && (
+              <>
+                <QuestionBlock question={question} resolved={false} />
+                {decide}
+              </>
+            )}
+            {question && finding && <QuestionBlock question={question} resolved={false} />}
+
+            {!question && invoice.state === 'FAILED' && invoice.failure && (
+              <>
+                <section className={styles.question} aria-labelledby="failed-title">
+                  <p className={styles.questionLabel}>Needs your attention</p>
+                  <h2 id="failed-title" className={styles.questionTitle}>
+                    Veyrafy couldn&rsquo;t finish this invoice.
+                  </h2>
+                  <dl className={styles.compare}>
+                    <div data-tone="attention">
+                      <dt>Reason</dt>
+                      <dd>{invoice.failure.reason}</dd>
+                    </div>
+                  </dl>
+                </section>
+                <section className={styles.decide}>
+                  <div className={styles.options}>
+                    <button
+                      type="button"
+                      className={styles.option}
+                      data-emphasis="primary"
+                      disabled={busy || !allowed('invoices.reprocess')}
+                      onClick={() => void act(() => api.reprocess(invoice.id), notify.reprocessing)}
+                    >
+                      Try again
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.option}
+                      data-emphasis="quiet"
+                      disabled={busy || !allowed('invoices.reject')}
+                      onClick={() =>
+                        void act(
+                          () => api.reject(invoice.id, 'Rejected after it could not be read'),
+                          () => {
+                            notify.rejected();
+                            advance();
+                          },
+                        )
+                      }
+                    >
+                      Reject this invoice
+                    </button>
+                  </div>
+                  {problem && (
+                    <p className={styles.problem} role="alert">
+                      {problem}
+                    </p>
+                  )}
+                </section>
+              </>
+            )}
+
+            {!question && resolved && (
+              <>
+                <QuestionBlock question={resolved.question} resolved />
+                <section
+                  className={styles.done}
+                  data-outcome={rejected ? 'rejected' : 'ready'}
+                  aria-live="polite"
+                >
+                  <div className={styles.doneHead}>
+                    <span className={styles.doneIcon}>
+                      <Icon name={rejected ? 'undo' : 'person'} size={16} />
+                    </span>
+                    <div>
+                      <p className={styles.doneTitle}>You decided</p>
+                      <p className={styles.doneText}>
+                        {resolved.option.label}
+                        {resolved.entered ? `: ${resolved.entered}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  {/* What happens next is the workflow's real state, never assumed. */}
+                  {rejected ? (
+                    <p className={styles.doneState}>Invoice rejected. Nothing was recorded.</p>
+                  ) : working ? (
+                    <p className={styles.doneState} data-working="true">
+                      <span className={styles.pulse} aria-hidden="true" />
+                      Veyrafy is re-checking the invoice. {working}
+                    </p>
+                  ) : null}
+                  <div className={styles.doneActions}>
+                    {next ? (
+                      <button
+                        type="button"
+                        className={styles.nextButton}
+                        onClick={() => navigate({ name: 'invoice', id: next.id })}
+                      >
+                        {nextNeedsYou ? 'Next invoice to decide' : 'Next invoice'}
+                        <Icon name="chevronRight" size={16} />
+                      </button>
+                    ) : (
+                      <a className={styles.nextButton} href={hrefFor({ name: 'inbox' })}>
+                        {status === 'ready' || rejected
+                          ? 'All caught up. Back to inbox'
+                          : 'Back to inbox'}
+                      </a>
+                    )}
+                  </div>
+                </section>
+              </>
+            )}
+
+            {!question && !resolved && working && (
+              <section className={styles.neutral} aria-live="polite">
+                <p className={styles.doneState} data-working="true">
+                  <span className={styles.pulse} aria-hidden="true" />
+                  {STATUS_LABEL.processing}
+                </p>
+                <p className={styles.handledNote}>{working}</p>
+              </section>
+            )}
+
+            {(status === 'handled' || status === 'ready') && <Ready invoice={invoice} />}
+
+            {status === 'rejected' && !resolved && (
+              <section className={styles.neutral}>
+                <p className={styles.handledTitle}>{STATUS_LABEL.rejected}</p>
+                <p className={styles.handledNote}>{invoice.note}</p>
+              </section>
+            )}
+
+            {status !== 'handled' && status !== 'ready' && (
+              <a className={styles.auditLink} href={hrefFor({ name: 'audit', id: invoice.id })}>
+                See what happened to this invoice
+              </a>
+            )}
+            {allowed('documents.delete') && doc && !originalDeleted && status !== 'processing' && (
+              <DeleteOriginal
+                busy={busy}
+                onDelete={() =>
+                  void act(() => deleteDocument(invoice.documentId), notify.documentDeleted)
+                }
+              />
+            )}
+          </aside>
+        </div>
+
+        {invoice.comparison && (
+          <ErpComparison
+            comparison={invoice.comparison}
+            busy={busy}
+            {...(invoice.comparison.source === 'erp_receipt' &&
+            invoice.state === 'NEEDS_INPUT' &&
+            allowed('invoices.reprocess')
+              ? {
+                  onRecheck: () => void act(() => api.recheck(invoice.id), notify.reprocessing),
+                }
+              : {})}
+            {...(allowed('invoices.reject') &&
+            status !== 'rejected' &&
+            status !== 'handled' &&
+            status !== 'ready'
+              ? {
+                  onReject: reject,
+                }
+              : {})}
+          />
+        )}
+      </OriginalSection>
     </div>
+  );
+}
+
+/**
+ * The full original invoice, its reading and the complete comparison: open as the page itself for
+ * an invoice with nothing to decide, behind "View original invoice" while one exception is shown.
+ */
+function OriginalSection({ folded, children }: { folded: boolean; children: ReactNode }) {
+  if (!folded) return <>{children}</>;
+  return (
+    <details className={styles.originalFold}>
+      <summary>View original invoice and every value compared</summary>
+      <div className={styles.originalBody}>{children}</div>
+    </details>
   );
 }
 

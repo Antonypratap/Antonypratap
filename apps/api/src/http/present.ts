@@ -4,6 +4,7 @@ import {
   formatQty,
   milliQty,
   type ApiAuditEntry,
+  type ApiFinding,
   type ApiInbox,
   type ApiInputSpec,
   type ApiInvoiceDetail,
@@ -19,7 +20,8 @@ import { readField, type StoredField } from '../engine/fields';
 import { dateText, displayValue, fieldLabel, rupees } from '../engine/questions';
 import { storedField, type Veyra } from '../workflow/veyra';
 import { buildComparison } from './comparison';
-import { compareWithReceipt } from '../workflow/erp-receipts';
+import { compareWithReceipt, receiptComparison } from '../workflow/erp-receipts';
+import { buildFinding } from './finding';
 
 type InvoiceRow = typeof t.invoices.$inferSelect;
 type DocumentRow = typeof t.documents.$inferSelect;
@@ -285,7 +287,7 @@ export class Presenter {
         and(eq(t.creationActions.invoiceId, inv.id), eq(t.creationActions.status, 'committed')),
       )
       .orderBy(asc(t.creationActions.seq));
-    return this.buildSummary(inv, doc, {
+    const summary = this.buildSummary(inv, doc, {
       fields: await this.fields(inv.id),
       questions: await this.questionsOf(inv.id),
       minConfidenceBp: (await this.v.settings()).confidenceMinBp,
@@ -297,6 +299,8 @@ export class Presenter {
         ? await this.poNumberOf(inv)
         : null,
     });
+    if (summary.status === 'attention') summary.finding = await this.finding(inv);
+    return summary;
   }
 
   /**
@@ -446,6 +450,11 @@ export class Presenter {
       .innerJoin(t.documents, eq(t.documents.id, t.invoices.documentId))
       .orderBy(desc(t.documents.uploadedAt), desc(t.invoices.seq));
     const invoices = await this.summaries(rows);
+    // The exception of each invoice that needs attention (few at a time), as a conclusion.
+    for (const [i, s] of invoices.entries()) {
+      const row = rows[i];
+      if (s.status === 'attention' && row) s.finding = await this.finding(row.invoices);
+    }
     const count = (s: UiStatus) => invoices.filter((i) => i.status === s).length;
     return {
       counts: {
@@ -459,6 +468,64 @@ export class Presenter {
       },
       invoices,
     };
+  }
+
+  /**
+   * The invoice's exception as a conclusion (see ./finding.ts), from its open questions, the failed
+   * checks of its latest run and, for an invoice checked against an ERP receipt, the differences.
+   */
+  async finding(inv: InvoiceRow): Promise<ApiFinding | null> {
+    if (inv.state !== 'NEEDS_INPUT') return null;
+    const f = await this.fields(inv.id);
+    const open = (await this.questionsOf(inv.id)).filter((q) => q.status === 'open');
+    const failed = await this.v.db
+      .select()
+      .from(t.validationResults)
+      .where(
+        and(
+          eq(t.validationResults.invoiceId, inv.id),
+          eq(t.validationResults.runNo, inv.runNo),
+          eq(t.validationResults.outcome, 'fail'),
+        ),
+      )
+      .orderBy(asc(t.validationResults.seq));
+    let receipt = null;
+    if (open.length === 0) {
+      const side = await this.v.invoiceSide(inv.id);
+      const record = await this.v.receiptRecordFor(side);
+      if (record) {
+        const r = receiptComparison(side, record);
+        receipt = {
+          grnNo: record.grnNo,
+          differences: r.differences,
+          totalDeltaPaise: r.totalDeltaPaise,
+        };
+      }
+    }
+    const min = (await this.v.settings()).confidenceMinBp;
+    return buildFinding({
+      questions: open.map((q) => {
+        const ctx = JSON.parse(q.contextJson) as QuestionContext;
+        return {
+          code: q.code,
+          kind: q.kind,
+          subjectKey: q.subjectKey,
+          summary: ctx.summary,
+          headline: q.prompt,
+          facts: ctx.facts,
+          paths: ctx.paths,
+        };
+      }),
+      failed: failed.map((r) => ({
+        rule: r.ruleCode,
+        lineNo: r.lineNo,
+        expected: JSON.parse(r.expectedJson) as unknown,
+        actual: JSON.parse(r.actualJson) as unknown,
+      })),
+      fields: f,
+      totalPaise: readField<number>(f, 'header.totalPaise', min).value,
+      receipt,
+    });
   }
 
   async detail(invoiceId: string): Promise<ApiInvoiceDetail> {

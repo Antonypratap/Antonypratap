@@ -230,7 +230,7 @@ export interface InvoiceSide {
 
 type Row = ApiComparison['rows'][number] & {
   blocking: boolean;
-  /** The invoice field a blocking row waits for (asked as a question), when there is one. */
+  /** The invoice field the row compares (a blocking row waits for it as a question). */
   path?: string;
 };
 const money = (p: number | null) => (p === null ? null : formatInr(paise(p)));
@@ -248,7 +248,20 @@ export function compareWithReceipt(inv: InvoiceSide, erp: ReceiptRecord): ApiCom
 export function receiptComparison(
   inv: InvoiceSide,
   erp: ReceiptRecord,
-): { comparison: ApiComparison; unread: string[] } {
+): {
+  comparison: ApiComparison;
+  unread: string[];
+  /** The mismatched values with the invoice field each was read from. */
+  differences: {
+    section: string;
+    label: string;
+    invoice: string | null;
+    erp: string | null;
+    path: string | null;
+  }[];
+  /** Invoice total (before its round-off) less the receipt's total; null when not read. */
+  totalDeltaPaise: number | null;
+} {
   const rows: Row[] = [];
   const push = (r: Omit<Row, 'note'> & { note?: string | null }) => rows.push({ note: null, ...r });
   /** Compare two values: not read → not checked (blocking); ERP lacks it → not checked. */
@@ -290,6 +303,7 @@ export function receiptComparison(
       result: equal ? 'match' : 'mismatch',
       blocking: false,
       note: equal ? null : (note ?? 'The invoice and the ERP differ.'),
+      ...(path ? { path } : {}),
     });
   };
 
@@ -548,7 +562,15 @@ export function receiptComparison(
     })),
   };
   const unread = [...new Set(blocking.flatMap((r) => (r.path ? [r.path] : [])))];
-  return { comparison, unread };
+  const differences = mismatches.map((r) => ({
+    section: r.section,
+    label: r.label,
+    invoice: r.invoice,
+    erp: r.erp,
+    path: r.path ?? null,
+  }));
+  const totalDeltaPaise = beforeRounding === null ? null : beforeRounding - erpTotal;
+  return { comparison, unread, differences, totalDeltaPaise };
 }
 
 /** The first three differences, then how many more (the table shows every one). */

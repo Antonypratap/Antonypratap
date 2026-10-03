@@ -25,68 +25,49 @@
   color: var(--color-ink-2);
 }
 
-/* The week: 11 in front, 131 behind it. */
-.week {
+/* The batch conclusion: what was checked and what is left for a person. */
+.check {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: end;
-  gap: var(--space-8);
+  gap: var(--space-4);
 }
-.needs {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-}
-.needsNumber {
-  font-size: 3.5rem;
-  font-weight: 600;
-  line-height: 0.9;
-  letter-spacing: -0.05em;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-attention);
-}
-.needs[data-zero='true'] .needsNumber {
-  color: var(--color-accent);
-}
-.needsLabel {
-  font-size: var(--text-body);
-  font-weight: var(--weight-medium);
-  color: var(--color-ink);
-}
-.rest {
-  display: grid;
-  gap: var(--space-3);
-  padding-bottom: 0.375rem;
-}
-.restLine {
-  font-size: var(--text-small);
+.checkTitle {
+  font-size: var(--text-label);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   color: var(--color-ink-3);
 }
-.handledNumber {
-  font-weight: var(--weight-semibold);
-  color: var(--color-accent);
+.stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.stat {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px var(--color-line);
+}
+.stat dt {
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-3);
+}
+.stat dd {
+  margin: 0;
+  white-space: nowrap;
+  font-size: clamp(1rem, 4.2vw, 1.25rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
 }
-.decidedByYou,
-.of {
-  color: var(--color-ink-4);
+.stat[data-tone='cleared'] dd {
+  color: var(--color-accent);
 }
-.bar {
-  display: flex;
-  gap: 2px;
-  height: 6px;
-  border-radius: var(--radius-pill);
-  overflow: hidden;
-}
-.barHandled {
-  background: var(--color-accent-line);
-}
-.barDecided {
-  background: var(--color-line-strong);
-}
-.barNeeds {
-  min-width: 6px;
-  background: var(--color-attention);
+.stat[data-tone='attention'] dd {
+  color: var(--color-attention);
 }
 
 /* Section labels */
@@ -128,84 +109,115 @@
   font-variant-numeric: tabular-nums;
 }
 
-.items li + li {
+/* Exception cards: type, impact, whose invoice, why, and the one action. */
+.cards li + li {
   border-top: 1px solid var(--color-line);
 }
-.item {
+.card {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 8.5rem auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'top action'
+    'title action'
+    'impact action'
+    'who action'
+    'why action';
   align-items: center;
-  gap: var(--space-6);
-  padding: var(--space-4) var(--space-6);
+  column-gap: var(--space-6);
+  row-gap: var(--space-1);
+  padding: var(--space-5) var(--space-6);
   transition: background-color var(--duration-fast) var(--ease-out);
 }
-.item:hover {
+.card:hover {
   background: var(--color-canvas);
 }
-.issue,
-.who {
-  display: grid;
-  min-width: 0;
-  line-height: 1.4;
-}
-.issueTitle {
+.cardTop {
+  grid-area: top;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
-  font-size: var(--text-small);
+  gap: var(--space-3);
+  margin-bottom: var(--space-1);
+}
+.cardMore {
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-3);
+}
+.cardTitle {
+  grid-area: title;
+  font-size: var(--text-body);
   font-weight: var(--weight-semibold);
   letter-spacing: -0.01em;
   color: var(--color-ink);
 }
-.issueTitle::before {
-  content: '';
-  flex-shrink: 0;
-  width: 0.4375rem;
-  height: 0.4375rem;
-  border-radius: 50%;
-  background: var(--color-attention);
-}
-.evidence {
-  padding-left: 0.9375rem;
-  font-size: var(--text-xsmall);
+.cardImpact {
+  grid-area: impact;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
   color: var(--color-attention);
 }
-.supplier {
+.card[data-state='confirm'] .cardImpact {
+  color: var(--color-ink-2);
+}
+.cardWho {
+  grid-area: who;
   overflow: hidden;
   font-size: var(--text-small);
-  color: var(--color-ink);
+  color: var(--color-ink-2);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.number {
+.cardWhy {
+  grid-area: why;
   font-size: var(--text-xsmall);
+  line-height: 1.5;
   color: var(--color-ink-3);
 }
-.amount {
-  font-size: var(--text-small);
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-ink);
-}
-.review {
+.cardAction {
+  grid-area: action;
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  height: 2rem;
-  padding: 0 var(--space-2) 0 var(--space-3);
+  height: 2.25rem;
+  padding: 0 var(--space-3) 0 var(--space-4);
   border-radius: var(--radius-sm);
-  box-shadow: inset 0 0 0 1px var(--color-line-strong);
-  font-size: var(--text-xsmall);
-  font-weight: var(--weight-medium);
-  color: var(--color-ink);
-  transition:
-    background-color var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out);
-}
-.item:hover .review {
   background: var(--color-ink);
-  box-shadow: none;
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
   color: var(--color-canvas);
+  white-space: nowrap;
+}
+.card:hover .cardAction {
+  background: var(--color-accent);
+}
+
+/* The three states, everywhere they appear. */
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-label);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.state[data-state='review'] {
+  background: var(--color-attention-soft);
+  box-shadow: inset 0 0 0 1px var(--color-attention-line);
+  color: var(--color-attention);
+}
+.state[data-state='confirm'] {
+  background: var(--color-surface-sunken);
+  box-shadow: inset 0 0 0 1px var(--color-line-strong);
+  color: var(--color-ink-2);
+}
+.state[data-state='cleared'] {
+  background: var(--color-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--color-accent-line);
+  color: var(--color-accent);
 }
 
 .more {
@@ -246,11 +258,62 @@
   color: var(--color-ink-3);
 }
 
-/* Decided and handled: quiet, receding. */
-.decided,
-.handled {
+/* Processing, and the cleared list folded away: quiet, receding. */
+.decided {
   display: grid;
   gap: var(--space-3);
+}
+.cleared {
+  display: grid;
+  gap: var(--space-3);
+}
+.clearedSummary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px var(--color-line);
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+  cursor: pointer;
+  list-style: none;
+}
+.clearedSummary::-webkit-details-marker {
+  display: none;
+}
+.clearedSummary > span:nth-child(2) {
+  flex: 1;
+}
+.clearedQuiet {
+  font-weight: var(--weight-regular);
+  color: var(--color-ink-3);
+}
+.clearedMark,
+.rejectedMark {
+  display: grid;
+  place-items: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: #fff;
+}
+.rejectedMark {
+  background: var(--color-ink-3);
+}
+.chev {
+  color: var(--color-ink-3);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.cleared[open] .chev {
+  transform: rotate(90deg);
+}
+.cleared > ul,
+.cleared > a {
+  margin-inline: var(--space-4);
 }
 .quietList li + li {
   border-top: 1px solid var(--color-line);
@@ -308,9 +371,6 @@
   text-underline-offset: 3px;
   cursor: pointer;
 }
-.decided .quietRow {
-  grid-template-columns: minmax(0, 1fr) auto auto;
-}
 .allLink {
   justify-self: start;
   font-size: var(--text-xsmall);
@@ -321,26 +381,11 @@
 }
 
 @media (max-width: 900px) {
-  .item {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      'issue amount'
-      'who review';
-    gap: var(--space-2) var(--space-4);
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .issue {
-    grid-area: issue;
-  }
-  .who {
-    grid-area: who;
-    padding-left: 0.9375rem;
-  }
-  .amount {
-    grid-area: amount;
-  }
-  .review {
-    grid-area: review;
-    justify-self: end;
+  .stats > :last-child {
+    grid-column: 1 / -1;
   }
 }
 
@@ -351,21 +396,20 @@
   .greeting {
     font-size: 1.625rem;
   }
-  .week {
-    grid-template-columns: 1fr;
-    gap: var(--space-3);
-  }
-  .item,
+  .card,
   .queueHead {
     padding-inline: var(--space-4);
   }
-  .review {
-    display: none;
+  .card {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'top' 'title' 'impact' 'who' 'why' 'action';
   }
-  .item {
-    grid-template-areas:
-      'issue amount'
-      'who who';
+  .cardWho {
+    white-space: normal;
+  }
+  .cardAction {
+    justify-self: start;
+    margin-top: var(--space-2);
   }
   .quietRow {
     grid-template-columns: minmax(0, 1fr) auto;
