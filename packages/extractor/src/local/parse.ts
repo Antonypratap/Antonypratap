@@ -210,7 +210,7 @@ function labelled(
             o !== s &&
             o.x0 >= s.x1 - unit * 0.2 &&
             Math.abs(yMid(o) - yMid(s)) <= unit * 0.5 &&
-            !isMeta(o.text),
+            !isBareLabel(o.text),
         )
         .sort((a, b) => a.x0 - b.x0)[0];
       const below = p.segments
@@ -557,6 +557,92 @@ const isMeta = (t: string) =>
     t,
   );
 
+/**
+ * Tax printed only under the item rows (Tally: "CGST @ 9%", "SGST @ 9%"): one rate for every line.
+ * Given to the lines only when no line prints its own rate, the footer has exactly one CGST and
+ * one SGST row at the same printed rate (or exactly one IGST row), every line amount was read and
+ * is large enough that its own tax exceeds any rounding difference, the amounts add up to the goods value printed (if printed), and that rate
+ * gives EXACTLY the tax printed, rounded on the whole or line by line. An exempt line, a line at
+ * another rate, or a second rate in the footer makes the tax disagree or the footer ambiguous, and
+ * the rate stays not read (asked). Returns the explanation when it applied, else null.
+ */
+export function footerRate(
+  lines: ExtractedLine[],
+  totalRows: readonly Segment[][],
+  totals: Record<'taxable' | 'cgst' | 'sgst' | 'igst', { value: number | null }>,
+): string | null {
+  if (lines.length === 0 || lines.some((l) => l.gstRateBp.value !== null || l.gstRateBp.evidence))
+    return null;
+  const heads = (re: RegExp) =>
+    totalRows.flatMap((row) => {
+      const label = row.find((x) => re.test(x.text));
+      if (!label) return [];
+      const m = /@?\s*(\d{1,2}(?:\.\d{1,2})?)\s*%/.exec(
+        row
+          .filter((x) => x.x0 >= label.x0)
+          .map((x) => x.text)
+          .join(' '),
+      );
+      const r = m ? parseRatePercent(`${m[1]}%`) : null;
+      return [{ label, rateBp: r?.ok ? (r.value as number) : null, spelled: `${m?.[1] ?? ''}%` }];
+    });
+  const cgst = heads(TOTALS.cgst);
+  const sgst = heads(TOTALS.sgst);
+  const igst = heads(TOTALS.igst);
+  let rateBp: number | null = null;
+  let segs: Segment[] = [];
+  let spelled = '';
+  let printed: number | null = null;
+  let divisor = 10_000;
+  const [c] = cgst;
+  const [g] = sgst;
+  const [i] = igst;
+  if (cgst.length === 1 && sgst.length === 1 && igst.length === 0 && c && g) {
+    if (c.rateBp === null || c.rateBp !== g.rateBp || totals.cgst.value !== totals.sgst.value)
+      return null;
+    rateBp = c.rateBp * 2;
+    segs = [c.label, g.label];
+    spelled = c.spelled;
+    printed = totals.cgst.value;
+    divisor = 20_000;
+  } else if (igst.length === 1 && cgst.length === 0 && sgst.length === 0 && i) {
+    rateBp = i.rateBp;
+    segs = [i.label];
+    spelled = i.spelled;
+    printed = totals.igst.value;
+  }
+  if (rateBp === null || rateBp <= 0 || printed === null) return null;
+  const amounts: number[] = [];
+  for (const l of lines) {
+    const v = l.taxablePaise.value as number | null;
+    // Each line's own tax must be larger than any rounding difference (a paisa a line), so a
+    // line wrongly given the rate always shows in the tax; tiny lines leave the rate asked.
+    if (v === null || (v * (rateBp as number)) / divisor < lines.length + 1) return null;
+    amounts.push(v);
+  }
+  const goods = amounts.reduce((a, b) => a + b, 0);
+  if (totals.taxable.value !== null && totals.taxable.value !== goods) return null;
+  const head = (amount: number) => Math.round((amount * (rateBp as number)) / divisor);
+  const onWhole = head(goods);
+  const perLine = amounts.reduce((a, v) => a + head(v), 0);
+  if (printed !== onWhole && printed !== perLine) return null;
+  for (const l of lines)
+    l.gstRateBp = toField(rateBp, segs, false, spelled) as ExtractedLine['gstRateBp'];
+  return `GST rate ${rateBp / 100}% read from the tax rows under the items (${segs.map((x) => clean(x.text)).join(', ')}) for every line: no line prints its own rate, and that rate gives exactly the tax printed.`;
+}
+
+/**
+ * A label with no value of its own ("Dated", "Invoice No."): the next box's label, never a value.
+ * "PO-2026-1103" is a value even though it starts like the order-number label.
+ */
+const isBareLabel = (t: string) => {
+  for (const re of [L.invoiceNo, L.invoiceDate, L.po, L.pos]) {
+    const m = re.exec(t);
+    if (m) return !clean(m[m.length - 1] ?? '');
+  }
+  return isMeta(t);
+};
+
 function addressOf(segs: readonly Segment[]): Segment[] {
   return segs.filter(
     (s) =>
@@ -804,6 +890,8 @@ export function parseInvoice(pages: readonly PageText[]): ParsedInvoice {
     roundOff: total(TOTALS.roundOff, true),
     total: total(TOTALS.total),
   };
+  const fromFooter = footerRate(lines, totalRows, totals);
+  if (fromFooter) warnings.push(fromFooter);
   for (const [k, t] of Object.entries(totals))
     if (t.unreadable)
       warnings.push(`The ${k === 'total' ? 'invoice total' : k} is printed but could not be read.`);

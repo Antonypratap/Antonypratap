@@ -143,12 +143,20 @@ describe('a footer-tax invoice, read locally and compared with the ERP receipt',
       result: 'not_checked',
     });
     expect(inv.comparison?.rows.filter((r) => r.result === 'mismatch')).toEqual([]);
+    // The rate printed in the footer ("CGST @ 9%") proves the tax; nothing is left to ask.
+    expect(row(inv, /arithmetic/, 'GST calculated from the rates')?.result).toBe('match');
+    expect(inv.lines.map((l) => l.gstRateBp)).toEqual([1800, 1800, 1800, 1800]);
+    expect(inv.questions).toEqual([]);
+    expect(inv.comparison?.verdict).toBe('cleared');
+    // The invoice's own final state: verified, waiting only for payment.
+    expect(inv.state).toBe('VERIFIED_PENDING_PAYMENT');
   }, 60_000);
 
   it('a rate that differs from the ERP is reported with both values; the invoice’s stays', async () => {
     await importErp(erpExport('3400'));
     const inv = await detail(await upload('D15-tally-style.pdf'));
     expect(inv.comparison?.verdict).toBe('mismatch');
+    expect(inv.state).toBe('NEEDS_INPUT');
     expect(row(inv, /MIRROR/, 'Rate')).toMatchObject({
       invoice: '₹3,450.00',
       erp: '₹3,400.00',

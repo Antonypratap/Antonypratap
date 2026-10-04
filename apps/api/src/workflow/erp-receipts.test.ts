@@ -55,7 +55,7 @@ const item = (name: string, rate: string, hsn: string) => ({
   sgst: (Number(rate) * 0.09).toFixed(2),
 });
 function erp(
-  items = [
+  items: Record<string, unknown>[] = [
     item('GATTA', '40', '3926'),
     item('WOOD SCREW 2"', '40', '7318'),
     item('MIRROR', '3450', '7009'),
@@ -188,5 +188,26 @@ describe('receipt comparison of a footer-tax invoice', () => {
       erp: '₹4,780.00 calculated',
     });
     expect(r.comparison.verdict).toBe('mismatch');
+  });
+
+  it('a taxable value printed with the freight in it is not counted twice', () => {
+    // One line of 10,000.00, freight 500.00, taxable value printed 10,500.00, GST 18% on it.
+    const inv = invoice({
+      taxablePaise: 1_050_000,
+      cgstPaise: 94_500,
+      sgstPaise: 94_500,
+      roundOffPaise: 0,
+      totalPaise: 1_239_000,
+      freightPaise: 50_000,
+      lines: [line(1, 'MIRROR', 1_000_000, '7009')],
+    });
+    const rec = erp([
+      { ...item('MIRROR', '10000', '7009'), cgst: '945.00', sgst: '945.00', freight: '500' },
+    ]);
+    const r = receiptComparison(inv, rec);
+    expect(find(r, /arithmetic/, 'Line amounts add up to the goods value')?.result).toBe('match');
+    expect(find(r, /Totals/, 'Goods value')).toMatchObject({ result: 'match' });
+    expect(find(r, /arithmetic/, 'Lines + tax + round-off = total')?.result).toBe('match');
+    expect(find(r, /Totals/, 'Invoice total')?.result).toBe('match');
   });
 });

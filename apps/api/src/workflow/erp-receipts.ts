@@ -535,15 +535,24 @@ export function receiptComparison(
     ? inv.lines.reduce((s, l) => s + (l.taxablePaise ?? 0), 0)
     : null;
   // The goods value as printed; else, when every line amount was read, their sum (labelled so).
-  const printedGoods = inv.taxablePaise ?? null;
+  // A taxable value printed with the freight in it is the lines' value plus that freight.
+  const printedTaxable = inv.taxablePaise ?? null;
+  const invFreight = inv.freightPaise ?? 0;
+  const withFreight =
+    printedTaxable !== null &&
+    invFreight !== 0 &&
+    lineTaxable !== null &&
+    printedTaxable === lineTaxable + invFreight;
+  const printedGoods =
+    printedTaxable !== null && withFreight ? printedTaxable - invFreight : printedTaxable;
   const invGoods = printedGoods ?? lineTaxable;
-  if (printedGoods !== null && lineTaxable !== null && inv.lines.length > 0) {
+  if (printedTaxable !== null && lineTaxable !== null && inv.lines.length > 0) {
     const ok = printedGoods === lineTaxable;
     push({
       section: 'Invoice arithmetic',
       label: 'Line amounts add up to the goods value',
-      invoice: money(printedGoods),
-      erp: `${money(lineTaxable)} calculated`,
+      invoice: money(printedTaxable),
+      erp: `${money(lineTaxable)}${withFreight ? ` + freight ${money(invFreight)}` : ''} calculated`,
       result: ok ? 'match' : 'mismatch',
       blocking: false,
       note: ok ? null : 'The line amounts do not add up to the goods value printed.',
@@ -619,7 +628,7 @@ export function receiptComparison(
     'Totals',
     printedGoods !== null ? 'Goods value' : 'Goods value (sum of lines)',
     printedGoods !== null
-      ? money(printedGoods)
+      ? `${money(printedGoods)}${withFreight ? ` (printed ${money(printedTaxable)} with freight)` : ''}`
       : lineTaxable !== null
         ? `${money(lineTaxable)} calculated`
         : null,
