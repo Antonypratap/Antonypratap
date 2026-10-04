@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   CAPABILITIES,
+  CHALLENGE_FOLLOW_UPS,
   COMMERCIAL_EVENTS,
+  FINDING_TYPE_LABEL,
   capabilityDefinition,
   formatBytes,
   formatEntitlement,
@@ -22,6 +24,7 @@ import { ApiError } from '../product/api/client';
 import { hrefFor, type OpsSection, type Route } from '../product/router';
 import {
   opsApi,
+  type ChallengeLead,
   type CentreUser,
   type CostBucket,
   type Paise,
@@ -47,6 +50,7 @@ const NAV: { section: OpsSection; label: string; icon: IconName }[] = [
   { section: 'processing', label: 'Invoice Processing', icon: 'inbox' },
   { section: 'cost', label: 'AI, Usage & Cost', icon: 'spark' },
   { section: 'plans', label: 'Plans & Entitlements', icon: 'document' },
+  { section: 'challenges', label: '10 Invoice Challenge', icon: 'spark' },
   { section: 'config', label: 'System Configuration', icon: 'menu' },
   { section: 'audit', label: 'Audit Log', icon: 'audit' },
 ];
@@ -147,6 +151,8 @@ function Section({ route }: { route: OpsRoute }) {
       return <Cost />;
     case 'plans':
       return <Plans />;
+    case 'challenges':
+      return <Challenges />;
     case 'config':
       return <Config />;
     case 'audit':
@@ -1663,6 +1669,191 @@ function PlanRow({
               }}
             />
             <Problem text={problem} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+// ── 10 Invoice Challenge ───────────────────────────────────────────────────
+
+const LEAD_TONE: Record<ChallengeLead['status'], string> = {
+  collecting: 'info',
+  checking: 'info',
+  complete: 'good',
+  purged: 'neutral',
+};
+
+function Challenges() {
+  const { data, error, reload } = useLoad(opsApi.challenges, 'challenges');
+  const [open, setOpen] = useState<string | null>(null);
+  if (!data)
+    return (
+      <Page title="10 Invoice Challenge">
+        <State error={error} />
+      </Page>
+    );
+  const rows = data.challenges;
+  const n = (p: (c: ChallengeLead) => boolean) => rows.filter(p).length;
+  const sum = (p: (c: ChallengeLead) => number) => rows.reduce((s, c) => s + p(c), 0);
+  return (
+    <Page
+      title="10 Invoice Challenge"
+      sub={
+        data.enabled
+          ? "Prospects' challenges: their results (counts and amounts) and follow-up. Documents stay in each challenge's own workspace and are never shown here."
+          : 'The challenge is not enabled on this deployment (VEYRA_CHALLENGE).'
+      }
+    >
+      <div className={styles.tiles}>
+        <Tile label="Challenges started" value={num(rows.length)} />
+        <Tile label="Completed" value={num(n((c) => c.completedAt !== null))} />
+        <Tile
+          label="Invoices submitted"
+          value={num(sum((c) => c.invoicesSubmitted))}
+          note={`${num(sum((c) => c.invoicesProcessed))} processed · ${num(sum((c) => c.invoicesFailed))} failed`}
+        />
+        <Tile
+          label="Findings"
+          value={num(sum((c) => c.attention))}
+          note="Invoices needing attention"
+        />
+        <Tile
+          label="Value requiring review"
+          value={inr(
+            sum((c) => c.reviewValuePaise ?? 0),
+            '₹0.00',
+          )}
+        />
+        <Tile label="Report downloads" value={num(sum((c) => c.reportDownloads))} />
+        <Tile
+          label="Walkthrough / pilot requests"
+          value={`${n((c) => c.interest === 'walkthrough')} / ${n((c) => c.interest === 'pilot')}`}
+          tone={n((c) => c.interest !== 'none' && c.followUp === 'new') ? 'warn' : undefined}
+          note={`${n((c) => c.interest !== 'none' && c.followUp === 'new')} not yet contacted`}
+        />
+      </div>
+      {rows.length === 0 ? (
+        <Empty>No challenges yet.</Empty>
+      ) : (
+        <div className={styles.scroll}>
+          <table className={styles.table} data-testid="challenges">
+            <thead>
+              <tr>
+                <th>Company</th>
+                <th>Status</th>
+                <th className={styles.num}>Invoices</th>
+                <th className={styles.num}>Records</th>
+                <th className={styles.num}>Cleared / attention</th>
+                <th className={styles.num}>Value requiring review</th>
+                <th>Report</th>
+                <th>Asked for</th>
+                <th>Follow-up</th>
+                <th>Started</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((c) => (
+                <ChallengeRow
+                  key={c.id}
+                  c={c}
+                  open={open === c.id}
+                  onToggle={() => setOpen(open === c.id ? null : c.id)}
+                  onDone={() => {
+                    setOpen(null);
+                    reload();
+                  }}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Page>
+  );
+}
+
+function ChallengeRow({
+  c,
+  open,
+  onToggle,
+  onDone,
+}: {
+  c: ChallengeLead;
+  open: boolean;
+  onToggle: () => void;
+  onDone: () => void;
+}) {
+  const [next, setNext] = useState(c.followUp);
+  const types = Object.entries(c.findings)
+    .map(([k, v]) => `${FINDING_TYPE_LABEL[k] ?? k}: ${v}`)
+    .join(' · ');
+  return (
+    <>
+      <tr>
+        <td>
+          <span className={styles.strong}>{c.companyName}</span>
+          <span className={styles.line}>
+            {[c.contactName, c.email, c.phone].filter(Boolean).join(' · ')}
+          </span>
+          {(c.outlets !== null || c.erpSystem) && (
+            <span className={styles.line}>
+              {[c.outlets !== null ? `${c.outlets} outlet(s)` : null, c.erpSystem]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+          )}
+        </td>
+        <td>
+          <Badge tone={LEAD_TONE[c.status]}>{c.status}</Badge>
+        </td>
+        <td className={styles.num}>
+          {c.invoicesSubmitted}
+          {c.invoicesFailed ? (
+            <span className={styles.line}> ({c.invoicesFailed} failed)</span>
+          ) : null}
+        </td>
+        <td className={styles.num}>{c.recordFiles}</td>
+        <td className={styles.num}>
+          {c.completedAt ? `${c.cleared} / ${c.attention}` : '—'}
+          {types && <span className={styles.line}>{types}</span>}
+        </td>
+        <td className={styles.num}>{c.completedAt ? inr(c.reviewValuePaise, '—') : '—'}</td>
+        <td>
+          {c.reportDownloads
+            ? `${c.reportDownloads}× · ${ago(c.reportDownloadedAt)}`
+            : 'Not downloaded'}
+          <span className={styles.line}>Email: {c.emailStatus.replace('_', ' ')}</span>
+        </td>
+        <td>
+          {c.interest === 'none' ? '—' : <Badge tone="warn">{c.interest}</Badge>}
+          {c.interestAt && <span className={styles.line}>{ago(c.interestAt)}</span>}
+        </td>
+        <td>
+          <button type="button" className={styles.linkButton} onClick={onToggle}>
+            {label(c.followUp)}
+          </button>
+        </td>
+        <td>{at(c.createdAt)}</td>
+      </tr>
+      {open && (
+        <tr>
+          <td colSpan={10}>
+            <label className={styles.field}>
+              <span>Follow-up status</span>
+              <select value={next} onChange={(e) => setNext(e.target.value)}>
+                {CHALLENGE_FOLLOW_UPS.map((f) => (
+                  <option key={f} value={f}>
+                    {label(f)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <ReasonAction
+              action="Save follow-up"
+              onRun={(reason) => opsApi.setFollowUp(c.id, next, reason).then(onDone)}
+            />
           </td>
         </tr>
       )}

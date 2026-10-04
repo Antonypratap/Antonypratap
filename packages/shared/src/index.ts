@@ -27,5 +27,7 @@ export * from './schemas/audit';
 export * from './schemas/api';
 export * from './auth';
 export * from './commercial';
+export * from './challenge';
 export * from './schemas/auth';
 export * from './schemas/commercial';
+export * from './schemas/challenge';

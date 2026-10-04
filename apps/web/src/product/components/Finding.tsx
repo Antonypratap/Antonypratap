@@ -103,12 +103,18 @@ export function EvidenceList({
   documentId,
   isPdf,
   original,
+  pageUrl,
+  recordsLabel = 'Your ERP',
 }: {
   evidence: ApiEvidence[];
   documentId: string;
   isPdf: boolean;
   /** Whether the original document can be shown (not deleted, not missing). */
   original: boolean;
+  /** Where a page image comes from, when not the product's document route (the challenge). */
+  pageUrl?: (page: number) => string | null;
+  /** What the records side is called ("Your ERP", "Your records"). */
+  recordsLabel?: string;
 }) {
   if (evidence.length === 0)
     return <p className={styles.noEvidence}>The full invoice below shows every value as read.</p>;
@@ -118,14 +124,18 @@ export function EvidenceList({
         <li key={`${e.label}-${i}`} className={styles.evidenceItem} data-source={e.source}>
           <p className={styles.evidenceLabel}>
             <span className={styles.evidenceSource}>
-              {e.source === 'invoice' ? 'Invoice' : 'Your ERP'}
+              {e.source === 'invoice' ? 'Invoice' : recordsLabel}
             </span>
             {e.label.replace(/^Invoice · /, '')}
             {e.page !== null && e.source === 'invoice' ? ` · page ${e.page}` : ''}
           </p>
-          {e.source === 'invoice' && original && e.page !== null && e.bbox ? (
+          {e.source === 'invoice' &&
+          original &&
+          e.page !== null &&
+          e.bbox &&
+          (pageUrl ? pageUrl(e.page) : true) ? (
             <Crop
-              url={documentPageUrl(documentId, e.page)}
+              url={pageUrl?.(e.page) ?? documentPageUrl(documentId, e.page)}
               bbox={e.bbox}
               scale={isPdf ? 150 / 72 : 1}
               value={e.value}

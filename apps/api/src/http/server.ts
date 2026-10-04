@@ -69,6 +69,8 @@ import type { Environment } from '../config';
 import { ulid } from '../ids';
 import { pino, type Logger } from 'pino';
 import { RateLimiter, bucketOf, type RateBucket } from './rate-limit';
+import { registerChallengeRoutes } from '../challenge/routes';
+import type { ChallengeService } from '../challenge/service';
 import { publicReadiness, type ReadinessReport } from './health';
 import { timedScope } from '../perf/timing';
 import { CommercialAdmin } from '../commercial/admin';
@@ -119,6 +121,8 @@ export interface ServerOptions {
   readiness?: () => Promise<ReadinessReport>;
   /** Veyra Operations' commercial actions (Phase 8A). Absent: built on the Veyrafy's own. */
   commercial?: CommercialAdmin;
+  /** The 10 Invoice Challenge (acquisition); absent: its routes do not exist. */
+  challenge?: ChallengeService | null;
   /**
    * The built web app, served from this same origin (production client instances). Absent: the
    * API serves /api only (development uses the Vite dev server).
@@ -157,6 +161,8 @@ const STATUS: Record<VeyraError['code'], number> = {
   UNSUPPORTED_FILE: 415,
   FORBIDDEN: 403,
   CONFLICT: 409,
+  LIMIT_REACHED: 409,
+  RATE_LIMITED: 429,
 };
 
 /** Browser features the API and documents never need (Permissions-Policy; helmet has none). */
@@ -1147,8 +1153,13 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     });
   });
 
+  // ── The 10 Invoice Challenge (public; the challenge's own token) ─────────
+  if (options.challenge)
+    registerChallengeRoutes(app, options.challenge, { cookieSecure: options.auth.cookieSecure });
+
   // ── Veyra Operations (Phase 8A): VEYRA_ADMIN only ────────────────────────
   registerOps(app, {
+    ...(options.challenge ? { challenge: options.challenge } : {}),
     veyra,
     commercial:
       options.commercial ?? new CommercialAdmin(veyra.db, veyra.entitlements, veyra.clock),

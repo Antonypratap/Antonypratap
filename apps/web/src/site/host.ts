@@ -16,6 +16,20 @@
 export const DOMAIN = 'veyrafy.com';
 export const WEBSITE_ADDRESS = `https://${DOMAIN}/`;
 export const DEMO_ADDRESS = `https://demo.${DOMAIN}/`;
+/**
+ * Where the 10 Invoice Challenge runs (a deployment with VEYRA_CHALLENGE=true and its own
+ * database; the website has none). The website's challenge page starts it there.
+ */
+export const CHALLENGE_PATH = '/10-invoice-challenge';
+export const CHALLENGE_ADDRESS = `https://demo.${DOMAIN}${CHALLENGE_PATH}`;
+
+/** Whether this address is the challenge page (a path, or the app's hash form). */
+export function isChallengePage(pathname: string, hash: string): boolean {
+  return (
+    pathname.replace(/\/+$/, '') === CHALLENGE_PATH ||
+    hash.replace(/^#/, '').split(/[?&]/)[0]?.replace(/\/+$/, '') === CHALLENGE_PATH
+  );
+}
 export const CONTACT_PHONE = '+91 98800 00990';
 export const CONTACT_PHONE_HREF = 'tel:+919880000990';
 

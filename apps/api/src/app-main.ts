@@ -10,6 +10,7 @@ import { PendingMigrationsError } from './db/open';
 import { createLogger } from './http/logging';
 import { createStorage } from './storage';
 import { loadWebDist } from './http/web-static';
+import { ResendEmailSender } from './challenge/email';
 
 let config: VeyraConfig;
 try {
@@ -77,6 +78,14 @@ try {
     jobs: config.jobs,
     web,
     release: config.release,
+    challenge: config.challenge,
+    email: config.email
+      ? new ResendEmailSender({
+          apiKey: config.email.apiKey.reveal(),
+          from: config.email.from,
+          log: log.child({ component: 'email' }),
+        })
+      : null,
   });
 } catch (error) {
   if (error instanceof PendingMigrationsError) log.fatal({ pending: error.pending }, error.message);
@@ -106,6 +115,7 @@ await app.warmUp().then(
 );
 
 app.runner.start();
+app.challenge?.start();
 await app.server.listen({ host: config.host, port: config.port });
 log.info(
   { ...describeConfig(config), port: config.port, web: web !== null, release: config.release },

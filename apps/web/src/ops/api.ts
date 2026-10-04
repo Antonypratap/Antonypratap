@@ -202,6 +202,36 @@ export interface CentreConfig {
   health: { status: string; checks?: unknown } | null;
   organizationsPerDeployment: number;
 }
+export interface ChallengeLead {
+  id: string;
+  status: 'collecting' | 'checking' | 'complete' | 'purged';
+  companyName: string;
+  contactName: string | null;
+  email: string;
+  phone: string | null;
+  outlets: number | null;
+  erpSystem: string | null;
+  invoicesSubmitted: number;
+  invoicesProcessed: number;
+  invoicesFailed: number;
+  recordFiles: number;
+  cleared: number;
+  attention: number;
+  totalInvoicePaise: number | null;
+  reviewValuePaise: number | null;
+  findings: Record<string, number>;
+  aiProvider: string | null;
+  checksStartedAt: string | null;
+  completedAt: string | null;
+  reportDownloads: number;
+  reportDownloadedAt: string | null;
+  emailStatus: 'not_sent' | 'sent' | 'failed' | 'not_configured';
+  interest: 'none' | 'walkthrough' | 'pilot';
+  interestAt: string | null;
+  followUp: string;
+  expiresAt: string;
+  createdAt: string;
+}
 export interface CustomerDetail {
   summary: Customer | null;
   commercial: z.infer<typeof ApiOpsCommercialSchema>;
@@ -304,6 +334,14 @@ export const opsApi = {
       ...json({ confidenceMinBp, reason }),
       method: 'PATCH',
     }),
+  challenges: () =>
+    request(As<{ enabled: boolean; challenges: ChallengeLead[] }>(), `${C}/challenges`),
+  setFollowUp: (id: string, followUp: string, reason: string) =>
+    request(
+      As<{ ok: true }>(),
+      `${C}/challenges/${encodeURIComponent(id)}/follow-up`,
+      json({ followUp, reason }),
+    ),
   audit: (f: { q?: string; organizationId?: string; event?: string }) =>
     request(z.array(ApiCommercialEventSchema), `${C}/audit${q(f)}`),
 };

@@ -132,6 +132,7 @@ export const COMMERCIAL_EVENTS = [
   'user.enabled',
   'processing.retried',
   'config.changed',
+  'challenge.follow_up_changed',
 ] as const;
 export type CommercialEvent = (typeof COMMERCIAL_EVENTS)[number];
 

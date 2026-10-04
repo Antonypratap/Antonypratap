@@ -57,6 +57,13 @@
       "when": 1791087871193,
       "tag": "0007_control_centre",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791090445014,
+      "tag": "0008_ten_invoice_challenge",
+      "breakpoints": true
     }
   ]
 }

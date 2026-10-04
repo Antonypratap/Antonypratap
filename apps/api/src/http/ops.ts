@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import {
+  CHALLENGE_FOLLOW_UPS,
   ApiCommercialEventSchema,
   ApiOpsCommercialSchema,
   ApiOpsOrganizationSchema,
@@ -16,8 +17,9 @@ import { ENTITLEMENT_CACHE_MS } from '../commercial/entitlements';
 import * as t from '../db/schema';
 import type { Users } from '../auth/users';
 import type { Environment } from '../config';
-import type { Veyra } from '../workflow/veyra';
+import { VeyraError, type Veyra } from '../workflow/veyra';
 import { ControlCentre } from '../ops/control-centre';
+import type { ChallengeService } from '../challenge/service';
 import type { ReadinessReport } from './health';
 
 /**
@@ -43,6 +45,8 @@ export interface OpsDeps {
   /** AI model names, main first (never the key). */
   aiModels?: readonly string[];
   limits?: { maxUploadBytes: number; rateLimitsPerMinute: Record<string, number> };
+  /** The 10 Invoice Challenge, when this deployment runs it. */
+  challenge?: ChallengeService;
 }
 
 const VIEW = { config: { access: 'ops.view' } } as const;
@@ -397,5 +401,23 @@ export function registerOps(app: FastifyInstance, d: OpsDeps): void {
         ...(f.event ? { event: f.event } : {}),
       }),
     );
+  });
+
+  // ── 10 Invoice Challenge (acquisition): the leads and their results ────
+  // Counts, amounts and statuses only: never the prospect's documents or the token.
+  app.get('/api/v1/ops/centre/challenges', VIEW, async () => ({
+    enabled: Boolean(d.challenge),
+    challenges: d.challenge ? await d.challenge.list() : [],
+  }));
+  app.post('/api/v1/ops/centre/challenges/:id/follow-up', MANAGE, async (req) => {
+    if (!d.challenge)
+      throw new VeyraError('INVALID_STATE', 'The 10 Invoice Challenge is not enabled here.');
+    const { id } = z.object({ id: z.string().min(1).max(64) }).parse(req.params);
+    const body = z
+      .object({ followUp: z.enum(CHALLENGE_FOLLOW_UPS), reason: Reason })
+      .strict()
+      .parse(req.body ?? {});
+    await d.challenge.setFollowUp(id, body.followUp, body.reason, ctx(req));
+    return { ok: true };
   });
 }

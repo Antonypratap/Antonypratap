@@ -138,3 +138,18 @@
     animation: none;
   }
 }
+
+/* The 10 Invoice Challenge: a quiet second way in, under the buttons. */
+.challenge {
+  margin-top: var(--space-4);
+  font-size: var(--text-small);
+}
+.challenge a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-decoration-color: var(--color-accent-line);
+  text-underline-offset: 3px;
+}

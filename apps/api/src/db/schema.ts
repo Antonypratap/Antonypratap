@@ -16,6 +16,10 @@ import {
   AUDIT_ACTOR_TYPES,
   COMMERCIAL_EVENTS,
   COMMERCIAL_STATUSES,
+  CHALLENGE_EMAIL_STATUSES,
+  CHALLENGE_FOLLOW_UPS,
+  CHALLENGE_INTERESTS,
+  CHALLENGE_STATUSES,
   PLAN_STATUSES,
   CREATION_ACTION_STATUSES,
   CREATION_ENTITIES,
@@ -766,5 +770,72 @@ export const processingUsage = pgTable(
   (t) => [
     index('processing_usage_created').on(t.createdAt),
     index('processing_usage_invoice').on(t.invoiceId),
+  ],
+);
+
+/**
+ * The 10 Invoice Challenge (acquisition): one row per prospect's challenge, the lead record. The
+ * invoices, documents, readings and records are NOT here: they live in the challenge's own
+ * isolated workspace (its own embedded database, records store and document folder), where the
+ * product's pipeline checks them. This row keeps who it is for, where it stands and the summary
+ * of the results (counts and amounts, no document contents), which outlives the workspace.
+ *
+ * The prospect reaches their challenge with a secret token; only its SHA-256 is stored.
+ */
+export const challenges = pgTable(
+  'challenges',
+  {
+    seq: seq(),
+    id: text('id').primaryKey(),
+    tokenHash: text('token_hash').notNull().unique(),
+    /** The link in the completion e-mail opens the results too (its own secret; hash only). */
+    linkTokenHash: text('link_token_hash').unique(),
+    status: text('status').notNull(),
+    companyName: text('company_name').notNull(),
+    contactName: text('contact_name'),
+    email: text('email').notNull(),
+    phone: text('phone'),
+    outlets: integer('outlets'),
+    erpSystem: text('erp_system'),
+    /** The buyer GSTIN the prospect confirmed before the checks (invoices must be billed to it). */
+    gstin: text('gstin'),
+    /** When the prospect agreed to how their invoices are processed and kept. */
+    consentAt: isoTimestamp('consent_at').notNull(),
+    /** The reading service named to the prospect at consent ("Google Gemini"), or null: none. */
+    aiProvider: text('ai_provider'),
+    invoicesSubmitted: integer('invoices_submitted').notNull().default(0),
+    invoicesProcessed: integer('invoices_processed').notNull().default(0),
+    invoicesFailed: integer('invoices_failed').notNull().default(0),
+    recordFiles: integer('record_files').notNull().default(0),
+    /** What the records added: counts per kind (suppliers, orders, receipts…). */
+    recordsJson: text('records_json').notNull().default('{}'),
+    cleared: integer('cleared').notNull().default(0),
+    attention: integer('attention').notNull().default(0),
+    totalInvoicePaise: bigint('total_invoice_paise', { mode: 'number' }),
+    reviewValuePaise: bigint('review_value_paise', { mode: 'number' }),
+    /** Findings by type ({"rate": 2, "duplicate": 1}). */
+    findingsJson: text('findings_json').notNull().default('{}'),
+    checksStartedAt: isoTimestamp('checks_started_at'),
+    completedAt: isoTimestamp('completed_at'),
+    reportGeneratedAt: isoTimestamp('report_generated_at'),
+    reportDownloads: integer('report_downloads').notNull().default(0),
+    reportDownloadedAt: isoTimestamp('report_downloaded_at'),
+    emailStatus: text('email_status').notNull().default('not_sent'),
+    emailSentAt: isoTimestamp('email_sent_at'),
+    interest: text('interest').notNull().default('none'),
+    interestAt: isoTimestamp('interest_at'),
+    followUp: text('follow_up').notNull().default('new'),
+    /** When the workspace (documents and readings) is deleted. */
+    expiresAt: isoTimestamp('expires_at').notNull(),
+    purgedAt: isoTimestamp('purged_at'),
+    createdAt: isoTimestamp('created_at').notNull(),
+    updatedAt: isoTimestamp('updated_at').notNull(),
+  },
+  (t) => [
+    check('challenges_status', inList(t.status, CHALLENGE_STATUSES)),
+    check('challenges_email_status', inList(t.emailStatus, CHALLENGE_EMAIL_STATUSES)),
+    check('challenges_interest', inList(t.interest, CHALLENGE_INTERESTS)),
+    check('challenges_follow_up', inList(t.followUp, CHALLENGE_FOLLOW_UPS)),
+    index('challenges_created').on(t.createdAt),
   ],
 );

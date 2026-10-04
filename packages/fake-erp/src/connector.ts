@@ -173,6 +173,18 @@ export class FakeErpConnector implements ErpConnector {
     this.#sqlite.close();
   }
 
+  /**
+   * Sets the buying company (its name and GSTIN; the state follows the GSTIN). For a workspace
+   * whose company is known only once its owner confirms it (the 10 Invoice Challenge).
+   */
+  setCompany(c: { name: string; gstin: string }): void {
+    this.#db
+      .update(company)
+      .set({ name: c.name, gstin: c.gstin, stateCode: c.gstin.slice(0, 2) })
+      .where(eq(company.id, 'company'))
+      .run();
+  }
+
   // ── Boundary (Phase 4) ───────────────────────────────────────────────────
 
   /** Everything except one-time suppliers, which this ERP has no concept of. */

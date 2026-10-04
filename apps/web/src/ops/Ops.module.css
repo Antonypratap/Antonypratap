@@ -263,6 +263,14 @@
   padding: 0 var(--space-4);
 }
 
+/* A secondary line under a table cell's main value. */
+.line {
+  display: block;
+  max-width: 22rem;
+  font-size: 0.75rem;
+  color: var(--color-ink-3);
+}
+
 /* ── Control Centre ─────────────────────────────────────────────────────── */
 .tileValue[data-words] {
   font-size: 1rem;

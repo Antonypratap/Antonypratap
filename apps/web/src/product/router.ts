@@ -31,6 +31,7 @@ export const OPS_SECTIONS = [
   'processing',
   'cost',
   'plans',
+  'challenges',
   'config',
   'audit',
 ] as const;

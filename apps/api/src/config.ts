@@ -113,6 +113,21 @@ export interface VeyraConfig {
   web: { dist: string | null };
   /** The deployed commit (RAILWAY_GIT_COMMIT_SHA), for GET /api/v1/health; null when unknown. */
   release: string | null;
+  /**
+   * The 10 Invoice Challenge (acquisition): off unless VEYRA_CHALLENGE=true. Prospects' invoices
+   * are checked in isolated workspaces under `<dataDir>/challenges` and deleted after
+   * `retentionDays`.
+   */
+  challenge: {
+    retentionDays: number;
+    dailyLimit: number;
+    /** "Book a walkthrough" opens this; null: the request is recorded and the team follows up. */
+    bookingUrl: string | null;
+    /** The Veyrafy team is told here when a challenge completes or asks for a walkthrough. */
+    notifyEmail: string | null;
+  } | null;
+  /** Outbound e-mail (challenge follow-up); null: nothing is sent, and that is recorded. */
+  email: { provider: 'resend'; apiKey: Secret; from: string } | null;
 }
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -204,6 +219,16 @@ const VARS = {
   VEYRA_WEB_DIST: z.string().min(1),
   // true: this process is the public website only (site.ts); read by main.ts before anything else.
   VEYRA_SITE_ONLY: bool,
+  // The 10 Invoice Challenge (acquisition), and its follow-up e-mail.
+  VEYRA_CHALLENGE: bool,
+  VEYRA_CHALLENGE_RETENTION_DAYS: int(1, 365),
+  VEYRA_CHALLENGE_DAILY_LIMIT: int(1, 10_000),
+  VEYRA_CHALLENGE_NOTIFY_EMAIL: z.email().max(254),
+  VEYRA_BOOKING_URL: z.url({ protocol: /^https$/ }).max(500),
+  VEYRA_EMAIL_PROVIDER: z.enum(['off', 'resend']),
+  // Never echoed.
+  VEYRA_EMAIL_API_KEY: z.string().min(10).max(200),
+  VEYRA_EMAIL_FROM: z.string().trim().min(3).max(200),
 } as const;
 type VarName = keyof typeof VARS;
 
@@ -412,6 +437,15 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
     },
     web: { dist: webDist(read, deployed, problems) },
     release: releaseOf(env),
+    challenge: read('VEYRA_CHALLENGE')
+      ? {
+          retentionDays: read('VEYRA_CHALLENGE_RETENTION_DAYS') ?? 30,
+          dailyLimit: read('VEYRA_CHALLENGE_DAILY_LIMIT') ?? 50,
+          bookingUrl: read('VEYRA_BOOKING_URL') ?? null,
+          notifyEmail: read('VEYRA_CHALLENGE_NOTIFY_EMAIL') ?? null,
+        }
+      : null,
+    email: emailOf(read, problems),
   };
   if (problems.length > 0) throw new ConfigError(problems);
   return config;
@@ -454,6 +488,20 @@ export function loadSiteConfig(env: Env): SiteConfig {
   return config;
 }
 
+/** Outbound e-mail: a provider needs its key and a sender address. */
+function emailOf(
+  read: ReturnType<typeof reader>['read'],
+  problems: string[],
+): VeyraConfig['email'] {
+  const provider = read('VEYRA_EMAIL_PROVIDER') ?? 'off';
+  if (provider === 'off') return null;
+  const apiKey = read('VEYRA_EMAIL_API_KEY');
+  const from = read('VEYRA_EMAIL_FROM');
+  if (!apiKey) problems.push('VEYRA_EMAIL_API_KEY is required when VEYRA_EMAIL_PROVIDER is set');
+  if (!from) problems.push('VEYRA_EMAIL_FROM is required when VEYRA_EMAIL_PROVIDER is set');
+  return apiKey && from ? { provider, apiKey: new Secret(apiKey), from } : null;
+}
+
 /** What a variable must look like, for the startup error (never its value). */
 function describe(name: VarName): string {
   const schema = VARS[name] as z.ZodType;
@@ -481,6 +529,8 @@ export function describeConfig(c: VeyraConfig) {
     demo: c.demo,
     aiReader: c.ai ? `${c.ai.provider}:${[c.ai.model, ...c.ai.backupModels].join(',')}` : 'off',
     migrateOnStart: c.migrateOnStart,
+    challenge: c.challenge !== null,
+    email: c.email ? c.email.provider : 'off',
   };
 }
 

@@ -28,6 +28,9 @@ import { Users } from './auth/users';
 import { CommercialAdmin } from './commercial/admin';
 import type { Secret } from './secret';
 import { JobRunner } from './workflow/runner';
+import { ChallengeService } from './challenge/service';
+import { ChallengeWorkspaces } from './challenge/workspaces';
+import { noEmail, type EmailSender } from './challenge/email';
 import type { WebFiles } from './http/web-static';
 import { DEFAULT_SETTINGS, DEMO_SETTINGS, Veyra } from './workflow/veyra';
 
@@ -90,6 +93,17 @@ export interface AppConfig {
     publicOrigins?: readonly string[];
     corsOrigins?: readonly string[];
   };
+  /** The 10 Invoice Challenge (acquisition); absent: off (its routes do not exist). */
+  challenge?: {
+    retentionDays?: number;
+    dailyLimit?: number;
+    bookingUrl?: string | null;
+    notifyEmail?: string | null;
+    /** Tests only: how long an idle workspace stays open. */
+    idleMs?: number;
+  } | null;
+  /** Outbound e-mail; absent: nothing is sent (recorded as not configured). */
+  email?: EmailSender | null;
 }
 
 const DEV_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173'];
@@ -103,6 +117,8 @@ function makeExtractor(
   config: AppConfig,
 ): {
   extractor: Extractor & { close?: () => Promise<void> };
+  /** The real reader, never the demo's scripted one (the 10 Invoice Challenge reads with it). */
+  real: Extractor;
   warmUp: () => Promise<void>;
   aiReader: GeminiExtractor | null;
 } {
@@ -131,7 +147,7 @@ function makeExtractor(
     : base;
   const environment = environmentOf(config);
   const demo = (mode === 'demo' || mode === 'fixture') && environment !== 'production';
-  if (!demo || !config.allowFixtureExtractor) return { extractor: real, warmUp, aiReader };
+  if (!demo || !config.allowFixtureExtractor) return { extractor: real, real, warmUp, aiReader };
   const fixture = new FixtureExtractor({
     allow: config.allowFixtureExtractor,
     nodeEnv: environment,
@@ -140,6 +156,7 @@ function makeExtractor(
     extractor: Object.assign(new DemoRoutedExtractor(fixture, real), {
       close: () => real.close?.() ?? Promise.resolve(),
     }),
+    real,
     warmUp,
     aiReader,
   };
@@ -181,6 +198,7 @@ export async function createApp(config: AppConfig) {
   const storage = config.storage ?? new LocalDocumentStorage(join(config.dataDir, 'uploads'));
   const {
     extractor,
+    real: realExtractor,
     warmUp: warmUpExtractor,
     aiReader,
   } = makeExtractor(initialSettings.extractorMode, config);
@@ -260,12 +278,53 @@ export async function createApp(config: AppConfig) {
     runner.start();
   };
 
+  // The 10 Invoice Challenge: each prospect's invoices in their own isolated workspace, read by
+  // the real reader (never the demo's scripted one) and checked by the same pipeline.
+  const challenge = config.challenge
+    ? new ChallengeService({
+        db,
+        commercial,
+        workspaces: new ChallengeWorkspaces({
+          root: join(config.dataDir, 'challenges'),
+          extractor: realExtractor,
+          erp: (filename, fresh) => {
+            const store = FakeErpConnector.open({
+              filename,
+              ...(config.clock ? { clock: config.clock } : {}),
+              ...(fresh ? { reset: 'company-only' as const } : {}),
+            });
+            return {
+              connector: store,
+              setCompany: (c) => store.setCompany(c),
+              close: () => store.close(),
+            };
+          },
+          ...(config.clock ? { clock: config.clock } : {}),
+          ...(config.limits ? { maxUploadBytes: config.limits.maxUploadBytes } : {}),
+          ...(config.challenge.idleMs ? { idleMs: config.challenge.idleMs } : {}),
+          ...(config.log ? { log: config.log.child({ component: 'challenge-reader' }) } : {}),
+        }),
+        email: config.email ?? noEmail,
+        ...(config.clock ? { clock: config.clock } : {}),
+        ...(config.challenge.retentionDays
+          ? { retentionDays: config.challenge.retentionDays }
+          : {}),
+        ...(config.challenge.dailyLimit ? { dailyLimit: config.challenge.dailyLimit } : {}),
+        aiProvider: aiReader ? 'Google Gemini' : null,
+        publicOrigin: config.auth?.publicOrigins?.[0] ?? null,
+        bookingUrl: config.challenge.bookingUrl ?? null,
+        notifyEmail: config.challenge.notifyEmail ?? null,
+        ...(config.log ? { log: config.log.child({ component: 'challenge' }) } : {}),
+      })
+    : null;
+
   const cookieSecure = config.auth?.cookieSecure ?? environment !== 'development';
   const server = await buildServer({
     veyra,
     aiReader,
     environment,
     commercial,
+    challenge,
     ...(demoMode ? { resetDemo, demoBusiness } : {}),
     ...(config.log ? { log: config.log } : {}),
     ...(config.limits ? { limits: config.limits } : {}),
@@ -301,6 +360,7 @@ export async function createApp(config: AppConfig) {
     sessions,
     users,
     commercial,
+    challenge,
     /** The session cookie's name (it depends on whether it is Secure). */
     cookieName: sessionCookieName(cookieSecure),
     environment,
@@ -317,6 +377,7 @@ export async function createApp(config: AppConfig) {
     close: (graceMs = config.jobs?.shutdownGraceMs ?? 25_000) =>
       (closed ??= (async () => {
         await server.close();
+        await challenge?.shutdown(graceMs);
         await runner.shutdown(graceMs);
         await database.close();
         erp.close();

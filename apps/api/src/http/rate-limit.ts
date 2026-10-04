@@ -43,12 +43,21 @@ export function bucketOf(method: string, route: string | undefined): RateBucket 
   if (route.startsWith('/api/v1/dev/')) return 'dev';
   if (method !== 'POST') return null;
   if (route === '/api/v1/auth/login' || route === '/api/v1/auth/demo') return 'login';
-  if (route === '/api/v1/documents' || route === '/api/v1/imports') return 'upload';
+  // Starting a challenge is like creating an account (per address, a few a minute).
+  if (route === '/api/v1/challenge' || route === '/api/v1/challenge/claim') return 'login';
+  if (
+    route === '/api/v1/documents' ||
+    route === '/api/v1/imports' ||
+    route === '/api/v1/challenge/me/invoices' ||
+    route === '/api/v1/challenge/me/records'
+  )
+    return 'upload';
   if (
     route === '/api/v1/invoices/:id/reprocess' ||
     route === '/api/v1/invoices/:id/reject' ||
     route === '/api/v1/questions/:id/answer' ||
-    route === '/api/v1/imports/:id/confirm'
+    route === '/api/v1/imports/:id/confirm' ||
+    route.startsWith('/api/v1/challenge/me/')
   )
     return 'processing';
   return null;

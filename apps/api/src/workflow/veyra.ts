@@ -137,7 +137,9 @@ export class VeyraError extends Error {
       | 'INVALID_INPUT'
       | 'UNSUPPORTED_FILE'
       | 'FORBIDDEN'
-      | 'CONFLICT',
+      | 'CONFLICT'
+      | 'LIMIT_REACHED'
+      | 'RATE_LIMITED',
     message: string,
     readonly details: Record<string, unknown> = {},
   ) {
@@ -169,6 +171,12 @@ export interface VeyraOptions {
   readAhead?: number;
   /** Structured log of how each invoice was read (never document content or credentials). */
   log?: { info(obj: object, msg: string): void; warn(obj: object, msg: string): void };
+  /**
+   * While this returns true, an invoice is read and then waits before the checks (10 Invoice
+   * Challenge: the business's records are added after the invoices). `releaseHeld` starts them.
+   * Absent (the product): never held.
+   */
+  holdChecks?: () => boolean;
 }
 
 type Actor = { type: 'system' | 'ai' } | { type: 'user'; userId: string };
@@ -203,6 +211,7 @@ export class Veyra {
     this.organizationName = options.organizationName ?? 'Toit';
     this.#log = options.log ?? null;
     this.#readAheadMax = options.readAhead ?? 0;
+    this.#holdChecks = options.holdChecks ?? null;
     this.entitlements = options.entitlements ?? new Entitlements(this.db, this.clock);
   }
 
@@ -216,6 +225,7 @@ export class Veyra {
   readonly #initial: Omit<VeyraSettings, 'designatedUserId'>;
   readonly #log: VeyraOptions['log'] | null;
   readonly #readAheadMax: number;
+  readonly #holdChecks: (() => boolean) | null;
   /** Readings started at upload, by document id, taken by the pipeline when it gets there. */
   readonly #ahead = new Map<string, Promise<unknown>>();
   #aheadRunning = 0;
@@ -850,6 +860,8 @@ export class Veyra {
         if (!ok) return;
         inv = await this.invoiceRow(this.db, invoiceId);
       }
+      // Read, and held before the checks until the records are in (`releaseHeld`).
+      if (inv.state === 'MATCHING' && this.#holdChecks?.()) return;
       // An invoice the ERP already holds a goods-receipt record for is compared with that record
       // (the receipt check); every other invoice goes through the full checks.
       if (inv.state === 'MATCHING' && (await this.receiptCheck(invoiceId))) return;
@@ -2069,6 +2081,38 @@ export class Veyra {
       }
     });
     return true;
+  }
+
+  /**
+   * Starts the checks of every invoice read and held before them (see `holdChecks`). Returns how
+   * many were queued. An invoice with a pipeline job still queued or running is left to it.
+   */
+  async releaseHeld(): Promise<number> {
+    const held = await this.db
+      .select({ id: t.invoices.id })
+      .from(t.invoices)
+      .where(eq(t.invoices.state, 'MATCHING'));
+    let queued = 0;
+    for (const { id } of held) {
+      const busy = (
+        await this.db
+          .select({ id: t.jobs.id })
+          .from(t.jobs)
+          .where(
+            and(
+              eq(t.jobs.invoiceId, id),
+              eq(t.jobs.type, 'pipeline'),
+              inArray(t.jobs.status, ['queued', 'running']),
+            ),
+          )
+          .limit(1)
+      )[0];
+      if (busy) continue;
+      await this.enqueue(this.db, id, 'pipeline');
+      queued++;
+    }
+    if (queued) this.onEnqueue();
+    return queued;
   }
 
   /** Checks an invoice against its ERP receipt record again (after the ERP was corrected). */

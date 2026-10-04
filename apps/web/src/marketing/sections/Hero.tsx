@@ -1,6 +1,7 @@
 import { ButtonLink, Container, Icon } from '../../design-system';
 import { demoEntryHref } from '../../access/demoAccess';
 import { InvoiceStory } from '../visuals/InvoiceStory';
+import { CHALLENGE_PATH } from '../../site/host';
 import styles from './Hero.module.css';
 
 const PRINCIPLES = ['Never pays anything', 'Never guesses', 'Every step on record'];
@@ -31,6 +32,12 @@ export function Hero() {
               See how it works
             </ButtonLink>
           </div>
+          <p className={styles.challenge}>
+            <a href={CHALLENGE_PATH}>
+              Take the 10 Invoice Challenge: see what gets caught in your own invoices
+              <Icon name="arrowRight" size={14} />
+            </a>
+          </p>
           <ul className={styles.principles}>
             {PRINCIPLES.map((p) => (
               <li key={p}>

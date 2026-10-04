@@ -305,3 +305,39 @@ isn't set up."
 | Sign-in says the request came from the wrong address | `VEYRA_PUBLIC_ORIGIN` does not match the address you opened | Set it to exactly `https://<address>` (no trailing slash). |
 | The homepage looks old | The new version is not deployed yet, or the browser cached the old one | Check `/api/v1/health` "version" (section 10); hard-reload. |
 | Demo PIN refused | The PIN in Railway differs from yours | Replace `VEYRA_DEMO_PIN` (section 11) and use the new one. |
+
+---
+
+## 14. The 10 Invoice Challenge (prospects try Veyrafy on their own invoices)
+
+The challenge page is `/10-invoice-challenge`. On `veyrafy.com` (no database) the page explains the
+challenge and its button opens it on **veyrafy-demo**, where it runs. Each prospect's invoices
+and records are kept in their own separate workspace on the demo's volume. They are never mixed
+with the demo's sample data or with another prospect's invoices, and they are deleted after the
+retention period.
+
+In **veyrafy-demo → Variables**, add:
+
+| Variable | Value |
+|---|---|
+| `VEYRA_CHALLENGE` | `true` |
+| `VEYRA_CHALLENGE_RETENTION_DAYS` | `30` (how long invoices are kept) |
+| `VEYRA_CHALLENGE_DAILY_LIMIT` | `50` (new challenges per day, all prospects together) |
+| `VEYRA_PUBLIC_ORIGIN` | `https://demo.veyrafy.com` (links in the e-mail point here) |
+| `VEYRA_BOOKING_URL` | optional: your booking page, e.g. a Calendly 15-minute link |
+| `VEYRA_CHALLENGE_NOTIFY_EMAIL` | optional: where you are told about completions and walkthrough requests |
+| `VEYRA_EMAIL_PROVIDER` | `resend` to send the follow-up e-mail (otherwise nothing is sent, and the Control Centre shows "not configured") |
+| `VEYRA_EMAIL_API_KEY` | your Resend API key (type it in Railway only) |
+| `VEYRA_EMAIL_FROM` | e.g. `Veyrafy <reports@veyrafy.com>` (a domain verified in Resend) |
+
+**Before you switch it on**, decide how invoices are read. If the demo has the AI reader on
+(`VEYRA_AI_READER=gemini`), the prospect is told that Google Gemini reads their documents, and must
+agree to that before uploading. To keep prospects' documents on Veyrafy's own server, leave the
+AI reader off; the local reader is used instead (slower on scans and photos, and less accurate on
+them).
+
+**You should see:**
+- `https://demo.veyrafy.com/10-invoice-challenge` shows the challenge.
+- After a test challenge, it appears in the Control Centre under **10 Invoice Challenge**, with its
+  results, report downloads and walkthrough requests. You can update the follow-up status there;
+  every change is recorded in the Audit Log.

@@ -3,7 +3,7 @@ import { loadSession, signOut, useAccountSuspended, useSession } from '../access
 import { Logo } from '../design-system';
 import { HomePage } from '../marketing/HomePage';
 import { parseHash, useHash } from '../product/router';
-import { WEBSITE_ADDRESS, type HostKind } from './host';
+import { CHALLENGE_ADDRESS, WEBSITE_ADDRESS, isChallengePage, type HostKind } from './host';
 import { checkInstance, type InstanceCheck } from './instance';
 import { AddressNotSetUp, ClientLogin, RequestAccess, sitePageOf } from './SitePages';
 import site from './SitePages.module.css';
@@ -15,6 +15,10 @@ const ProductApp = lazy(() =>
 const SignIn = lazy(() => import('../access/SignIn').then((m) => ({ default: m.SignIn })));
 // Veyrafy Operations (Phase 8A): a separate surface, loaded only when opened.
 const OpsApp = lazy(() => import('../ops/OpsApp').then((m) => ({ default: m.OpsApp })));
+// The 10 Invoice Challenge (public, no sign-in), loaded only when opened.
+const ChallengeApp = lazy(() =>
+  import('../challenge/ChallengeApp').then((m) => ({ default: m.ChallengeApp })),
+);
 const OperatorNotice = lazy(() =>
   import('../ops/OperatorNotice').then((m) => ({ default: m.OperatorNotice })),
 );
@@ -97,6 +101,13 @@ export function Surface({ host, hash: forced }: { host: HostKind; hash?: string 
   const live = useHash();
   const hash = forced ?? live;
   if (host.kind === 'unknown') return <AddressNotSetUp />;
+  // The challenge is open to anyone; on the website (no database) it starts on its own host.
+  if (isChallengePage(typeof window === 'undefined' ? '' : window.location.pathname, hash))
+    return (
+      <Suspense fallback={null}>
+        <ChallengeApp {...(host.kind === 'website' ? { elsewhere: CHALLENGE_ADDRESS } : {})} />
+      </Suspense>
+    );
   if (host.kind === 'client') return <ClientInstance />;
   const page = sitePageOf(hash);
   if (page === 'login') return <ClientLogin />;
