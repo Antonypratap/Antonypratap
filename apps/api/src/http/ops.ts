@@ -7,7 +7,7 @@ import {
   ApiOpsOrganizationSchema,
   ApiOpsPlanSchema,
   CAPABILITIES,
-  COMMERCIAL_STATUSES,
+  ASSIGNABLE_STATUSES,
   EntitlementValueSchema,
 } from '@veyra/shared';
 import { CAPABILITY_LABEL, ERP_CAPABILITIES, describeConnection } from '@veyra/erp-connector';
@@ -17,6 +17,7 @@ import * as t from '../db/schema';
 import type { Users } from '../auth/users';
 import type { Environment } from '../config';
 import type { Veyra } from '../workflow/veyra';
+import { ControlCentre } from '../ops/control-centre';
 import type { ReadinessReport } from './health';
 
 /**
@@ -37,6 +38,11 @@ export interface OpsDeps {
   environment: Environment;
   readiness?: () => Promise<ReadinessReport>;
   send: <S extends z.ZodType>(schema: S, value: z.input<S>) => z.output<S>;
+  /** After a suspension or reactivation: the access check reads the status afresh. */
+  suspensionChanged?: () => void;
+  /** AI model names, main first (never the key). */
+  aiModels?: readonly string[];
+  limits?: { maxUploadBytes: number; rateLimitsPerMinute: Record<string, number> };
 }
 
 const VIEW = { config: { access: 'ops.view' } } as const;
@@ -47,6 +53,16 @@ const Capability = z.string().max(80);
 
 export function registerOps(app: FastifyInstance, d: OpsDeps): void {
   const { veyra, commercial } = d;
+  const centre = new ControlCentre({
+    veyra,
+    commercial,
+    users: d.users,
+    environment: d.environment,
+    aiModels: d.aiModels ?? [],
+    limits: d.limits ?? { maxUploadBytes: 0, rateLimitsPerMinute: {} },
+    ...(d.readiness ? { readiness: d.readiness } : {}),
+    ...(d.suspensionChanged ? { suspensionChanged: d.suspensionChanged } : {}),
+  });
   const ctx = (req: FastifyRequest) => ({
     actorUserId: req.auth?.user.id ?? '',
     requestId: req.id,
@@ -131,7 +147,7 @@ export function registerOps(app: FastifyInstance, d: OpsDeps): void {
       .object({
         planKey: z.string().max(40),
         reason: Reason,
-        commercialStatus: z.enum(COMMERCIAL_STATUSES).optional(),
+        commercialStatus: z.enum(ASSIGNABLE_STATUSES).optional(),
       })
       .strict()
       .parse(req.body ?? {});
@@ -248,4 +264,138 @@ export function registerOps(app: FastifyInstance, d: OpsDeps): void {
     entitlementCacheSeconds: ENTITLEMENT_CACHE_MS / 1000,
     organizationsPerDeployment: 1,
   }));
+
+  // ── Owner Control Centre ────────────────────────────────────────────────
+  // Reads are ops.view; every change is ops.manage, needs a reason and writes one platform audit
+  // event. Nothing returns document contents, extracted values, passwords, tokens or keys.
+  const Id = z.object({ id: z.string().min(1).max(64) });
+  const Q = z.string().max(200).optional();
+  const parseBody = <S extends z.ZodType>(schema: S, body: unknown): z.output<S> =>
+    schema.parse(body ?? {});
+
+  app.get('/api/v1/ops/centre/overview', VIEW, async () => centre.overview());
+  app.get('/api/v1/ops/centre/customers', VIEW, async (req) =>
+    centre.customers(z.object({ q: Q }).parse(req.query ?? {}).q ?? ''),
+  );
+  app.get('/api/v1/ops/centre/customers/:id', VIEW, async (req) =>
+    centre.customer(Id.parse(req.params).id),
+  );
+  app.post('/api/v1/ops/centre/customers/:id/suspension', MANAGE, async (req) => {
+    const { id } = Id.parse(req.params);
+    const body = parseBody(z.object({ suspended: z.boolean(), reason: Reason }).strict(), req.body);
+    await centre.setSuspended(id, body, ctx(req));
+    return centre.customer(id);
+  });
+
+  app.get('/api/v1/ops/centre/users', VIEW, async (req) => {
+    const f = z
+      .object({
+        q: Q,
+        organizationId: z.string().max(64).optional(),
+        role: z.string().max(40).optional(),
+        active: z.enum(['true', 'false']).optional(),
+      })
+      .parse(req.query ?? {});
+    return centre.users({
+      ...(f.q ? { q: f.q } : {}),
+      ...(f.organizationId ? { organizationId: f.organizationId } : {}),
+      ...(f.role ? { role: f.role } : {}),
+      ...(f.active ? { active: f.active === 'true' } : {}),
+    });
+  });
+  app.post('/api/v1/ops/centre/users/:id/active', MANAGE, async (req) => {
+    const { id } = Id.parse(req.params);
+    const body = parseBody(z.object({ active: z.boolean(), reason: Reason }).strict(), req.body);
+    await centre.setUserActive(id, body, ctx(req));
+    return { ok: true };
+  });
+
+  app.get('/api/v1/ops/centre/processing', VIEW, async (req) => {
+    const f = z
+      .object({
+        q: Q,
+        state: z.string().max(40).optional(),
+        problem: z.enum(['failed', 'stuck']).optional(),
+      })
+      .parse(req.query ?? {});
+    const [invoices, failures] = await Promise.all([
+      centre.processing({
+        ...(f.q ? { q: f.q } : {}),
+        ...(f.state ? { state: f.state } : {}),
+        ...(f.problem ? { problem: f.problem } : {}),
+      }),
+      centre.failures(),
+    ]);
+    return { invoices, failures };
+  });
+  app.get('/api/v1/ops/centre/processing/:id', VIEW, async (req) =>
+    centre.processingDetail(Id.parse(req.params).id),
+  );
+  app.post('/api/v1/ops/centre/processing/:id/retry', MANAGE, async (req) => {
+    const { id } = Id.parse(req.params);
+    const body = parseBody(z.object({ reason: Reason }).strict(), req.body);
+    return centre.retry(id, body.reason, ctx(req));
+  });
+
+  app.get('/api/v1/ops/centre/cost', VIEW, async (req) => {
+    const { month } = z
+      .object({
+        month: z
+          .string()
+          .regex(/^\d{4}-\d{2}$/)
+          .optional(),
+      })
+      .parse(req.query ?? {});
+    const at = month ? new Date(`${month}-15T00:00:00Z`) : veyra.clock();
+    const [cost, ledger] = await Promise.all([centre.cost(at), centre.usageLedger(100)]);
+    return { ...cost, ledger };
+  });
+  app.get('/api/v1/ops/centre/pricing', VIEW, async () => centre.pricing());
+  app.put('/api/v1/ops/centre/pricing', MANAGE, async (req) => {
+    const body = parseBody(z.object({ pricing: z.unknown(), reason: Reason }).strict(), req.body);
+    return centre.setPricing(body.pricing, body.reason, ctx(req));
+  });
+
+  app.patch('/api/v1/ops/centre/plans/:key/price', MANAGE, async (req) => {
+    const { key } = z.object({ key: z.string().max(40) }).parse(req.params);
+    const body = parseBody(
+      z
+        .object({
+          priceMonthlyPaise: z.number().int().min(0).max(1_000_000_000_000).nullable(),
+          reason: Reason,
+        })
+        .strict(),
+      req.body,
+    );
+    await commercial.setPlanPrice(key, body, ctx(req));
+    return d.send(z.array(ApiOpsPlanSchema), await commercial.plans());
+  });
+
+  app.get('/api/v1/ops/centre/config', VIEW, async () => centre.config());
+  app.patch('/api/v1/ops/centre/config/confidence', MANAGE, async (req) => {
+    const body = parseBody(
+      z.object({ confidenceMinBp: z.number().int(), reason: Reason }).strict(),
+      req.body,
+    );
+    await centre.setConfidence(body.confidenceMinBp, body.reason, ctx(req));
+    return centre.config();
+  });
+
+  app.get('/api/v1/ops/centre/audit', VIEW, async (req) => {
+    const f = z
+      .object({
+        q: Q,
+        organizationId: z.string().max(64).optional(),
+        event: z.string().max(60).optional(),
+      })
+      .parse(req.query ?? {});
+    return d.send(
+      z.array(ApiCommercialEventSchema),
+      await centre.audit({
+        ...(f.q ? { q: f.q } : {}),
+        ...(f.organizationId ? { organizationId: f.organizationId } : {}),
+        ...(f.event ? { event: f.event } : {}),
+      }),
+    );
+  });
 }

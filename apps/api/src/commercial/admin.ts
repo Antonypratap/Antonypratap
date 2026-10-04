@@ -2,7 +2,7 @@ import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import {
   CAPABILITIES,
   capabilityDefinition,
-  COMMERCIAL_STATUSES,
+  ASSIGNABLE_STATUSES,
   type ApiCommercialEvent,
   type ApiOpsCommercial,
   type ApiOpsEntitlement,
@@ -82,13 +82,18 @@ export class CommercialAdmin {
     return org;
   }
 
-  private async event(
+  /**
+   * Writes one event to the platform audit trail (append-only). Used by every administrative
+   * action, inside the action's own transaction.
+   */
+  async event(
     tx: VeyraDb,
     event: CommercialEvent,
     e: {
       organizationId?: string | null;
       planKey?: string | null;
       capability?: string | null;
+      subject?: string | null;
       oldValue: unknown;
       newValue: unknown;
       reason: string;
@@ -102,6 +107,7 @@ export class CommercialAdmin {
       organizationId: e.organizationId ?? null,
       planKey: e.planKey ?? null,
       capability: e.capability ?? null,
+      subject: e.subject ?? null,
       oldValueJson: e.oldValue === undefined ? null : JSON.stringify(e.oldValue),
       newValueJson: e.newValue === undefined ? null : JSON.stringify(e.newValue),
       reason: e.reason,
@@ -192,6 +198,7 @@ export class CommercialAdmin {
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
       organizations: counts.find((c) => c.planKey === p.key)?.n ?? 0,
+      priceMonthlyPaise: p.priceMonthlyPaise === null ? null : Number(p.priceMonthlyPaise),
       entitlements: (CAPABILITIES as readonly CapabilityDefinition[]).map((def) => {
         const row = rows.find((r) => r.planKey === p.key && r.capability === def.key);
         return {
@@ -227,6 +234,7 @@ export class CommercialAdmin {
       organizationId: e.organizationId,
       planKey: e.planKey,
       capability: e.capability,
+      subject: e.subject,
       oldValue: e.oldValueJson === null ? null : (JSON.parse(e.oldValueJson) as unknown),
       newValue: e.newValueJson === null ? null : (JSON.parse(e.newValueJson) as unknown),
       reason: e.reason,
@@ -283,7 +291,10 @@ export class CommercialAdmin {
     ctx: CommercialContext,
   ): Promise<void> {
     const reason = this.reasonOf(input.reason);
-    if (input.commercialStatus && !COMMERCIAL_STATUSES.includes(input.commercialStatus))
+    if (
+      input.commercialStatus &&
+      !(ASSIGNABLE_STATUSES as readonly string[]).includes(input.commercialStatus)
+    )
       throw new VeyraError('INVALID_INPUT', 'Choose trial or active.');
     await this.customerOrganization(organizationId);
     await this.db.transaction(async (tx) => {
@@ -473,6 +484,99 @@ export class CommercialAdmin {
           capability: def.key,
           oldValue: before.effective,
           newValue: before.plan ?? (def.type === 'BOOLEAN' ? { enabled: false } : { limit: 0 }),
+          reason,
+        },
+        ctx,
+      );
+    });
+    this.entitlements.invalidate(organizationId);
+  }
+
+  /** Sets (or clears) a plan's monthly price, for MRR only (no billing). Audited. */
+  async setPlanPrice(
+    planKey: string,
+    input: { priceMonthlyPaise: number | null; reason: string },
+    ctx: CommercialContext,
+  ): Promise<void> {
+    const reason = this.reasonOf(input.reason);
+    const price = input.priceMonthlyPaise;
+    if (price !== null && (!Number.isSafeInteger(price) || price < 0))
+      throw new VeyraError('INVALID_INPUT', 'A price is a whole amount in paise, 0 or more.');
+    await this.db.transaction(async (tx) => {
+      const plan = (
+        await tx.select().from(t.plans).where(eq(t.plans.key, planKey)).for('update')
+      )[0];
+      if (!plan) throw new VeyraError('NOT_FOUND', 'Plan not found.');
+      const old = plan.priceMonthlyPaise === null ? null : Number(plan.priceMonthlyPaise);
+      if (old === price) return;
+      await tx
+        .update(t.plans)
+        .set({ priceMonthlyPaise: price, updatedAt: this.now() })
+        .where(eq(t.plans.key, planKey));
+      await this.event(
+        tx,
+        'plan.price_changed',
+        { planKey, oldValue: old, newValue: price, reason },
+        ctx,
+      );
+    });
+  }
+
+  /**
+   * Suspends a customer, or reactivates it (to the status it had before, recorded in the audit
+   * trail; active when unknown). Its users are refused while suspended; nothing is deleted.
+   */
+  async setSuspended(
+    organizationId: string,
+    input: { suspended: boolean; reason: string },
+    ctx: CommercialContext,
+  ): Promise<void> {
+    const reason = this.reasonOf(input.reason);
+    await this.customerOrganization(organizationId);
+    await this.db.transaction(async (tx) => {
+      const org = (
+        await tx
+          .select()
+          .from(t.organizations)
+          .where(eq(t.organizations.id, organizationId))
+          .for('update')
+      )[0];
+      if (!org) throw new VeyraError('NOT_FOUND', 'Organization not found.');
+      const isSuspended = org.commercialStatus === 'suspended';
+      if (input.suspended === isSuspended)
+        throw new VeyraError(
+          'INVALID_STATE',
+          isSuspended ? 'This customer is already suspended.' : 'This customer is not suspended.',
+        );
+      let next: CommercialStatus = 'suspended';
+      if (!input.suspended) {
+        const last = (
+          await tx
+            .select({ old: t.commercialEvents.oldValueJson })
+            .from(t.commercialEvents)
+            .where(
+              and(
+                eq(t.commercialEvents.organizationId, organizationId),
+                eq(t.commercialEvents.event, 'organization.suspended'),
+              ),
+            )
+            .orderBy(desc(t.commercialEvents.seq))
+            .limit(1)
+        )[0];
+        const before = last?.old ? (JSON.parse(last.old) as { status?: string }).status : undefined;
+        next = before === 'trial' ? 'trial' : 'active';
+      }
+      await tx
+        .update(t.organizations)
+        .set({ commercialStatus: next })
+        .where(eq(t.organizations.id, organizationId));
+      await this.event(
+        tx,
+        input.suspended ? 'organization.suspended' : 'organization.reactivated',
+        {
+          organizationId,
+          oldValue: { status: org.commercialStatus },
+          newValue: { status: next },
           reason,
         },
         ctx,

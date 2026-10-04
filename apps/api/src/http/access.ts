@@ -52,6 +52,11 @@ export interface AccessOptions {
     code: string,
     message: string,
   ) => FastifyReply;
+  /**
+   * Whether the organization is suspended by Veyrafy Operations (cached by the caller). Its users
+   * are then refused everywhere except their own session (sign out, who am I).
+   */
+  suspended?: () => Promise<boolean>;
 }
 
 /** `__Host-` binds the cookie to this exact origin (Secure, Path=/, no Domain) where possible. */
@@ -140,6 +145,14 @@ export function registerAccessControl(app: FastifyInstance, o: AccessOptions): v
         : req.auth.user.organizationId !== o.organizationId
     )
       return o.deny(req, reply, 403, 'FORBIDDEN', 'You do not have permission to do this.');
+    if (!operator && access !== 'session' && o.suspended && (await o.suspended()))
+      return o.deny(
+        req,
+        reply,
+        403,
+        'ACCOUNT_SUSPENDED',
+        'This Veyrafy account is suspended. Contact Veyrafy to restore access.',
+      );
     if (isUnsafe(req.method)) {
       const header = req.headers[CSRF_HEADER];
       if (typeof header !== 'string' || !safeEqual(header, req.auth.csrfToken))

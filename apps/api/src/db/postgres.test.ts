@@ -79,6 +79,7 @@ const TABLES: PgTable[] = [
   t.planEntitlements,
   t.entitlementOverrides,
   t.commercialEvents,
+  t.processingUsage,
 ];
 
 describe('schema and migrations', () => {

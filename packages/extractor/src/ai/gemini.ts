@@ -465,6 +465,18 @@ async function visionDocument(bytes: Buffer, mime: string): Promise<VisionDocume
   return { parts, bytes: total, pages: pages.length, sizes, rendered, image: false, rotated };
 }
 
+/**
+ * What one reading used of the AI service, for Veyrafy's own cost accounting: every request made
+ * (including retries and backup models) and the tokens the service reported for its answers. It
+ * changes nothing about how the document is read.
+ */
+interface AiMeter {
+  model: string | null;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
 class AiHttpError extends Error {
   constructor(
     readonly status: number,
@@ -549,6 +561,11 @@ export class GeminiExtractor implements Extractor {
     this.version = `gemini:${options.model}`;
   }
 
+  /** The configured models, main first (names only: the key is never exposed). */
+  get models(): readonly string[] {
+    return this.#models;
+  }
+
   async isAvailable(): Promise<{ ok: true } | { ok: false; reason: string }> {
     return this.#o.apiKey ? { ok: true } : { ok: false, reason: 'No AI reader key is configured.' };
   }
@@ -557,14 +574,16 @@ export class GeminiExtractor implements Extractor {
     let reading: AiReading;
     let model: string;
     let doc: VisionDocument;
+    const meter: AiMeter = { model: null, calls: 0, inputTokens: 0, outputTokens: 0 };
     try {
       doc = await visionDocument(await readFile(input.filePath), input.mime);
-      if (doc.bytes > MAX_INLINE_BYTES) return await this.#fallback(input, 'too large for it');
-      ({ reading, model } = await this.#readWithRetries(doc.parts));
+      if (doc.bytes > MAX_INLINE_BYTES)
+        return await this.#fallback(input, 'too large for it', meter);
+      ({ reading, model } = await this.#readWithRetries(doc.parts, meter));
     } catch (error) {
       // Network, quota, timeout, an unusable answer or a file it cannot be given: never a reason
       // to lose the invoice. The local reader reads it (and fails only if nothing is readable).
-      return this.#fallback(input, `unavailable (${whyUnavailable(error, this.#o.model)})`);
+      return this.#fallback(input, `unavailable (${whyUnavailable(error, this.#o.model)})`, meter);
     }
     if (reading.invoiceCount > 1) {
       const numbers = (reading.invoiceNumbers ?? []).filter(Boolean);
@@ -593,12 +612,15 @@ export class GeminiExtractor implements Extractor {
         textPages: doc.rendered || doc.image ? 0 : doc.pages,
         imagePages: doc.rendered || doc.image ? doc.pages : 0,
         rendered: doc.rendered,
+        ai: { ...meter, model },
       },
     };
   }
 
-  async #fallback(input: ExtractorInput, why: string): Promise<ExtractionResult> {
+  async #fallback(input: ExtractorInput, why: string, meter: AiMeter): Promise<ExtractionResult> {
     const result = await this.#o.fallback.extract(input);
+    // Calls that were made before falling back are real usage too (a cut-off answer is billed).
+    const ai = meter.calls > 0 ? { ai: { ...meter } } : {};
     return {
       ...result,
       warnings: [`The AI reader was ${why}; read by the local reader instead.`, ...result.warnings],
@@ -607,9 +629,21 @@ export class GeminiExtractor implements Extractor {
             diagnostics: {
               ...result.diagnostics,
               readers: [this.id, ...result.diagnostics.readers],
+              ...ai,
             },
           }
-        : {}),
+        : meter.calls > 0
+          ? {
+              // A fallback reader without diagnostics of its own: the AI usage is still kept.
+              diagnostics: {
+                readers: [this.id, result.extractor.id],
+                textPages: 0,
+                imagePages: 0,
+                rendered: false,
+                ...ai,
+              },
+            }
+          : {}),
     };
   }
 
@@ -618,13 +652,16 @@ export class GeminiExtractor implements Extractor {
    * With backup models, each try goes to the next model in turn (main, backup, main, …), so a
    * model that is overloaded does not hold the invoice up; a model that does not exist is dropped.
    */
-  async #readWithRetries(parts: readonly Part[]): Promise<{ reading: AiReading; model: string }> {
+  async #readWithRetries(
+    parts: readonly Part[],
+    meter: AiMeter = { model: null, calls: 0, inputTokens: 0, outputTokens: 0 },
+  ): Promise<{ reading: AiReading; model: string }> {
     let models = this.#models;
     let round = 0;
     for (let turn = 0; ; turn++) {
       const model = models[turn % models.length] ?? this.#o.model;
       try {
-        return { reading: await this.#read(parts, model), model };
+        return { reading: await this.#read(parts, model, meter), model };
       } catch (error) {
         if (error instanceof AiHttpError && error.status === 404 && models.length > 1) {
           models = models.filter((m) => m !== model);
@@ -644,7 +681,11 @@ export class GeminiExtractor implements Extractor {
     }
   }
 
-  async #read(parts: readonly Part[], model: string): Promise<AiReading> {
+  async #read(parts: readonly Part[], model: string, meter?: AiMeter): Promise<AiReading> {
+    if (meter) {
+      meter.calls += 1;
+      meter.model = model;
+    }
     const res = await this.#o.fetch(
       `${this.#o.endpoint}/models/${encodeURIComponent(model)}:generateContent`,
       {
@@ -668,7 +709,14 @@ export class GeminiExtractor implements Extractor {
     const body = (await res.json()) as {
       candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
       promptFeedback?: { blockReason?: string };
+      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
     };
+    // Tokens the service reports for this answer: counted even when the answer is then refused
+    // (cut off, empty, not the agreed shape), because it was billed.
+    if (meter && body.usageMetadata) {
+      meter.inputTokens += Math.max(0, Math.round(body.usageMetadata.promptTokenCount ?? 0));
+      meter.outputTokens += Math.max(0, Math.round(body.usageMetadata.candidatesTokenCount ?? 0));
+    }
     const first = body.candidates?.[0];
     if (!first)
       throw new AiAnswerError(

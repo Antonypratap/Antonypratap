@@ -53,6 +53,28 @@ export function useAllowed(permission: Permission): boolean {
   return s.status === 'signedIn' && s.session.permissions.includes(permission);
 }
 
+/**
+ * The API answered ACCOUNT_SUSPENDED: the customer's Veyrafy account is suspended by Veyrafy. The
+ * server refuses every request; this only switches the workspace to a screen that says so.
+ */
+let suspended = false;
+const suspendedListeners = new Set<() => void>();
+export function accountSuspended(): void {
+  if (suspended) return;
+  suspended = true;
+  for (const l of suspendedListeners) l();
+}
+export function useAccountSuspended(): boolean {
+  return useSyncExternalStore(
+    (l) => {
+      suspendedListeners.add(l);
+      return () => suspendedListeners.delete(l);
+    },
+    () => suspended,
+    () => suspended,
+  );
+}
+
 /** The API answered 401: the session ended (expired, signed out elsewhere, user disabled). */
 export function sessionEnded(): void {
   if (state.status !== 'signedIn') return;

@@ -50,6 +50,13 @@
       "when": 1790933825535,
       "tag": "0006_document_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791087871193,
+      "tag": "0007_control_centre",
+      "breakpoints": true
     }
   ]
 }

@@ -26,18 +26,13 @@ export type InvoiceFilter = (typeof INVOICE_FILTERS)[number];
 /** Veyrafy Operations (Phase 8A): the control plane, a separate surface for VEYRA_ADMIN. */
 export const OPS_SECTIONS = [
   'overview',
-  'organizations',
-  'commercial',
-  'plans',
-  'capabilities',
-  'usage',
-  'erp',
+  'customers',
+  'users',
   'processing',
-  'exceptions',
-  'system',
-  'security',
+  'cost',
+  'plans',
+  'config',
   'audit',
-  'settings',
 ] as const;
 export type OpsSection = (typeof OPS_SECTIONS)[number];
 export const SETTINGS_TABS = ['account', 'team', 'retention', 'plan'] as const;

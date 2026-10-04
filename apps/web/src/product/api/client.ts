@@ -18,7 +18,7 @@ import {
   type ApiInvoiceDetail,
   type ApiQuestion,
 } from '@veyra/shared';
-import { csrfHeaders, sessionEnded } from '../../access/session';
+import { accountSuspended, csrfHeaders, sessionEnded } from '../../access/session';
 import { API, API_CREDENTIALS } from '../../api-endpoint';
 
 /**
@@ -79,6 +79,7 @@ export async function request<S extends z.ZodType>(
     // same as no connection at all.
     if (!parsed.success && GATEWAY.has(res.status))
       throw new ApiError(res.status, 'OFFLINE', UNREACHABLE);
+    if (parsed.success && parsed.data.error.code === 'ACCOUNT_SUSPENDED') accountSuspended();
     throw parsed.success
       ? new ApiError(
           res.status,

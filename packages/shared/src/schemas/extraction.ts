@@ -106,6 +106,20 @@ export const ExtractionDiagnosticsSchema = z.object({
   imagePages: z.int().nonnegative(),
   /** Whether pages had to be drawn as images because the PDF had no usable text. */
   rendered: z.boolean(),
+  /**
+   * What the AI reader used for this reading (calls made, tokens billed), for Veyrafy's own cost
+   * accounting. Absent when no AI reader was called.
+   */
+  ai: z
+    .object({
+      model: z.string().max(100).nullable(),
+      calls: z.int().nonnegative(),
+      inputTokens: z.int().nonnegative(),
+      outputTokens: z.int().nonnegative(),
+    })
+    .optional(),
+  /** How long reading the document took (milliseconds). */
+  durationMs: z.int().nonnegative().optional(),
 });
 export type ExtractionDiagnostics = z.infer<typeof ExtractionDiagnosticsSchema>;
 

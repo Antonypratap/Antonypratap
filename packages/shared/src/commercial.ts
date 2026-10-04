@@ -104,17 +104,34 @@ export type EntitlementValue = { enabled: boolean } | { limit: number | null };
 
 export const PLAN_STATUSES = ['active', 'retired'] as const;
 export type PlanStatus = (typeof PLAN_STATUSES)[number];
-export const COMMERCIAL_STATUSES = ['trial', 'active'] as const;
+/**
+ * A customer's standing: on trial, active, or suspended by Veyrafy Operations (its users are
+ * refused; its data is kept and nothing is deleted). Suspension is a separate, audited action.
+ */
+export const COMMERCIAL_STATUSES = ['trial', 'active', 'suspended'] as const;
 export type CommercialStatus = (typeof COMMERCIAL_STATUSES)[number];
+/** What a plan assignment can set (suspension has its own action). */
+export const ASSIGNABLE_STATUSES = ['trial', 'active'] as const;
 
 /** Why an organization has (or lacks) a capability: the operator must be able to see it. */
 export type EntitlementSource = 'override' | 'plan' | 'none';
 
+/**
+ * The platform audit trail (append-only): commercial changes, and every other administrative
+ * action taken in the Control Centre.
+ */
 export const COMMERCIAL_EVENTS = [
   'plan.assigned',
   'plan.entitlement_changed',
   'override.set',
   'override.removed',
+  'plan.price_changed',
+  'organization.suspended',
+  'organization.reactivated',
+  'user.disabled',
+  'user.enabled',
+  'processing.retried',
+  'config.changed',
 ] as const;
 export type CommercialEvent = (typeof COMMERCIAL_EVENTS)[number];
 

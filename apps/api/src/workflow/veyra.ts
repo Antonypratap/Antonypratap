@@ -249,13 +249,18 @@ export class Veyra {
     // temporary file, removed as soon as the document has been read).
     return this.storage.withLocalFile(
       this.documentKey(doc),
-      (filePath) =>
-        this.extractor.extract({
+      async (filePath) => {
+        const started = Date.now();
+        const result = await this.extractor.extract({
           documentId: doc.id,
           filePath,
           mime: doc.mime,
           sha256: doc.sha256,
-        }),
+        });
+        // How long the reading took, for the Control Centre (it changes nothing in the reading).
+        if (result.diagnostics) result.diagnostics.durationMs = Date.now() - started;
+        return result;
+      },
       { sha256: doc.sha256 },
     );
   }
@@ -1006,6 +1011,23 @@ export class Veyra {
         rawJson: JSON.stringify(result),
         createdAt: now,
       });
+      // What this reading used (Control Centre cost accounting): one row per extraction, in the
+      // same transaction, so a retried job can never count it twice. Counts only, no contents.
+      const d = result.diagnostics;
+      await tx.insert(t.processingUsage).values({
+        id: ulid(),
+        extractionId,
+        invoiceId,
+        method: (d?.readers.length ? d.readers : [result.extractor.id]).join('+').slice(0, 100),
+        pages: result.pages,
+        aiModel: d?.ai?.model ?? null,
+        aiCalls: d?.ai?.calls ?? 0,
+        aiInputTokens: d?.ai?.inputTokens ?? 0,
+        aiOutputTokens: d?.ai?.outputTokens ?? 0,
+        durationMs: d?.durationMs ?? null,
+        documentBytes: doc.sizeBytes,
+        createdAt: now,
+      });
       const human = new Set(
         (
           await tx
@@ -1670,6 +1692,23 @@ export class Veyra {
   /** FAILED → EXTRACTING (extraction never finished) or MATCHING (re-run on the stored reading). */
   async reprocess(invoiceId: string, userId: string): Promise<void> {
     await this.requireActor(userId, 'invoices.reprocess');
+    await this.restartFailed(invoiceId, { type: 'user', userId });
+  }
+
+  /**
+   * Veyrafy Operations retries a failed invoice (Control Centre). Exactly what "Try again" does for
+   * the customer, and no more: only a FAILED invoice, never one whose document was deleted, never a
+   * transaction being recorded. The customer's trail shows Veyrafy (not a person of theirs); the
+   * operator's action goes to the platform audit trail.
+   */
+  async retryForOperations(invoiceId: string): Promise<{ from: string; to: string }> {
+    return this.restartFailed(invoiceId, { type: 'system' });
+  }
+
+  private async restartFailed(
+    invoiceId: string,
+    actor: Actor,
+  ): Promise<{ from: string; to: string }> {
     const inv = await this.invoiceRow(this.db, invoiceId);
     if (inv.state !== 'FAILED')
       throw new VeyraError('INVALID_STATE', 'Only failed invoices can be processed again.');
@@ -1690,17 +1729,14 @@ export class Veyra {
         ? 'MATCHING'
         : 'EXTRACTING';
     await this.db.transaction(async (tx) => {
-      await this.transition(
-        tx,
-        invoiceId,
-        'FAILED',
-        to,
-        { type: 'user', userId },
-        { failedStage: null, failureReason: null },
-      );
+      await this.transition(tx, invoiceId, 'FAILED', to, actor, {
+        failedStage: null,
+        failureReason: null,
+      });
       await this.enqueue(tx, invoiceId, 'pipeline');
     });
     this.onEnqueue();
+    return { from: 'FAILED', to };
   }
 
   // ── ERP goods-receipt records (the receipt check) ────────────────────────

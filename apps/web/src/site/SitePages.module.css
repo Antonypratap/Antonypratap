@@ -29,3 +29,26 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+/* The customer's account is suspended by Veyrafy. */
+.suspended {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  max-width: 32rem;
+  margin: 15vh auto;
+  padding: 0 var(--space-4);
+  color: var(--color-ink);
+}
+.suspended p {
+  color: var(--color-ink-3);
+}
+.suspended button {
+  min-height: 2.25rem;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font: inherit;
+  cursor: pointer;
+}

@@ -623,7 +623,10 @@ export const imports = pgTable(
 
 // ── Commercial entitlements (Phase 8A, docs/COMMERCIAL_ENTITLEMENTS.md) ─────
 
-/** A commercial plan: a named set of entitlements. No price lives here (billing is separate). */
+/**
+ * A commercial plan: a named set of entitlements. The optional monthly price is for Veyrafy's own
+ * MRR figure only; there is no billing or payment.
+ */
 export const plans = pgTable(
   'plans',
   {
@@ -631,6 +634,7 @@ export const plans = pgTable(
     name: text('name').notNull(),
     status: text('status').notNull(),
     description: text('description').notNull(),
+    priceMonthlyPaise: bigint('price_monthly_paise', { mode: 'number' }),
     createdAt: isoTimestamp('created_at').notNull(),
     updatedAt: isoTimestamp('updated_at').notNull(),
   },
@@ -715,6 +719,8 @@ export const commercialEvents = pgTable(
     organizationId: text('organization_id').references(() => organizations.id),
     planKey: text('plan_key'),
     capability: text('capability'),
+    /** The entity acted on when it is not an organization or plan ("user:…", "invoice:…"). */
+    subject: text('subject'),
     oldValueJson: text('old_value_json'),
     newValueJson: text('new_value_json'),
     reason: text('reason').notNull(),
@@ -728,5 +734,37 @@ export const commercialEvents = pgTable(
   (t) => [
     check('commercial_events_event', inList(t.event, COMMERCIAL_EVENTS)),
     index('commercial_events_organization').on(t.organizationId, t.seq),
+  ],
+);
+
+/**
+ * What each reading of an invoice used (Control Centre cost accounting): one row per extraction,
+ * so a retried job can never count the same reading twice; a new reading (a reprocess) is a real,
+ * new cost and gets its own row. Usage only: never values, text or documents. Cost is calculated
+ * from these counts and the pricing configured in Veyrafy Operations (`settings`), never stored
+ * here, so a corrected rate applies everywhere. A ledger of what was spent: it has no foreign keys,
+ * so it outlives the invoice (a demo reset, for example, does not erase real provider spend).
+ */
+export const processingUsage = pgTable(
+  'processing_usage',
+  {
+    seq: seq(),
+    id: text('id').primaryKey(),
+    extractionId: text('extraction_id').notNull().unique(),
+    invoiceId: text('invoice_id').notNull(),
+    /** The readers that ran, joined ("ai_vision", "ai_vision+local_ocr", "local_ocr", …). */
+    method: text('method').notNull(),
+    pages: integer('pages').notNull(),
+    aiModel: text('ai_model'),
+    aiCalls: integer('ai_calls').notNull(),
+    aiInputTokens: bigint('ai_input_tokens', { mode: 'number' }).notNull(),
+    aiOutputTokens: bigint('ai_output_tokens', { mode: 'number' }).notNull(),
+    durationMs: integer('duration_ms'),
+    documentBytes: bigint('document_bytes', { mode: 'number' }).notNull(),
+    createdAt: isoTimestamp('created_at').notNull(),
+  },
+  (t) => [
+    index('processing_usage_created').on(t.createdAt),
+    index('processing_usage_invoice').on(t.invoiceId),
   ],
 );

@@ -141,6 +141,7 @@ export const notify = {
   demoReset: () => show('demo', 'info', 'Demo reset. The sample business is back to the start.'),
   commercialSaved: () =>
     show('commercial', 'success', 'Change saved and recorded in the commercial audit trail.'),
+  opsSaved: () => show('commercial', 'success', 'Change saved and recorded in the audit log.'),
 } as const;
 
 export function useToasts(): readonly Toast[] {

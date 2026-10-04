@@ -12,9 +12,9 @@ describe('Veyrafy Operations routes (Phase 8A)', () => {
       expect(parseHash(href)).toEqual({ name: 'ops', section, id: null });
     }
     expect(parseHash('#/ops')).toEqual({ name: 'ops', section: 'overview', id: null });
-    expect(parseHash('#/ops/commercial/01ORG')).toEqual({
+    expect(parseHash('#/ops/customers/01ORG')).toEqual({
       name: 'ops',
-      section: 'commercial',
+      section: 'customers',
       id: '01ORG',
     });
     expect(parseHash('#/ops/nonsense')).toMatchObject({ section: 'overview' });

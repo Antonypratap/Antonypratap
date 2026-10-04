@@ -443,7 +443,8 @@ describe('Veyrafy Operations is for VEYRA_ADMIN only', () => {
         });
         expect(res.statusCode, `${r.method} ${url}`).toBe(403);
       }
-      if (r.method === 'GET')
+      // (One invoice's processing detail needs an invoice id: covered by the Control Centre tests.)
+      if (r.method === 'GET' && !r.url.endsWith('/processing/:id'))
         expect((await call(a, operator, 'GET', url)).statusCode, url).toBe(200);
     }
     // Nothing changed through a customer.

@@ -1,10 +1,12 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
-import { loadSession, useSession } from '../access/session';
+import { loadSession, signOut, useAccountSuspended, useSession } from '../access/session';
+import { Logo } from '../design-system';
 import { HomePage } from '../marketing/HomePage';
 import { parseHash, useHash } from '../product/router';
 import { WEBSITE_ADDRESS, type HostKind } from './host';
 import { checkInstance, type InstanceCheck } from './instance';
 import { AddressNotSetUp, ClientLogin, RequestAccess, sitePageOf } from './SitePages';
+import site from './SitePages.module.css';
 
 // The workspace and sign-in load on demand: the public homepage does not download them.
 const ProductApp = lazy(() =>
@@ -28,6 +30,7 @@ function Root({ instance }: { instance: { name: string } | null }) {
   const screenKey = route.name === 'invoice' ? `invoice/${route.id}` : route.name;
   // Product routes need a signed-in session; the server decides (the homepage stays public).
   const session = useSession();
+  const suspended = useAccountSuspended();
   useEffect(() => {
     if (inProduct && session.status === 'loading') void loadSession();
   }, [inProduct, session.status]);
@@ -51,10 +54,26 @@ function Root({ instance }: { instance: { name: string } | null }) {
       ) : session.session.user.role === 'VEYRA_ADMIN' ? (
         // A Veyrafy operator has no customer permissions: point to Veyrafy Operations instead.
         <OperatorNotice />
+      ) : suspended ? (
+        <Suspended />
       ) : (
         <ProductApp route={route} />
       )}
     </Suspense>
+  );
+}
+
+/** The customer's account is suspended by Veyrafy (the server refuses every request). */
+function Suspended() {
+  return (
+    <main className={site.suspended} role="alert">
+      <Logo />
+      <h1>This Veyrafy account is suspended</h1>
+      <p>Your invoices and records are kept safely. Contact Veyrafy to restore access.</p>
+      <button type="button" onClick={() => void signOut()}>
+        Sign out
+      </button>
+    </main>
   );
 }
 

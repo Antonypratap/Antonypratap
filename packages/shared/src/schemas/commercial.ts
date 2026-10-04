@@ -109,6 +109,8 @@ export const ApiOpsPlanSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   organizations: z.number(),
+  /** Monthly price in paise (for MRR only; there is no billing). Null: not set. */
+  priceMonthlyPaise: z.number().nullable(),
   entitlements: z.array(
     z.object({ capability: CapabilityKeySchema, value: EntitlementValueSchema.nullable() }),
   ),
@@ -122,6 +124,8 @@ export const ApiCommercialEventSchema = z.object({
   organizationId: z.string().nullable(),
   planKey: z.string().nullable(),
   capability: z.string().nullable(),
+  /** The entity acted on, when it is not an organization or plan ("user:…", "invoice:…"). */
+  subject: z.string().nullable(),
   oldValue: z.unknown(),
   newValue: z.unknown(),
   reason: z.string(),

@@ -260,6 +260,7 @@ describe('AI vision reader (Gemini)', () => {
       textPages: 0,
       imagePages: 1,
       rendered: true,
+      ai: { model: 'gemini-test', calls: 1, inputTokens: 0, outputTokens: 0 },
     });
     expect(r.warnings).toContain(
       'The PDF has no readable text layer: every page was read as an image.',
@@ -411,6 +412,35 @@ describe('AI vision reader (Gemini)', () => {
       'main-model: the AI service answered HTTP 503',
       'gone-model: the AI model "gone-model" was not found; check VEYRA_AI_MODEL',
     ]);
+  });
+
+  it('meters every call: model, calls and the tokens the service reports, also on a fallback', async () => {
+    const usage = { promptTokenCount: 1200, candidatesTokenCount: 300 };
+    const ok = (async () =>
+      new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: JSON.stringify(READING) }] } }],
+          usageMetadata: usage,
+        }),
+      )) as unknown as typeof fetch;
+    const r = await reader(ok).extract(input);
+    expect(r.diagnostics?.ai).toEqual({
+      model: 'gemini-test',
+      calls: 1,
+      inputTokens: 1200,
+      outputTokens: 300,
+    });
+    // A billed answer that cannot be used still counts, on the fallback result.
+    const refused = (async () =>
+      new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: 'not an answer' }] } }],
+          usageMetadata: usage,
+        }),
+      )) as unknown as typeof fetch;
+    const f = await reader(refused).extract(input);
+    expect(f.extractor.id).toBe('local_ocr');
+    expect(f.diagnostics?.ai).toMatchObject({ calls: 1, inputTokens: 1200, outputTokens: 300 });
   });
 
   it('every model busy: tried in rounds, then the local reader, naming the model', async () => {

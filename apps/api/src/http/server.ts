@@ -90,6 +90,8 @@ export interface ServerOptions {
   veyra: Veyra;
   /** The AI reader, when one is configured: "Test the reader" asks it a tiny question. */
   aiReader?: {
+    /** Model names, main first (System Configuration; never the key). */
+    readonly models?: readonly string[];
     test(): Promise<{
       ok: boolean;
       ms: number;
@@ -221,9 +223,8 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     },
   });
   const imports = new BusinessImports(veyra);
-  const limiter = new RateLimiter(
-    options.rateLimits ?? { upload: 60, processing: 120, dev: 60, login: 10 },
-  );
+  const rateLimits = options.rateLimits ?? { upload: 60, processing: 120, dev: 60, login: 10 };
+  const limiter = new RateLimiter(rateLimits);
 
   const send = <S extends z.ZodType>(schema: S, value: unknown): z.output<S> => schema.parse(value);
   const error = (
@@ -261,9 +262,30 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     if (retryAfter !== null) return tooMany(req, reply, retryAfter);
   });
   // Authentication, CSRF and authorization for every route, from its declared access.
+  // A suspended customer (Veyrafy Operations) is refused; read at most every 15 seconds.
+  let suspendedAt = 0;
+  let suspendedNow = false;
+  const suspended = async (): Promise<boolean> => {
+    if (Date.now() - suspendedAt < 15_000) return suspendedNow;
+    const row = (
+      await veyra.db
+        .select({ s: t.organizations.commercialStatus })
+        .from(t.organizations)
+        .where(eq(t.organizations.id, veyra.organizationId))
+        .limit(1)
+    )[0];
+    suspendedNow = row?.s === 'suspended';
+    suspendedAt = Date.now();
+    return suspendedNow;
+  };
+  /** After a suspension or reactivation: the next request reads the status afresh. */
+  const suspensionChanged = (): void => {
+    suspendedAt = 0;
+  };
   registerAccessControl(app, {
     sessions,
     users,
+    suspended,
     organizationId: veyra.organizationId,
     cookieName,
     allowedOrigins,
@@ -1134,6 +1156,9 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     environment,
     ...(options.readiness ? { readiness: options.readiness } : {}),
     send,
+    suspensionChanged,
+    aiModels: options.aiReader?.models ?? [],
+    limits: { maxUploadBytes, rateLimitsPerMinute: rateLimits },
   });
 
   // ── Dev ──────────────────────────────────────────────────────────────────
