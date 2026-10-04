@@ -107,7 +107,11 @@ export function parseDate(text: string): string | null {
 
 /** A money amount as printed (₹, Rs., INR, Indian grouping, brackets or minus for negatives). */
 export function parseAmount(text: string, allowNegative = false): number | null {
-  let t = text.trim().replace(/\s+/g, '');
+  // Tally prints a negative amount as "(-)0.40".
+  let t = text
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(/^\(-\)/, '-');
   let negative = false;
   const bracket = /^\((.*)\)$/.exec(t);
   if (bracket) {
@@ -126,7 +130,8 @@ export function parseAmount(text: string, allowNegative = false): number | null 
   return r.ok ? (r.value as number) : null;
 }
 
-const isMoneyToken = (t: string) => /^\(?-?(₹|rs\.?|inr)?\s?-?\d[\d,]*(\.\d+)?\)?$/i.test(t.trim());
+const isMoneyToken = (t: string) =>
+  /^(\(-\)|\(?-?)(₹|rs\.?|inr)?\s?-?\d[\d,]*(\.\d+)?\)?$/i.test(t.trim());
 
 /** The rightmost amount on a row of segments (the value column of a totals block). */
 function rowAmount(
@@ -154,8 +159,9 @@ const L = {
   title:
     /^(tax\s+invoice|invoice|gst\s+invoice|bill\s+of\s+supply|original|duplicate|triplicate|page\s+\d)/i,
   invoiceNo: /^(?:tax\s+)?(?:invoice|inv|bill)\.?\s*(?:no|number|num|#)\.?\s*[:\-.#]?\s*(.*)$/i,
-  invoiceDate: /^(?:invoice\s+|inv\.?\s+|bill\s+)?date(?:\s+of\s+invoice)?\s*[:\-.]?\s*(.*)$/i,
-  po: /^(?:buyer'?s\s+)?(?:p\.?\s?o\.?|purchase\s+order)\s*(?:no|number|ref(?:erence)?|#)?\.?\s*[:\-.#]?\s*(.*)$/i,
+  invoiceDate: /^(?:invoice\s+|inv\.?\s+|bill\s+)?dated?(?:\s+of\s+invoice)?\s*[:\-.]?\s*(.*)$/i,
+  // "Buyer's Order No." (Tally) is the purchase order; a bare "Order No." may be the seller's own.
+  po: /^(?:buyer'?s\s+)?(?:p\.?\s?o\.?|purchase\s+order|(?<=buyer'?s\s+)order)\s*(?:no|number|ref(?:erence)?|#)?\.?\s*[:\-.#]?\s*(.*)$/i,
   pos: /^place\s+of\s+supply\s*[:\-.]?\s*(.*)$/i,
   billTo: /^(bill(?:ed)?\s*to|buyer|invoice\s+to|billing\s+address|customer)\b\s*[:-]?\s*(.*)$/i,
   shipTo: /^(ship(?:ped)?\s*to|consignee|deliver(?:y)?\s*(?:to|address))\b\s*[:-]?\s*(.*)$/i,
@@ -166,7 +172,9 @@ const L = {
 };
 
 const TOTALS = {
-  taxable: /^(total\s+)?taxable\s*(value|amount)?\b|^sub\s*-?\s*total\b|^total\s+before\s+tax\b/i,
+  // "Basic Value" / "Basic Amount" (Tally), "Goods Value", "Assessable Value": the goods subtotal.
+  taxable:
+    /^(total\s+)?taxable\s*(value|amount)?\b|^sub\s*-?\s*total\b|^total\s+before\s+tax\b|^(basic|goods|assessable)\s+(value|amount)\b/i,
   cgst: /^(output\s+)?cgst\b/i,
   sgst: /^(output\s+)?(sgst|utgst)\b/i,
   igst: /^(output\s+)?igst\b/i,
@@ -195,9 +203,14 @@ function labelled(
         found.push({ value: v ?? '', segs: [s], spelled: rest.split(/\s+/)[0] ?? rest });
         continue;
       }
+      // The value to the right on the same row, unless that is the next box's own label.
       const right = p.segments
         .filter(
-          (o) => o !== s && o.x0 >= s.x1 - unit * 0.2 && Math.abs(yMid(o) - yMid(s)) <= unit * 0.5,
+          (o) =>
+            o !== s &&
+            o.x0 >= s.x1 - unit * 0.2 &&
+            Math.abs(yMid(o) - yMid(s)) <= unit * 0.5 &&
+            !isMeta(o.text),
         )
         .sort((a, b) => a.x0 - b.x0)[0];
       const below = p.segments
@@ -413,10 +426,11 @@ function lineFields(raw: RawLine, lineNo: number): ExtractedLine {
   };
   let qtyText = cellText(raw.cells.qty);
   let uomFromQty: string | null = null;
+  // "1 Nos": the unit printed with the quantity (Tally prints it even beside a "per" column).
   const split = /^([\d,]+(?:\.\d+)?)\s+([A-Za-z]{2,6})$/.exec(qtyText);
-  if (split && !raw.cells.uom) {
+  if (split) {
     qtyText = split[1] ?? qtyText;
-    uomFromQty = (split[2] ?? '').toUpperCase();
+    if (!raw.cells.uom) uomFromQty = (split[2] ?? '').toUpperCase();
   }
   const qty = raw.cells.qty
     ? toField(
@@ -608,9 +622,21 @@ export function parseInvoice(pages: readonly PageText[]): ParsedInvoice {
   if (invoiceNumber.ambiguous)
     warnings.push('More than one invoice number is printed; please confirm which it is.');
 
-  const date = single(
-    labelled(pages, L.invoiceDate, (t) => parseDate(t.split(/\s+/)[0] ?? ''), unitFor),
-  );
+  // Several "Dated" boxes (the invoice's, the order's): the one beside the invoice number is the
+  // invoice date; any other disagreement stays unresolved (asked, never guessed).
+  const dates = labelled(pages, L.invoiceDate, (t) => parseDate(t.split(/\s+/)[0] ?? ''), unitFor);
+  const numberLabel = numbers.find((n) => n.value)?.segs[0];
+  const besideNumber = numberLabel
+    ? dates.filter((d) => {
+        const l = d.segs[0];
+        return (
+          l !== undefined &&
+          l.page === numberLabel.page &&
+          Math.abs(yMid(l) - yMid(numberLabel)) <= unitFor(l.page) * 0.6
+        );
+      })
+    : [];
+  const date = single(besideNumber.length === 1 ? besideNumber : dates);
   const po = single(
     labelled(
       pages,

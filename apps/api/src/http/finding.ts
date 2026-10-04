@@ -359,6 +359,11 @@ const RECEIPT_OWN: Record<string, { type: ApiFinding['type']; label: string; act
     label: "Totals don't add up",
     action: 'Check totals',
   },
+  'Line amounts add up to the goods value': {
+    type: 'totals',
+    label: "Totals don't add up",
+    action: 'Check totals',
+  },
 };
 
 function fromReceipt(input: FindingInput, r: ReceiptDifferences): ApiFinding | null {

@@ -189,7 +189,7 @@ Header fields:
 - placeOfSupply: as printed (for example "Karnataka (29)" or "Karnataka, Code : 29").
 - invoiceNumber, invoiceDate: the invoice's own number and date (not the e-way bill, IRN or Ack).
 - poNumber: the buyer's purchase order number ("PO No", "Buyer's Order No", "Order No").
-- taxable: the taxable value before tax as printed; cgst, sgst, igst, cess: the tax AMOUNTS (not rates);
+- taxable: the taxable value before tax as printed ("Taxable Value", "Basic Value", "Sub Total"); cgst, sgst, igst, cess: the tax AMOUNTS (not rates);
   roundOff: as printed including its sign, for example "(-)0.29"; total: the grand total.
 Lines: one entry per item row, in printed order. quantity: only the number (for example "16,000.00");
 uom: only the unit (for example "Nos"); rate: the unit price; discount: the discount amount;
@@ -358,6 +358,10 @@ export function toExtraction(
     } as ExtractedLine;
   });
   const warnings = [`Read by the AI reader (${version}); every value is checked by Veyrafy.`];
+  if (lineAmountsFromTotals(header, lines))
+    warnings.push(
+      'The line amounts were read from the amount column; they add up to the invoice’s own totals.',
+    );
   for (const c of reading.otherCharges ?? [])
     warnings.push(
       `${c.label}${c.amount ? ` ${c.amount}` : ''} is printed outside the item lines; check it against the order.`,
@@ -389,6 +393,46 @@ export function toExtraction(
     });
   }
   return { header, lines, warnings, pages: reading.pageCount ?? 1, otherFields };
+}
+
+/**
+ * An invoice with no per-line tax (tax only in the footer, as Tally prints it) has one amount
+ * column: the line amount before tax. A reading that gives that amount as the line total and
+ * leaves the line's taxable value "not printed" means the same printed number. It is taken as the
+ * taxable value only when every such line has one and they add up exactly to the invoice's own
+ * goods value (or to its total less its tax and round-off); otherwise nothing changes and a value
+ * not read stays not read. Returns whether it applied.
+ */
+export function lineAmountsFromTotals(header: ExtractedHeader, lines: ExtractedLine[]): boolean {
+  const notPrinted = (f: Field<unknown>) =>
+    f.value === null && f.evidence === null && f.confidenceBp > 0;
+  const moved = lines.filter((l) => notPrinted(l.taxablePaise) && l.lineTotalPaise.value !== null);
+  if (moved.length === 0) return false;
+  if (
+    lines.some(
+      (l) => l.cgstPaise.value !== null || l.sgstPaise.value !== null || l.igstPaise.value !== null,
+    )
+  )
+    return false;
+  if (lines.some((l) => l.taxablePaise.value === null && !moved.includes(l))) return false;
+  const sum = lines.reduce(
+    (a, l) => a + ((l.taxablePaise.value ?? l.lineTotalPaise.value) as number),
+    0,
+  );
+  const h = header;
+  const goods = h.taxablePaise.value as number | null;
+  const tax = [h.cgstPaise, h.sgstPaise, h.igstPaise, h.cessPaise].reduce(
+    (a, f) => a + ((f.value as number | null) ?? 0),
+    0,
+  );
+  const total = h.totalPaise.value as number | null;
+  const proven =
+    goods !== null
+      ? goods === sum
+      : total !== null && total === sum + tax + ((h.roundOffPaise.value as number | null) ?? 0);
+  if (!proven) return false;
+  for (const l of moved) l.taxablePaise = { ...l.lineTotalPaise } as ExtractedLine['taxablePaise'];
+  return true;
 }
 
 type Part = { text: string } | { inline_data: { mime_type: string; data: string } };

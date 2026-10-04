@@ -1957,6 +1957,7 @@ export class Veyra {
       invoiceNumber: v<string>('header.invoiceNumber'),
       invoiceDate: v<string>('header.invoiceDate'),
       poNumber: v<string>('header.poNumber'),
+      taxablePaise: v<number>('header.taxablePaise'),
       cgstPaise: v<number>('header.cgstPaise'),
       sgstPaise: v<number>('header.sgstPaise'),
       igstPaise: v<number>('header.igstPaise'),

@@ -211,6 +211,8 @@ export interface InvoiceSide {
   invoiceNumber: string | null;
   invoiceDate: string | null;
   poNumber: string | null;
+  /** The goods value printed on the invoice ("Taxable Value", "Basic Value", "Sub Total"). */
+  taxablePaise?: number | null;
   cgstPaise: number | null;
   sgstPaise: number | null;
   igstPaise: number | null;
@@ -405,28 +407,37 @@ export function receiptComparison(
       : `The ERP has not recorded this invoice yet (its invoice amount is 0)${erp.erpInvoiceDate ? `, so its date ${dateText(erp.erpInvoiceDate)} is not compared` : ''}.`,
     'header.invoiceDate',
   );
-  cmp(
-    'Purchase order',
-    'Order',
-    inv.poNumber,
-    erp.poRef ? `ERP reference ${erp.poRef}` : null,
-    null,
-    'The ERP record holds its internal order id, not the order number printed on the invoice.',
-    'header.poNumber',
-  );
+  // Never compared: the ERP record holds its internal order id, and nothing links it to the
+  // order number printed on the invoice. So it is shown, never matched, and an order number not
+  // read does not hold the invoice up (it would not be compared if it were read).
+  push({
+    section: 'Purchase order',
+    label: 'Order',
+    invoice: inv.poNumber,
+    erp: erp.poRef ? `ERP reference ${erp.poRef}` : null,
+    result: 'not_checked',
+    blocking: false,
+    note: 'The ERP record holds its internal order id, not the order number printed on the invoice, so the two are not compared.',
+  });
 
-  // Lines: paired by item name, quantity and rate (the ERP may list them in another order).
+  // Lines: paired by item name, then quantity and rate (the ERP may list them in another order).
+  // Two lines whose names share no word are never paired by quantity or rate alone: equal
+  // quantities are common, and a wrong pairing reports a matching item as different.
   const pairs: { inv: InvoiceSide['lines'][number] | null; erp: ReceiptLine | null }[] = [];
   const freeInv = new Set(inv.lines.map((_, i) => i));
   const freeErp = new Set(erp.lines.map((_, i) => i));
   const scored: { i: number; e: number; s: number }[] = [];
   inv.lines.forEach((l, i) =>
     erp.lines.forEach((el, e) => {
-      const s =
-        similarity(l.description, el.name) +
-        (l.qtyMilli !== null && l.qtyMilli === el.qtyMilli ? 1 : 0) +
-        (l.unitPricePaise !== null && l.unitPricePaise === el.ratePaise ? 0.5 : 0);
-      if (s > 0) scored.push({ i, e, s });
+      const name = similarity(l.description, el.name);
+      // An item name not read with certainty: quantity and rate together may still pair it.
+      const nameUnread = l.description === null;
+      if (name === 0 && !nameUnread) return;
+      const sameQty = l.qtyMilli !== null && l.qtyMilli === el.qtyMilli;
+      const sameRate = l.unitPricePaise !== null && l.unitPricePaise === el.ratePaise;
+      if (nameUnread && !(sameQty && sameRate)) return;
+      const s = name + (sameQty ? 1 : 0) + (sameRate ? 0.5 : 0);
+      scored.push({ i, e, s });
     }),
   );
   for (const { i, e } of scored.sort((a, b) => b.s - a.s))
@@ -523,6 +534,22 @@ export function receiptComparison(
   const lineTaxable = inv.lines.every((l) => l.taxablePaise !== null)
     ? inv.lines.reduce((s, l) => s + (l.taxablePaise ?? 0), 0)
     : null;
+  // The goods value as printed; else, when every line amount was read, their sum (labelled so).
+  const printedGoods = inv.taxablePaise ?? null;
+  const invGoods = printedGoods ?? lineTaxable;
+  if (printedGoods !== null && lineTaxable !== null && inv.lines.length > 0) {
+    const ok = printedGoods === lineTaxable;
+    push({
+      section: 'Invoice arithmetic',
+      label: 'Line amounts add up to the goods value',
+      invoice: money(printedGoods),
+      erp: `${money(lineTaxable)} calculated`,
+      result: ok ? 'match' : 'mismatch',
+      blocking: false,
+      note: ok ? null : 'The line amounts do not add up to the goods value printed.',
+      path: 'header.taxablePaise',
+    });
+  }
   const printedTax = (inv.cgstPaise ?? 0) + (inv.sgstPaise ?? 0) + (inv.igstPaise ?? 0);
   const unreadRate = inv.lines.find((l) => l.gstRateBp === null || l.gstRateBp === undefined);
   if ((inv.freightPaise ?? 0) !== 0) {
@@ -571,8 +598,8 @@ export function receiptComparison(
       note: ok ? null : 'The tax printed is not the GST rate applied to the line amounts.',
     });
   }
-  if (lineTaxable !== null && inv.totalPaise !== null) {
-    const expected = lineTaxable + printedTax + (inv.freightPaise ?? 0) + (inv.roundOffPaise ?? 0);
+  if (invGoods !== null && inv.totalPaise !== null) {
+    const expected = invGoods + printedTax + (inv.freightPaise ?? 0) + (inv.roundOffPaise ?? 0);
     push({
       section: 'Invoice arithmetic',
       label: 'Lines + tax + round-off = total',
@@ -588,10 +615,19 @@ export function receiptComparison(
   const sum = (k: 'freightPaise' | 'cgstPaise' | 'sgstPaise' | 'igstPaise' | 'amountPaise') =>
     erp.lines.reduce((s, l) => s + (l[k] ?? 0), 0);
   const goods = sum('amountPaise');
-  const invGoods = inv.lines.every((l) => l.taxablePaise !== null)
-    ? inv.lines.reduce((s, l) => s + (l.taxablePaise ?? 0), 0)
-    : null;
-  cmp('Totals', 'Goods value (sum of lines)', money(invGoods), money(goods), invGoods === goods);
+  cmp(
+    'Totals',
+    printedGoods !== null ? 'Goods value' : 'Goods value (sum of lines)',
+    printedGoods !== null
+      ? money(printedGoods)
+      : lineTaxable !== null
+        ? `${money(lineTaxable)} calculated`
+        : null,
+    money(goods),
+    invGoods === goods,
+    undefined,
+    printedGoods !== null ? 'header.taxablePaise' : undefined,
+  );
   const freight = sum('freightPaise');
   if (freight !== 0 || (inv.freightPaise ?? 0) !== 0)
     cmp('Totals', 'Freight', money(inv.freightPaise), money(freight), inv.freightPaise === freight);
