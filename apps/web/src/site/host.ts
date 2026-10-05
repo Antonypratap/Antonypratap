@@ -17,17 +17,30 @@ export const DOMAIN = 'veyrafy.com';
 export const WEBSITE_ADDRESS = `https://${DOMAIN}/`;
 export const DEMO_ADDRESS = `https://demo.${DOMAIN}/`;
 /**
- * Where the 10 Invoice Challenge runs (a deployment with VEYRA_CHALLENGE=true and its own
+ * Where the 5 Invoice Challenge runs (a deployment with VEYRA_CHALLENGE=true and its own
  * database; the website has none). The website's challenge page starts it there.
  */
-export const CHALLENGE_PATH = '/10-invoice-challenge';
+export const CHALLENGE_PATH = '/5-invoice-challenge';
+/** The challenge's earlier address (10 invoices): links already sent still open it. */
+const FORMER_CHALLENGE_PATHS = ['/10-invoice-challenge'];
 export const CHALLENGE_ADDRESS = `https://demo.${DOMAIN}${CHALLENGE_PATH}`;
+
+/**
+ * Where the homepage's challenge button leads: straight into the challenge. On the website (no
+ * database) that is the demo deployment, where it runs; elsewhere, this address's own page.
+ */
+export function challengeEntryHref(
+  hostname: string = typeof window === 'undefined' ? '' : window.location.hostname,
+): string {
+  return classifyHost(hostname).kind === 'website' ? CHALLENGE_ADDRESS : CHALLENGE_PATH;
+}
 
 /** Whether this address is the challenge page (a path, or the app's hash form). */
 export function isChallengePage(pathname: string, hash: string): boolean {
+  const paths = [CHALLENGE_PATH, ...FORMER_CHALLENGE_PATHS];
   return (
-    pathname.replace(/\/+$/, '') === CHALLENGE_PATH ||
-    hash.replace(/^#/, '').split(/[?&]/)[0]?.replace(/\/+$/, '') === CHALLENGE_PATH
+    paths.includes(pathname.replace(/\/+$/, '')) ||
+    paths.includes(hash.replace(/^#/, '').split(/[?&]/)[0]?.replace(/\/+$/, '') ?? '')
   );
 }
 export const CONTACT_PHONE = '+91 98800 00990';

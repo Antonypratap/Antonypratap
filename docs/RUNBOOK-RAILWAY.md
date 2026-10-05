@@ -308,10 +308,27 @@ isn't set up."
 
 ---
 
-## 14. The 10 Invoice Challenge (prospects try Veyrafy on their own invoices)
+## 14. The 5 Invoice Challenge (prospects try Veyrafy on their own invoices)
 
-The challenge page is `/10-invoice-challenge`. On `veyrafy.com` (no database) the page explains the
-challenge and its button opens it on **veyrafy-demo**, where it runs. Each prospect's invoices
+The challenge page is `/5-invoice-challenge`. It runs on **veyrafy-demo**; the homepage's main
+button ("Check 5 of your invoices free") opens it there directly, and `veyrafy.com/5-invoice-challenge`
+explains it with a button to the same place.
+
+The prospect's journey: tick one consent box and drop in invoices (no form first), optionally add
+their records and confirm their GSTIN (pre-filled from the invoices), watch the checks, and see the
+headline result (invoices checked, value, what needs attention, the kinds of findings). Their work
+e-mail and company name open the full results, the evidence and the PDF report, and the report
+e-mail is sent then, with the report attached as a PDF. Until then the server sends the numbers
+only. Up to 5 invoices per challenge.
+
+**One challenge each, then it ends.** A browser that has started a challenge cannot start another
+(a cookie kept for a year), and a work e-mail opens the results of one challenge only. Once the
+full results are shown, the invoices and their readings are deleted after
+`VEYRA_CHALLENGE_RESULTS_HOURS` (24 by default); the numbers stay, and the page then says the
+challenge is complete. The earlier address `/10-invoice-challenge` still opens it.
+
+If the demo does not have `VEYRA_CHALLENGE=true`, the page says the challenge "isn't open right
+now" and gives the contact number. Each prospect's invoices
 and records are kept in their own separate workspace on the demo's volume. They are never mixed
 with the demo's sample data or with another prospect's invoices, and they are deleted after the
 retention period.
@@ -321,7 +338,8 @@ In **veyrafy-demo → Variables**, add:
 | Variable | Value |
 |---|---|
 | `VEYRA_CHALLENGE` | `true` |
-| `VEYRA_CHALLENGE_RETENTION_DAYS` | `30` (how long invoices are kept) |
+| `VEYRA_CHALLENGE_RETENTION_DAYS` | `30` (the longest invoices are kept, if the results are never opened) |
+| `VEYRA_CHALLENGE_RESULTS_HOURS` | `24` (how long invoices are kept after the results are shown) |
 | `VEYRA_CHALLENGE_DAILY_LIMIT` | `50` (new challenges per day, all prospects together) |
 | `VEYRA_PUBLIC_ORIGIN` | `https://demo.veyrafy.com` (links in the e-mail point here) |
 | `VEYRA_BOOKING_URL` | optional: your booking page, e.g. a Calendly 15-minute link |
@@ -337,7 +355,7 @@ AI reader off; the local reader is used instead (slower on scans and photos, and
 them).
 
 **You should see:**
-- `https://demo.veyrafy.com/10-invoice-challenge` shows the challenge.
-- After a test challenge, it appears in the Control Centre under **10 Invoice Challenge**, with its
+- `https://demo.veyrafy.com/5-invoice-challenge` shows the challenge.
+- After a test challenge, it appears in the Control Centre under **5 Invoice Challenge**, with its
   results, report downloads and walkthrough requests. You can update the follow-up status there;
   every change is recorded in the Audit Log.

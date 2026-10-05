@@ -114,12 +114,13 @@ export interface VeyraConfig {
   /** The deployed commit (RAILWAY_GIT_COMMIT_SHA), for GET /api/v1/health; null when unknown. */
   release: string | null;
   /**
-   * The 10 Invoice Challenge (acquisition): off unless VEYRA_CHALLENGE=true. Prospects' invoices
-   * are checked in isolated workspaces under `<dataDir>/challenges` and deleted after
-   * `retentionDays`.
+   * The 5 Invoice Challenge (acquisition): off unless VEYRA_CHALLENGE=true. Prospects' invoices
+   * are checked in isolated workspaces under `<dataDir>/challenges` and deleted `resultsHours`
+   * after the prospect has seen the full results, and in any case after `retentionDays`.
    */
   challenge: {
     retentionDays: number;
+    resultsHours: number;
     dailyLimit: number;
     /** "Book a walkthrough" opens this; null: the request is recorded and the team follows up. */
     bookingUrl: string | null;
@@ -219,9 +220,10 @@ const VARS = {
   VEYRA_WEB_DIST: z.string().min(1),
   // true: this process is the public website only (site.ts); read by main.ts before anything else.
   VEYRA_SITE_ONLY: bool,
-  // The 10 Invoice Challenge (acquisition), and its follow-up e-mail.
+  // The 5 Invoice Challenge (acquisition), and its follow-up e-mail.
   VEYRA_CHALLENGE: bool,
   VEYRA_CHALLENGE_RETENTION_DAYS: int(1, 365),
+  VEYRA_CHALLENGE_RESULTS_HOURS: int(1, 720),
   VEYRA_CHALLENGE_DAILY_LIMIT: int(1, 10_000),
   VEYRA_CHALLENGE_NOTIFY_EMAIL: z.email().max(254),
   VEYRA_BOOKING_URL: z.url({ protocol: /^https$/ }).max(500),
@@ -440,6 +442,7 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
     challenge: read('VEYRA_CHALLENGE')
       ? {
           retentionDays: read('VEYRA_CHALLENGE_RETENTION_DAYS') ?? 30,
+          resultsHours: read('VEYRA_CHALLENGE_RESULTS_HOURS') ?? 24,
           dailyLimit: read('VEYRA_CHALLENGE_DAILY_LIMIT') ?? 50,
           bookingUrl: read('VEYRA_BOOKING_URL') ?? null,
           notifyEmail: read('VEYRA_CHALLENGE_NOTIFY_EMAIL') ?? null,

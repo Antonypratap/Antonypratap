@@ -175,7 +175,7 @@ export class FakeErpConnector implements ErpConnector {
 
   /**
    * Sets the buying company (its name and GSTIN; the state follows the GSTIN). For a workspace
-   * whose company is known only once its owner confirms it (the 10 Invoice Challenge).
+   * whose company is known only once its owner confirms it (the 5 Invoice Challenge).
    */
   setCompany(c: { name: string; gstin: string }): void {
     this.#db

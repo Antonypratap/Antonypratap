@@ -1,10 +1,10 @@
 /**
- * The 10 Invoice Challenge (acquisition): a prospect puts up to ten real supplier invoices, and
+ * The 5 Invoice Challenge (acquisition): a prospect puts up to five real supplier invoices, and
  * optionally their purchasing records, through the real Veyrafy checks and gets an evidence-based
  * report. These are the challenge record's states; the invoices themselves live in the
  * challenge's own isolated workspace and go through the product's own pipeline.
  */
-export const CHALLENGE_MAX_INVOICES = 10;
+export const CHALLENGE_MAX_INVOICES = 5;
 /** Record files (template workbooks, CSVs, ERP receipt exports) per challenge. */
 export const CHALLENGE_MAX_RECORD_FILES = 6;
 

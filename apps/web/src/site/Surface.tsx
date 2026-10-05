@@ -15,7 +15,7 @@ const ProductApp = lazy(() =>
 const SignIn = lazy(() => import('../access/SignIn').then((m) => ({ default: m.SignIn })));
 // Veyrafy Operations (Phase 8A): a separate surface, loaded only when opened.
 const OpsApp = lazy(() => import('../ops/OpsApp').then((m) => ({ default: m.OpsApp })));
-// The 10 Invoice Challenge (public, no sign-in), loaded only when opened.
+// The 5 Invoice Challenge (public, no sign-in), loaded only when opened.
 const ChallengeApp = lazy(() =>
   import('../challenge/ChallengeApp').then((m) => ({ default: m.ChallengeApp })),
 );

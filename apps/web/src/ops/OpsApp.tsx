@@ -50,7 +50,7 @@ const NAV: { section: OpsSection; label: string; icon: IconName }[] = [
   { section: 'processing', label: 'Invoice Processing', icon: 'inbox' },
   { section: 'cost', label: 'AI, Usage & Cost', icon: 'spark' },
   { section: 'plans', label: 'Plans & Entitlements', icon: 'document' },
-  { section: 'challenges', label: '10 Invoice Challenge', icon: 'spark' },
+  { section: 'challenges', label: '5 Invoice Challenge', icon: 'spark' },
   { section: 'config', label: 'System Configuration', icon: 'menu' },
   { section: 'audit', label: 'Audit Log', icon: 'audit' },
 ];
@@ -1676,7 +1676,7 @@ function PlanRow({
   );
 }
 
-// ── 10 Invoice Challenge ───────────────────────────────────────────────────
+// ── 5 Invoice Challenge ───────────────────────────────────────────────────
 
 const LEAD_TONE: Record<ChallengeLead['status'], string> = {
   collecting: 'info',
@@ -1690,7 +1690,7 @@ function Challenges() {
   const [open, setOpen] = useState<string | null>(null);
   if (!data)
     return (
-      <Page title="10 Invoice Challenge">
+      <Page title="5 Invoice Challenge">
         <State error={error} />
       </Page>
     );
@@ -1699,7 +1699,7 @@ function Challenges() {
   const sum = (p: (c: ChallengeLead) => number) => rows.reduce((s, c) => s + p(c), 0);
   return (
     <Page
-      title="10 Invoice Challenge"
+      title="5 Invoice Challenge"
       sub={
         data.enabled
           ? "Prospects' challenges: their results (counts and amounts) and follow-up. Documents stay in each challenge's own workspace and are never shown here."
@@ -1793,7 +1793,7 @@ function ChallengeRow({
     <>
       <tr>
         <td>
-          <span className={styles.strong}>{c.companyName}</span>
+          <span className={styles.strong}>{c.companyName || 'Details not given yet'}</span>
           <span className={styles.line}>
             {[c.contactName, c.email, c.phone].filter(Boolean).join(' · ')}
           </span>

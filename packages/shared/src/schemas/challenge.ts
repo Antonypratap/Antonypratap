@@ -7,10 +7,18 @@ import {
 } from '../challenge';
 import { ApiFindingSchema } from './api';
 
-/** The 10 Invoice Challenge: what the prospect's browser and the report read. */
+/** The 5 Invoice Challenge: what the prospect's browser and the report read. */
 
 const int = z.number().int();
 
+/**
+ * Starting a challenge: only the agreement to how the invoices are processed and kept. Nothing
+ * else is asked before the prospect has seen what Veyrafy finds.
+ */
+export const ChallengeStartSchema = z.object({ consent: z.literal(true) }).strict();
+export type ChallengeStart = z.infer<typeof ChallengeStartSchema>;
+
+/** Who the report is for: given after the headline result, to open the full results. */
 export const ChallengeDetailsSchema = z
   .object({
     companyName: z.string().trim().min(2).max(120),
@@ -29,8 +37,6 @@ export const ChallengeDetailsSchema = z
       .optional(),
     outlets: z.number().int().min(1).max(10_000).optional(),
     erpSystem: z.string().trim().max(80).optional(),
-    /** The prospect agreed to how their invoices are processed and kept. */
-    consent: z.literal(true),
   })
   .strict();
 export type ChallengeDetails = z.infer<typeof ChallengeDetailsSchema>;
@@ -115,8 +121,14 @@ export type ApiChallengeSummary = z.infer<typeof ApiChallengeSummarySchema>;
 export const ApiChallengeStateSchema = z.object({
   id: z.string(),
   status: z.enum(CHALLENGE_STATUSES),
-  companyName: z.string(),
-  email: z.string(),
+  /** Null until the prospect gives their details (after the headline result). */
+  companyName: z.string().nullable(),
+  email: z.string().nullable(),
+  /**
+   * Whether the full results (each finding, its evidence, the report) are open: once the details
+   * are given. Before that, only the headline numbers are sent, by the server.
+   */
+  unlocked: z.boolean(),
   gstin: z.string().nullable(),
   /** Buyer GSTINs read on the invoices (to confirm the company's own), most frequent first. */
   gstinCandidates: z.array(z.object({ gstin: z.string(), invoices: int })),
@@ -142,6 +154,8 @@ export const ApiChallengeConfigSchema = z.object({
   maxInvoices: int,
   aiProvider: z.string().nullable(),
   retentionDays: int,
+  /** Hours the invoices are kept after the full results are shown, then deleted. */
+  resultsHours: int,
   templates: z.array(z.object({ file: z.string(), title: z.string() })),
 });
 export type ApiChallengeConfig = z.infer<typeof ApiChallengeConfigSchema>;

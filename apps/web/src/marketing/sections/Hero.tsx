@@ -1,7 +1,7 @@
 import { ButtonLink, Container, Icon } from '../../design-system';
 import { demoEntryHref } from '../../access/demoAccess';
 import { InvoiceStory } from '../visuals/InvoiceStory';
-import { CHALLENGE_PATH } from '../../site/host';
+import { challengeEntryHref } from '../../site/host';
 import styles from './Hero.module.css';
 
 const PRINCIPLES = ['Never pays anything', 'Never guesses', 'Every step on record'];
@@ -25,16 +25,17 @@ export function Hero() {
             difference in front of your team before it becomes a payment problem.
           </p>
           <div className={styles.ctas}>
-            <ButtonLink href={demoEntryHref()} size="lg" arrow>
-              Check an invoice
+            <ButtonLink href={challengeEntryHref()} size="lg" arrow>
+              Check 5 of your invoices free
             </ButtonLink>
             <ButtonLink href="#how-veyrafy-checks" size="lg" variant="secondary">
               See how it works
             </ButtonLink>
           </div>
           <p className={styles.challenge}>
-            <a href={CHALLENGE_PATH}>
-              Take the 10 Invoice Challenge: see what gets caught in your own invoices
+            No sign-up: drop in your supplier invoices and see what gets caught.{' '}
+            <a href={demoEntryHref()}>
+              Or try the demo with sample invoices
               <Icon name="arrowRight" size={14} />
             </a>
           </p>

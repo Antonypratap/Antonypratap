@@ -121,7 +121,7 @@ export interface ServerOptions {
   readiness?: () => Promise<ReadinessReport>;
   /** Veyra Operations' commercial actions (Phase 8A). Absent: built on the Veyrafy's own. */
   commercial?: CommercialAdmin;
-  /** The 10 Invoice Challenge (acquisition); absent: its routes do not exist. */
+  /** The 5 Invoice Challenge (acquisition); absent: its routes do not exist. */
   challenge?: ChallengeService | null;
   /**
    * The built web app, served from this same origin (production client instances). Absent: the
@@ -1153,7 +1153,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     });
   });
 
-  // ── The 10 Invoice Challenge (public; the challenge's own token) ─────────
+  // ── The 5 Invoice Challenge (public; the challenge's own token) ─────────
   if (options.challenge)
     registerChallengeRoutes(app, options.challenge, { cookieSecure: options.auth.cookieSecure });
 

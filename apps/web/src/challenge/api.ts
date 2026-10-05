@@ -10,7 +10,7 @@ import { API, API_CREDENTIALS } from '../api-endpoint';
 import { ApiError } from '../product/api/client';
 
 /**
- * The 10 Invoice Challenge's calls. No account: the server keeps the challenge's secret in an
+ * The 5 Invoice Challenge's calls. No account: the server keeps the challenge's secret in an
  * HttpOnly cookie scoped to the challenge API, which this code never reads or stores. Every change
  * carries the `x-veyra-challenge-request` header (another site cannot send it). The results link
  * in the e-mail carries its secret in the URL fragment, which no browser sends to a server: it is
@@ -79,9 +79,13 @@ const state = async (res: Response): Promise<ApiChallengeState> =>
 export const challengeApi = {
   config: async (): Promise<ApiChallengeConfig> =>
     ApiChallengeConfigSchema.parse(await (await call('/config')).json()),
-  create: async (details: ChallengeDetails) =>
-    z.object({ state: ApiChallengeStateSchema }).parse(await (await call('', json(details))).json())
-      .state,
+  /** Starts a challenge on the prospect's consent (nothing else is asked before the results). */
+  create: async () =>
+    z
+      .object({ state: ApiChallengeStateSchema })
+      .parse(await (await call('', json({ consent: true }))).json()).state,
+  /** Who the report is for: opens the full results. */
+  details: async (details: ChallengeDetails) => state(await call('/me/details', json(details))),
   claim: async (secret: string) => state(await call('/claim', json({ token: secret }))),
   me: async () => state(await call('/me')),
   uploadInvoice: async (f: File) => state(await call('/me/invoices', file(f))),

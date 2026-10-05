@@ -11,7 +11,7 @@ import { DEMO_NOW } from '../test/harness';
 import type { EmailMessage, EmailSender } from './email';
 
 /**
- * The 10 Invoice Challenge, end to end against the real pipeline: synthetic invoices (made-up
+ * The 5 Invoice Challenge, end to end against the real pipeline: synthetic invoices (made-up
  * suppliers and amounts; never a real invoice), the real reader, the real checks, each challenge
  * in its own workspace. No result here is scripted: the expectations are what the engine finds.
  */
@@ -63,16 +63,16 @@ const DETAILS = {
   contactName: 'Asha',
   email: 'finance@example.com',
   outlets: 3,
-  consent: true,
 };
+const START = { consent: true };
 
 const H = 'x-veyra-challenge';
 const PAGE = { 'x-veyra-challenge-request': '1' };
-async function start(a: App, details: Record<string, unknown> = DETAILS) {
+async function start(a: App, body: Record<string, unknown> = START) {
   const res = await a.anonymous({
     method: 'POST',
     url: '/api/v1/challenge',
-    payload: details,
+    payload: body,
     headers: PAGE,
   });
   expect(res.statusCode, res.body).toBe(201);
@@ -109,6 +109,8 @@ const get = async (a: App, token: string) => {
 };
 const post = (a: App, token: string, url: string, payload: Record<string, unknown> = {}) =>
   a.anonymous({ method: 'POST', url, payload, headers: { [H]: token } });
+const giveDetails = (a: App, token: string, details: Record<string, unknown> = DETAILS) =>
+  post(a, token, '/api/v1/challenge/me/details', details);
 
 /** Waits until the engine has finished with every invoice (polling, as the browser does). */
 async function until(
@@ -134,43 +136,50 @@ const byFile = (s: ApiChallengeState, f: string) => {
   return i;
 };
 
-describe('10 Invoice Challenge: access', () => {
+describe('5 Invoice Challenge: access', () => {
   it('does not exist unless enabled', async () => {
     const a = await open({ challenge: false });
     const res = await a.anonymous({
       method: 'POST',
       url: '/api/v1/challenge',
-      payload: DETAILS,
+      payload: START,
       headers: PAGE,
     });
     expect(res.statusCode).toBe(404);
   });
 
-  it('needs consent and valid details; a challenge is reached only with its own token', async () => {
+  it('starts on consent alone; details are checked when given; reached only with its own token', async () => {
     const a = await open();
     expect(
       (
         await a.anonymous({
           method: 'POST',
           url: '/api/v1/challenge',
-          payload: { ...DETAILS, consent: false },
-          headers: PAGE,
-        })
-      ).statusCode,
-    ).toBe(422);
-    expect(
-      (
-        await a.anonymous({
-          method: 'POST',
-          url: '/api/v1/challenge',
-          payload: { ...DETAILS, email: 'not-an-email' },
+          payload: { consent: false },
           headers: PAGE,
         })
       ).statusCode,
     ).toBe(422);
     const one = await start(a);
     expect(one.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(one.state).toMatchObject({ status: 'collecting', companyName: 'Example Brewing Co' });
+    // Nothing else is asked before the results.
+    expect(one.state).toMatchObject({
+      status: 'collecting',
+      companyName: null,
+      email: null,
+      unlocked: false,
+    });
+    expect(
+      (await giveDetails(a, one.token, { ...DETAILS, email: 'not-an-email' })).statusCode,
+    ).toBe(422);
+    expect((await giveDetails(a, one.token, { email: 'a@b.example' })).statusCode).toBe(422);
+    const given = await giveDetails(a, one.token);
+    expect(given.statusCode, given.body).toBe(200);
+    expect(given.json<ApiChallengeState>()).toMatchObject({
+      companyName: 'Example Brewing Co',
+      email: 'finance@example.com',
+      unlocked: true,
+    });
     // Only the hash is stored.
     const row = (await a.veyra.db.select().from(t.challenges))[0];
     expect(row?.tokenHash).not.toContain(one.token);
@@ -179,7 +188,7 @@ describe('10 Invoice Challenge: access', () => {
     const created = await a.anonymous({
       method: 'POST',
       url: '/api/v1/challenge',
-      payload: { ...DETAILS, email: 'second@example.com' },
+      payload: START,
       headers: PAGE,
     });
     const cookie = String(created.headers['set-cookie']);
@@ -202,7 +211,7 @@ describe('10 Invoice Challenge: access', () => {
     const startNoHeader = await a.anonymous({
       method: 'POST',
       url: '/api/v1/challenge',
-      payload: DETAILS,
+      payload: START,
     });
     expect(startNoHeader.statusCode).toBe(403);
     // No token, a wrong token: nothing.
@@ -213,10 +222,54 @@ describe('10 Invoice Challenge: access', () => {
     ).toBe(404);
   }, 60_000);
 
+  it('one challenge per browser and per work e-mail', async () => {
+    const a = await open();
+    const first = await a.anonymous({
+      method: 'POST',
+      url: '/api/v1/challenge',
+      payload: START,
+      headers: PAGE,
+    });
+    expect(first.statusCode).toBe(201);
+    const cookies = ([] as string[]).concat(first.headers['set-cookie'] ?? []);
+    const usedCookie = cookies.find((c) => c.startsWith('veyra_challenge_used='));
+    expect(usedCookie).toMatch(/HttpOnly/i);
+    expect(usedCookie).toMatch(/Path=\/api\/v1\/challenge/);
+    const used = (usedCookie ?? '').split(';')[0] ?? '';
+    // The same browser cannot start another challenge…
+    const again = await a.anonymous({
+      method: 'POST',
+      url: '/api/v1/challenge',
+      payload: START,
+      headers: { ...PAGE, cookie: used },
+    });
+    expect(again.statusCode).toBe(409);
+    expect(again.json()).toMatchObject({ error: { details: { used: true } } });
+    // …and, once its own challenge is gone from the browser, is told it has taken one.
+    const me = await a.anonymous({ url: '/api/v1/challenge/me', headers: { cookie: used } });
+    expect(me.statusCode).toBe(404);
+    expect(me.json()).toMatchObject({ error: { details: { used: true } } });
+
+    // A work e-mail opens the results of one challenge only.
+    const A = await start(a);
+    const B = await start(a);
+    expect((await giveDetails(a, A.token)).statusCode).toBe(200);
+    const taken = await giveDetails(a, B.token, { ...DETAILS, companyName: 'Same Co again' });
+    expect(taken.statusCode).toBe(409);
+    expect((await get(a, B.token)).unlocked).toBe(false);
+    // Another e-mail is fine; correcting one's own details is too.
+    expect(
+      (await giveDetails(a, B.token, { ...DETAILS, email: 'ap@other.example' })).statusCode,
+    ).toBe(200);
+    expect((await giveDetails(a, A.token, { ...DETAILS, contactName: 'Asha R' })).statusCode).toBe(
+      200,
+    );
+  }, 60_000);
+
   it('one company never reaches another’s invoices or pages', async () => {
     const a = await open();
     const A = await start(a);
-    const B = await start(a, { ...DETAILS, companyName: 'Other Foods', email: 'ap@other.example' });
+    const B = await start(a);
     expect((await upload(a, A.token, 'D01-clean-text.pdf')).statusCode).toBe(201);
     const sa = await until(a, A.token, allRead);
     const sb = await get(a, B.token);
@@ -236,7 +289,7 @@ describe('10 Invoice Challenge: access', () => {
   }, 120_000);
 });
 
-describe('10 Invoice Challenge: the journey against records', () => {
+describe('5 Invoice Challenge: the journey against records', () => {
   it('reads at upload, waits for the records, then the real checks find what is there', async () => {
     const a = await open();
     const { token } = await start(a);
@@ -284,7 +337,29 @@ describe('10 Invoice Challenge: the journey against records', () => {
     expect((await post(a, token, '/api/v1/challenge/me/start', { gstin: BUYER })).statusCode).toBe(
       200,
     );
-    const done = await until(a, token, (s) => s.status === 'complete');
+    const teaser = await until(a, token, (s) => s.status === 'complete');
+
+    // The headline result first: the numbers, and what kinds of points were found. No finding,
+    // evidence or report leaves the server before the details are given, and no e-mail is sent.
+    expect(teaser.unlocked).toBe(false);
+    expect(teaser.summary).toMatchObject({ checked: 5, cleared: 1, attention: 4 });
+    expect(teaser.summary?.byType).toMatchObject({ quantity: 1, rate: 1, receipt: 1 });
+    expect(teaser.invoices.every((i) => i.finding === null && i.more.length === 0)).toBe(true);
+    expect(JSON.stringify(teaser)).not.toMatch(/"evidence"/);
+    const locked = await a.anonymous({
+      url: '/api/v1/challenge/me/report.pdf',
+      headers: { [H]: token },
+    });
+    expect(locked.statusCode).toBe(403);
+    expect(
+      (await post(a, token, '/api/v1/challenge/me/interest', { kind: 'pilot' })).statusCode,
+    ).toBe(403);
+    expect(sent).toHaveLength(0);
+
+    // The details open the full results and send the report e-mail.
+    expect((await giveDetails(a, token)).statusCode).toBe(200);
+    const done = await get(a, token);
+    expect(done.unlocked).toBe(true);
 
     expect(byFile(done, 'D01-clean-text.pdf')).toMatchObject({
       outcome: 'cleared',
@@ -349,9 +424,22 @@ describe('10 Invoice Challenge: the journey against records', () => {
       gstin: BUYER,
     });
 
-    // The completion e-mail: the summary and a private link that opens the results.
+    // The completion e-mail: the summary and a private link that opens the results. Once only:
+    // correcting the details later does not send it again.
+    expect((await giveDetails(a, token, { ...DETAILS, contactName: 'Asha R' })).statusCode).toBe(
+      200,
+    );
     expect(sent).toHaveLength(1);
     expect(sent[0]?.to).toBe('finance@example.com');
+    // The report goes with it as a PDF (it outlives the invoices).
+    const attached = sent[0]?.attachments?.[0];
+    expect(attached?.filename).toBe('Veyrafy-Invoice-Verification-Report-Example-Brewing-Co.pdf');
+    expect(
+      Buffer.from(attached?.content ?? [])
+        .subarray(0, 5)
+        .toString(),
+    ).toBe('%PDF-');
+    expect(sent[0]?.text).toContain('For the next 24 hours');
     expect(sent[0]?.text).toContain('5 invoices checked');
     expect(row?.emailStatus).toBe('sent');
     const link = /#access=([A-Za-z0-9_-]{43})/.exec(sent[0]?.text ?? '')?.[1] ?? '';
@@ -376,13 +464,32 @@ describe('10 Invoice Challenge: the journey against records', () => {
     const after = (await a.veyra.db.select().from(t.challenges))[0];
     expect(after?.reportDownloads).toBe(1);
     expect(after?.reportGeneratedAt).not.toBeNull();
+
+    // The session is over: 24 hours after the results were shown the invoices are deleted. The
+    // numbers stay; the evidence and the report are gone from the page (the PDF was e-mailed).
+    expect(Date.parse(after?.expiresAt ?? '')).toBe(now.getTime() + 24 * 3_600_000);
+    now = new Date(now.getTime() + 23 * 3_600_000);
+    await a.challenge?.tick();
+    expect((await get(a, token)).status).toBe('complete');
+    now = new Date(now.getTime() + 2 * 3_600_000);
+    await a.challenge?.tick();
+    const ended = await get(a, token);
+    expect(ended).toMatchObject({ status: 'purged', invoices: [], unlocked: true });
+    expect(ended.summary).toMatchObject({ checked: 5, attention: 4 });
+    expect(
+      (await a.anonymous({ url: '/api/v1/challenge/me/report.pdf', headers: { [H]: token } }))
+        .statusCode,
+    ).toBe(409);
+    expect(existsSync(join(dir, 'challenges', done.id))).toBe(false);
   }, 180_000);
 });
 
-describe('10 Invoice Challenge: without records, failures, limits', () => {
+describe('5 Invoice Challenge: without records, failures, limits', () => {
   it('without records: invoice checks only, said as such; failures explained, retryable, removable', async () => {
     const a = await open();
     const { token } = await start(a);
+    // Details given early (before the checks): the e-mail goes when the checks complete.
+    expect((await giveDetails(a, token)).statusCode).toBe(200);
     expect((await upload(a, token, 'D01-clean-text.pdf')).statusCode).toBe(201);
     // The same invoice again, as a second copy of the file (not byte-identical).
     const copy = Buffer.concat([
@@ -423,28 +530,30 @@ describe('10 Invoice Challenge: without records, failures, limits', () => {
       });
     }
     expect(done.summary?.clearedAgainstRecords).toBe(0);
+    expect(done.unlocked).toBe(true);
+    expect(sent.map((m) => m.to)).toEqual(['finance@example.com']);
   }, 180_000);
 
-  it('ten invoices at most; a daily cap; follow-up audited; documents deleted after the retention period', async () => {
+  it('five invoices at most; a daily cap; follow-up audited; documents deleted after the retention period', async () => {
     const a = await open();
     const { token, state } = await start(a);
     const ch = (await a.veyra.db.select().from(t.challenges))[0];
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 5; i++) {
       const bytes = Buffer.concat([
         Buffer.from(doc('D01-clean-text.pdf')),
         Buffer.from(`\n% ${i}\n%%EOF\n`),
       ]);
       expect((await upload(a, token, `copy-${i}.pdf`, new Uint8Array(bytes))).statusCode).toBe(201);
     }
-    const eleventh = await upload(a, token, 'D08-rate-mismatch.pdf');
-    expect(eleventh.statusCode).toBe(409);
+    const sixth = await upload(a, token, 'D08-rate-mismatch.pdf');
+    expect(sixth.statusCode).toBe(409);
 
     // Daily cap (5 in this test, including the one above).
-    for (let i = 0; i < 4; i++) await start(a, { ...DETAILS, email: `a${i}@example.com` });
+    for (let i = 0; i < 4; i++) await start(a);
     const capped = await a.anonymous({
       method: 'POST',
       url: '/api/v1/challenge',
-      payload: DETAILS,
+      payload: START,
       headers: PAGE,
     });
     expect(capped.statusCode).toBe(429);

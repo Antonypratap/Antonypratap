@@ -172,7 +172,7 @@ export interface VeyraOptions {
   /** Structured log of how each invoice was read (never document content or credentials). */
   log?: { info(obj: object, msg: string): void; warn(obj: object, msg: string): void };
   /**
-   * While this returns true, an invoice is read and then waits before the checks (10 Invoice
+   * While this returns true, an invoice is read and then waits before the checks (5 Invoice
    * Challenge: the business's records are added after the invoices). `releaseHeld` starts them.
    * Absent (the product): never held.
    */

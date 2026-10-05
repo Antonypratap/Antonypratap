@@ -27,13 +27,21 @@ import { renderChallengeReport } from './report';
 import type { ChallengeWorkspace, ChallengeWorkspaces } from './workspaces';
 
 /**
- * The 10 Invoice Challenge. A prospect gives their details, uploads up to ten real supplier
- * invoices and, optionally, the purchasing records to check them against; the product's own
+ * The 5 Invoice Challenge. A prospect agrees to how their invoices are processed, uploads up to
+ * five real supplier invoices and, optionally, the purchasing records to check them against; the product's own
  * pipeline checks them in the challenge's isolated workspace (./workspaces.ts) and the results,
  * the evidence and the report are built from what that pipeline recorded. Nothing here decides
  * whether an invoice is right: it only reads the engine's outcome and says it plainly.
  *
  * Access is by a secret token (sent as a header, never in a URL path; only its hash is stored).
+ *
+ * One challenge per browser (the routes) and per work e-mail (here). Once the full results are
+ * shown, the invoices and their readings are kept `resultsHours` more and then deleted; the
+ * numbers stay, and the report goes by e-mail as a PDF.
+ *
+ * The prospect's details (company, work e-mail) are asked only after the checks, beside the
+ * headline result. Until they are given, the server sends the numbers only: no finding, evidence
+ * or report leaves it. In the table, "not given yet" is an empty company name and e-mail.
  */
 type Challenge = typeof t.challenges.$inferSelect;
 type InvoiceRow = typeof t.invoices.$inferSelect;
@@ -48,6 +56,8 @@ export interface ChallengeServiceOptions {
   retentionDays?: number;
   /** New challenges per UTC day, across all prospects (cost and abuse control). */
   dailyLimit?: number;
+  /** Hours the invoices are kept after the full results are shown (then deleted). */
+  resultsHours?: number;
   /** The reading service named to prospects ("Google Gemini"), or null: local reading only. */
   aiProvider: string | null;
   /** Where links in e-mails point (https://challenge.veyrafy.com). */
@@ -97,6 +107,13 @@ const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 const DAY_MS = 86_400_000;
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
+/** The report's file name. */
+export const reportName = (company: string): string =>
+  `Veyrafy-Invoice-Verification-Report-${(company || 'Report').replace(/[^A-Za-z0-9]+/g, '-').slice(0, 60)}.pdf`;
+/** Whether the prospect has given their details (the full results are open). */
+export const detailsGiven = (ch: { email: string }): boolean => ch.email !== '';
+/** The company as shown to the Veyrafy team and in the workspace before the details are given. */
+const companyOf = (ch: { companyName: string }) => ch.companyName || 'Your company';
 
 interface RecordsState {
   files: { name: string; kind: 'template' | 'receipts'; at: string; summary: string }[];
@@ -108,11 +125,18 @@ export class ChallengeService {
     clock: () => Date;
     retentionDays: number;
     dailyLimit: number;
+    resultsHours: number;
   };
   #ticker: NodeJS.Timeout | null = null;
 
   constructor(options: ChallengeServiceOptions) {
-    this.#o = { clock: () => new Date(), retentionDays: 30, dailyLimit: 50, ...options };
+    this.#o = {
+      clock: () => new Date(),
+      retentionDays: 30,
+      dailyLimit: 50,
+      resultsHours: 24,
+      ...options,
+    };
   }
 
   get workspaces(): ChallengeWorkspaces {
@@ -129,13 +153,15 @@ export class ChallengeService {
       maxInvoices: CHALLENGE_MAX_INVOICES,
       aiProvider: this.#o.aiProvider,
       retentionDays: this.#o.retentionDays,
+      resultsHours: this.#o.resultsHours,
       templates: templateFiles(),
     };
   }
 
   // ── Starting, and finding a challenge by its token ───────────────────────
 
-  async create(details: ChallengeDetails): Promise<{ token: string; challenge: Challenge }> {
+  /** Starts a challenge on the prospect's consent alone (details come after the results). */
+  async create(): Promise<{ token: string; challenge: Challenge }> {
     const now = this.#o.clock();
     const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
     const today = await this.#o.db
@@ -156,12 +182,8 @@ export class ChallengeService {
         id: ulid(),
         tokenHash: sha256(token),
         status: 'collecting',
-        companyName: details.companyName,
-        contactName: details.contactName || null,
-        email: details.email,
-        phone: details.phone || null,
-        outlets: details.outlets ?? null,
-        erpSystem: details.erpSystem || null,
+        companyName: '',
+        email: '',
         consentAt: iso,
         aiProvider: this.#o.aiProvider,
         expiresAt: new Date(now.getTime() + this.#o.retentionDays * DAY_MS).toISOString(),
@@ -172,6 +194,39 @@ export class ChallengeService {
     if (!row) throw new Error('challenge not created');
     this.#o.log?.info({ challengeId: row.id }, 'challenge started');
     return { token, challenge: row };
+  }
+
+  /**
+   * Who the report is for. Opens the full results; when the checks are already complete, the
+   * report e-mail goes now (otherwise when they complete). Can be corrected later.
+   */
+  async giveDetails(ch: Challenge, details: ChallengeDetails): Promise<void> {
+    this.live(ch);
+    // One challenge per work e-mail: another challenge already holds it.
+    const taken = await this.#o.db
+      .select({ id: t.challenges.id })
+      .from(t.challenges)
+      .where(and(eq(t.challenges.email, details.email), ne(t.challenges.id, ch.id)))
+      .limit(1);
+    if (taken.length)
+      throw new VeyraError(
+        'CONFLICT',
+        'This work e-mail has already been used for the 5 Invoice Challenge, and its report was sent to it. To check more invoices, book a walkthrough with Veyrafy.',
+        { field: 'email' },
+      );
+    const first = !detailsGiven(ch);
+    await this.update(ch.id, {
+      companyName: details.companyName,
+      contactName: details.contactName || null,
+      email: details.email,
+      phone: details.phone || null,
+      outlets: details.outlets ?? null,
+      erpSystem: details.erpSystem || null,
+    });
+    this.#o.log?.info({ challengeId: ch.id }, 'challenge details given');
+    const now = await this.fresh(ch.id);
+    if (now.status === 'complete' && (first || now.emailStatus !== 'sent'))
+      await this.completed(now, (await this.state(now)).summary);
   }
 
   async byToken(token: string | undefined): Promise<Challenge> {
@@ -219,7 +274,7 @@ export class ChallengeService {
   private async workspace(ch: Challenge): Promise<ChallengeWorkspace> {
     this.live(ch);
     const ws = await this.#o.workspaces.open(ch.id, {
-      company: ch.companyName,
+      company: companyOf(ch),
       held: ch.status === 'collecting',
     });
     ws.held = ch.status === 'collecting';
@@ -400,7 +455,7 @@ export class ChallengeService {
     const ws = await this.workspace(ch);
     if ((await this.activeInvoices(ws)).length === 0)
       throw new VeyraError('INVALID_STATE', 'Upload at least one invoice first.');
-    ws.erp.setCompany({ name: ch.companyName, gstin: g.value.gstin });
+    ws.erp.setCompany({ name: companyOf(ch), gstin: g.value.gstin });
     await this.update(ch.id, {
       status: 'checking',
       gstin: g.value.gstin,
@@ -418,8 +473,9 @@ export class ChallengeService {
     const base = {
       id: ch.id,
       status: ch.status as ApiChallengeState['status'],
-      companyName: ch.companyName,
-      email: ch.email,
+      companyName: ch.companyName || null,
+      email: ch.email || null,
+      unlocked: detailsGiven(ch),
       gstin: ch.gstin,
       aiProvider: ch.aiProvider,
       maxInvoices: CHALLENGE_MAX_INVOICES,
@@ -434,13 +490,15 @@ export class ChallengeService {
     if (ch.status === 'purged')
       return { ...base, gstinCandidates: [], invoices: [], summary: this.storedSummary(ch) };
     const ws = await this.workspace(ch);
-    const invoices = await this.invoiceViews(ws, ch);
+    const all = await this.invoiceViews(ws, ch);
+    // Before the details are given, no finding leaves the server: the numbers only.
+    const invoices = detailsGiven(ch) ? all : all.map((i) => ({ ...i, finding: null, more: [] }));
     const summary =
-      ch.status === 'collecting' ? null : summarize(invoices.filter((i) => i.phase !== 'reading'));
+      ch.status === 'collecting' ? null : summarize(all.filter((i) => i.phase !== 'reading'));
     const gstinCandidates = await this.gstinCandidates(ws);
     // Counters for the Veyrafy team (Control Centre), and completion.
-    const processed = invoices.filter((i) => i.phase === 'done' || i.phase === 'read').length;
-    const failed = invoices.filter((i) => i.outcome === 'failed').length;
+    const processed = all.filter((i) => i.phase === 'done' || i.phase === 'read').length;
+    const failed = all.filter((i) => i.outcome === 'failed').length;
     const patch: Partial<Challenge> = {};
     if (ch.invoicesSubmitted !== invoices.length) patch.invoicesSubmitted = invoices.length;
     if (ch.invoicesProcessed !== processed) patch.invoicesProcessed = processed;
@@ -613,20 +671,32 @@ export class ChallengeService {
     if (!this.#o.publicOrigin) return null;
     const token = randomBytes(32).toString('base64url');
     await this.update(id, { linkTokenHash: sha256(token) });
-    return `${this.#o.publicOrigin}/10-invoice-challenge#access=${token}`;
+    return `${this.#o.publicOrigin}/5-invoice-challenge#access=${token}`;
   }
 
   private async completed(ch: Challenge, summary: ApiChallengeSummary | null): Promise<void> {
     this.#o.log?.info({ challengeId: ch.id }, 'challenge complete');
-    if (!summary || ch.emailStatus === 'sent') return;
+    // Results not shown yet (no details): nothing to send, nothing to delete yet.
+    if (!summary || !detailsGiven(ch)) return;
+    // The session is over once the full results are shown: the invoices go after a while.
+    const closeAt = new Date(this.#o.clock().getTime() + this.#o.resultsHours * 3_600_000);
+    if (closeAt.toISOString() < ch.expiresAt)
+      await this.update(ch.id, { expiresAt: closeAt.toISOString() });
+    if (ch.emailStatus === 'sent') return;
     const mail = challengeEmail({
       company: ch.companyName,
       contactName: ch.contactName,
       summary,
       link: await this.reportLink(ch.id),
+      linkHours: this.#o.resultsHours,
       bookingUrl: this.#o.bookingUrl,
     });
-    const result = await this.#o.email.send({ to: ch.email, ...mail });
+    const pdf = await this.pdf(await this.fresh(ch.id));
+    const result = await this.#o.email.send({
+      to: ch.email,
+      ...mail,
+      attachments: [{ filename: reportName(ch.companyName), content: pdf }],
+    });
     await this.update(ch.id, {
       emailStatus: result,
       ...(result === 'sent' ? { emailSentAt: this.now() } : {}),
@@ -634,25 +704,22 @@ export class ChallengeService {
     if (this.#o.notifyEmail)
       await this.#o.email.send({
         to: this.#o.notifyEmail,
-        subject: `10 Invoice Challenge completed: ${ch.companyName}`,
-        text: `${ch.companyName} (${ch.email}) completed the 10 Invoice Challenge: ${summary.checked} checked, ${summary.attention} need attention. See the Control Centre.`,
+        subject: `5 Invoice Challenge completed: ${ch.companyName}`,
+        text: `${ch.companyName} (${ch.email}) completed the 5 Invoice Challenge: ${summary.checked} checked, ${summary.attention} need attention. See the Control Centre.`,
       });
   }
 
   async report(ch: Challenge): Promise<Buffer> {
+    if (!detailsGiven(ch))
+      throw new VeyraError('FORBIDDEN', 'Tell us who the report is for to open it.');
+    if (ch.status === 'purged')
+      throw new VeyraError(
+        'INVALID_STATE',
+        'Your invoices have been deleted, as agreed. The report was e-mailed to you as a PDF.',
+      );
     if (ch.status !== 'complete')
       throw new VeyraError('INVALID_STATE', 'The report is ready once every invoice is checked.');
-    const state = await this.state(ch);
-    if (!state.summary) throw new VeyraError('INVALID_STATE', 'The report is not ready.');
-    const pdf = await renderChallengeReport({
-      company: ch.companyName,
-      gstin: ch.gstin,
-      date: this.#o.clock(),
-      summary: state.summary,
-      invoices: state.invoices,
-      records: state.records.files,
-      challengeId: ch.id,
-    });
+    const pdf = await this.pdf(ch);
     const at = this.now();
     await this.update(ch.id, {
       reportGeneratedAt: ch.reportGeneratedAt ?? at,
@@ -662,13 +729,30 @@ export class ChallengeService {
     return pdf;
   }
 
+  /** The report PDF, from the challenge's results as they stand. */
+  private async pdf(ch: Challenge): Promise<Buffer> {
+    const state = await this.state(ch);
+    if (!state.summary) throw new VeyraError('INVALID_STATE', 'The report is not ready.');
+    return renderChallengeReport({
+      company: companyOf(ch),
+      gstin: ch.gstin,
+      date: this.#o.clock(),
+      summary: state.summary,
+      invoices: state.invoices,
+      records: state.records.files,
+      challengeId: ch.id,
+    });
+  }
+
   async interest(ch: Challenge, kind: 'walkthrough' | 'pilot'): Promise<void> {
+    if (!detailsGiven(ch))
+      throw new VeyraError('FORBIDDEN', 'Tell us who the report is for first.');
     await this.update(ch.id, { interest: kind, interestAt: this.now() });
     if (this.#o.notifyEmail)
       await this.#o.email.send({
         to: this.#o.notifyEmail,
         subject: `${kind === 'pilot' ? 'Pilot' : 'Walkthrough'} requested: ${ch.companyName}`,
-        text: `${ch.companyName} asked for a ${kind === 'pilot' ? 'pilot' : '15-minute walkthrough'} after the 10 Invoice Challenge.\nContact: ${ch.contactName ?? '(no name)'} · ${ch.email}${ch.phone ? ` · ${ch.phone}` : ''}`,
+        text: `${ch.companyName} asked for a ${kind === 'pilot' ? 'pilot' : '15-minute walkthrough'} after the 5 Invoice Challenge.\nContact: ${ch.contactName ?? '(no name)'} · ${ch.email}${ch.phone ? ` · ${ch.phone}` : ''}`,
       });
   }
 

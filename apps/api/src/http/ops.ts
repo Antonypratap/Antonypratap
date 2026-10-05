@@ -45,7 +45,7 @@ export interface OpsDeps {
   /** AI model names, main first (never the key). */
   aiModels?: readonly string[];
   limits?: { maxUploadBytes: number; rateLimitsPerMinute: Record<string, number> };
-  /** The 10 Invoice Challenge, when this deployment runs it. */
+  /** The 5 Invoice Challenge, when this deployment runs it. */
   challenge?: ChallengeService;
 }
 
@@ -403,7 +403,7 @@ export function registerOps(app: FastifyInstance, d: OpsDeps): void {
     );
   });
 
-  // ── 10 Invoice Challenge (acquisition): the leads and their results ────
+  // ── 5 Invoice Challenge (acquisition): the leads and their results ────
   // Counts, amounts and statuses only: never the prospect's documents or the token.
   app.get('/api/v1/ops/centre/challenges', VIEW, async () => ({
     enabled: Boolean(d.challenge),
@@ -411,7 +411,7 @@ export function registerOps(app: FastifyInstance, d: OpsDeps): void {
   }));
   app.post('/api/v1/ops/centre/challenges/:id/follow-up', MANAGE, async (req) => {
     if (!d.challenge)
-      throw new VeyraError('INVALID_STATE', 'The 10 Invoice Challenge is not enabled here.');
+      throw new VeyraError('INVALID_STATE', 'The 5 Invoice Challenge is not enabled here.');
     const { id } = z.object({ id: z.string().min(1).max(64) }).parse(req.params);
     const body = z
       .object({ followUp: z.enum(CHALLENGE_FOLLOW_UPS), reason: Reason })

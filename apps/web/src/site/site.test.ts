@@ -3,7 +3,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { demoEntryHref } from '../access/demoAccess';
 import {
+  CHALLENGE_ADDRESS,
+  CHALLENGE_PATH,
   DEMO_ADDRESS,
+  challengeEntryHref,
   classifyHost,
   clientAddress,
   clientSlugFrom,
@@ -80,6 +83,11 @@ describe('hostname classification', () => {
     expect(demoEntryHref('veyrafy.com')).toBe(DEMO_ADDRESS);
     expect(demoEntryHref('www.veyrafy.com')).toBe('https://demo.veyrafy.com/');
     expect(demoEntryHref('localhost')).toBe('#/app/inbox');
+    // The homepage's challenge button goes straight into the challenge (it runs on the demo).
+    expect(challengeEntryHref('veyrafy.com')).toBe(CHALLENGE_ADDRESS);
+    expect(CHALLENGE_ADDRESS).toBe('https://demo.veyrafy.com/5-invoice-challenge');
+    expect(challengeEntryHref('demo.veyrafy.com')).toBe(CHALLENGE_PATH);
+    expect(challengeEntryHref('localhost')).toBe(CHALLENGE_PATH);
   });
 });
 

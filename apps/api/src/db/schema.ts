@@ -774,7 +774,7 @@ export const processingUsage = pgTable(
 );
 
 /**
- * The 10 Invoice Challenge (acquisition): one row per prospect's challenge, the lead record. The
+ * The 5 Invoice Challenge (acquisition): one row per prospect's challenge, the lead record. The
  * invoices, documents, readings and records are NOT here: they live in the challenge's own
  * isolated workspace (its own embedded database, records store and document folder), where the
  * product's pipeline checks them. This row keeps who it is for, where it stands and the summary

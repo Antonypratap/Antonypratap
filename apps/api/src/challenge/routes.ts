@@ -4,13 +4,14 @@ import {
   ApiChallengeConfigSchema,
   ApiChallengeStateSchema,
   ChallengeDetailsSchema,
+  ChallengeStartSchema,
 } from '@veyra/shared';
 import { templateWorkbook } from '../imports/templates';
 import { VeyraError } from '../workflow/veyra';
-import type { ChallengeService } from './service';
+import { reportName, type ChallengeService } from './service';
 
 /**
- * The 10 Invoice Challenge's API: `/api/v1/challenge/*`. No account: the challenge's secret token
+ * The 5 Invoice Challenge's API: `/api/v1/challenge/*`. No account: the challenge's secret token
  * is held by the browser in an HttpOnly cookie scoped to this API (page scripts never see or
  * store it), or sent by an API client in the `x-veyra-challenge` header. Never in a URL. A change
  * made with the cookie must carry the `x-veyra-challenge-request` header, which another site
@@ -21,6 +22,11 @@ import type { ChallengeService } from './service';
 export const CHALLENGE_TOKEN_HEADER = 'x-veyra-challenge';
 export const CHALLENGE_REQUEST_HEADER = 'x-veyra-challenge-request';
 export const CHALLENGE_COOKIE = 'veyra_challenge';
+/** Set when this browser starts a challenge: one challenge per browser (kept a year). */
+export const CHALLENGE_USED_COOKIE = 'veyra_challenge_used';
+const YEAR_MS = 365 * 86_400_000;
+const USED =
+  'This browser has already taken the 5 Invoice Challenge. To check more invoices, book a walkthrough with Veyrafy.';
 const PUBLIC = { config: { access: 'public' } } as const;
 const Id = z.object({ id: z.string().min(1).max(64) });
 
@@ -64,19 +70,45 @@ export function registerChallengeRoutes(
     ApiChallengeConfigSchema.parse(challenge.config()),
   );
 
-  // Start: the details, and consent to how the invoices are processed and kept.
+  // Start: consent to how the invoices are processed and kept. Nothing else is asked yet.
   app.post('/api/v1/challenge', PUBLIC, async (req, reply) => {
     guard(req, true);
-    const details = ChallengeDetailsSchema.parse(req.body ?? {});
-    const { token, challenge: row } = await challenge.create(details);
+    ChallengeStartSchema.parse(req.body ?? {});
+    if (req.cookies[CHALLENGE_USED_COOKIE])
+      throw new VeyraError('LIMIT_REACHED', USED, { used: true });
+    const { token, challenge: row } = await challenge.create();
     keep(reply, token, row.expiresAt);
+    reply.setCookie(CHALLENGE_USED_COOKIE, '1', {
+      httpOnly: true,
+      secure: opts.cookieSecure,
+      sameSite: 'strict',
+      path: '/api/v1/challenge',
+      expires: new Date(Date.now() + YEAR_MS),
+    });
     return reply.status(201).send({
       token,
       state: ApiChallengeStateSchema.parse(await challenge.state(row)),
     });
   });
 
-  app.get('/api/v1/challenge/me', PUBLIC, async (req) => state(req));
+  // This browser's challenge. With none (or it ended long ago) but one taken before: said so, so
+  // the page never offers a new one.
+  app.get('/api/v1/challenge/me', PUBLIC, async (req) => {
+    try {
+      return await state(req);
+    } catch (e) {
+      if (e instanceof VeyraError && e.code === 'NOT_FOUND' && req.cookies[CHALLENGE_USED_COOKIE])
+        throw new VeyraError('NOT_FOUND', USED, { used: true });
+      throw e;
+    }
+  });
+
+  // Who the report is for: opens the full results (and sends the report e-mail when ready).
+  app.post('/api/v1/challenge/me/details', PUBLIC, async (req) => {
+    const details = ChallengeDetailsSchema.parse(req.body ?? {});
+    await challenge.giveDetails(await mine(req), details);
+    return state(req);
+  });
 
   // The results link in the e-mail: its token (from the URL fragment) becomes this browser's.
   app.post('/api/v1/challenge/claim', PUBLIC, async (req, reply) => {
@@ -144,7 +176,7 @@ export function registerChallengeRoutes(
   app.get('/api/v1/challenge/me/report.pdf', PUBLIC, async (req, reply) => {
     const ch = await mine(req);
     const pdf = await challenge.report(ch);
-    const name = `Veyrafy-Invoice-Verification-Report-${ch.companyName.replace(/[^A-Za-z0-9]+/g, '-').slice(0, 60)}.pdf`;
+    const name = reportName(ch.companyName);
     return reply
       .header('content-type', 'application/pdf')
       .header('content-disposition', `attachment; filename="${name}"`)

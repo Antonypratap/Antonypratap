@@ -93,9 +93,11 @@ export interface AppConfig {
     publicOrigins?: readonly string[];
     corsOrigins?: readonly string[];
   };
-  /** The 10 Invoice Challenge (acquisition); absent: off (its routes do not exist). */
+  /** The 5 Invoice Challenge (acquisition); absent: off (its routes do not exist). */
   challenge?: {
     retentionDays?: number;
+    /** Hours the invoices are kept after the full results are shown (default 24). */
+    resultsHours?: number;
     dailyLimit?: number;
     bookingUrl?: string | null;
     notifyEmail?: string | null;
@@ -117,7 +119,7 @@ function makeExtractor(
   config: AppConfig,
 ): {
   extractor: Extractor & { close?: () => Promise<void> };
-  /** The real reader, never the demo's scripted one (the 10 Invoice Challenge reads with it). */
+  /** The real reader, never the demo's scripted one (the 5 Invoice Challenge reads with it). */
   real: Extractor;
   warmUp: () => Promise<void>;
   aiReader: GeminiExtractor | null;
@@ -278,7 +280,7 @@ export async function createApp(config: AppConfig) {
     runner.start();
   };
 
-  // The 10 Invoice Challenge: each prospect's invoices in their own isolated workspace, read by
+  // The 5 Invoice Challenge: each prospect's invoices in their own isolated workspace, read by
   // the real reader (never the demo's scripted one) and checked by the same pipeline.
   const challenge = config.challenge
     ? new ChallengeService({
@@ -310,6 +312,7 @@ export async function createApp(config: AppConfig) {
           ? { retentionDays: config.challenge.retentionDays }
           : {}),
         ...(config.challenge.dailyLimit ? { dailyLimit: config.challenge.dailyLimit } : {}),
+        ...(config.challenge.resultsHours ? { resultsHours: config.challenge.resultsHours } : {}),
         aiProvider: aiReader ? 'Google Gemini' : null,
         publicOrigin: config.auth?.publicOrigins?.[0] ?? null,
         bookingUrl: config.challenge.bookingUrl ?? null,

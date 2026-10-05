@@ -10,7 +10,7 @@ import {
 } from '@veyra/shared';
 
 /**
- * The Veyrafy Invoice Verification Report (10 Invoice Challenge): an A4 PDF drawn as vectors
+ * The Veyrafy Invoice Verification Report (5 Invoice Challenge): an A4 PDF drawn as vectors
  * (Skia's PDF backend, already a dependency), from the challenge's results only. Every number is
  * the engine's; nothing is extrapolated (no "per month", no "saved"). Inter is the product's
  * typeface; the rupee sign is drawn as a shape, so it renders the same on every server whatever

@@ -18,26 +18,31 @@ import { Button, Icon, Logo } from '../design-system';
 import { ApiError } from '../product/api/client';
 import { EvidenceList } from '../product/components/Finding';
 import { inr } from '../product/format';
-import { WEBSITE_ADDRESS } from '../site/host';
+import { CONTACT_PHONE, CONTACT_PHONE_HREF, WEBSITE_ADDRESS } from '../site/host';
 import { challengeApi, takeLinkSecret } from './api';
 import styles from './Challenge.module.css';
 
 /**
- * The 10 Invoice Challenge: a prospect puts up to ten real supplier invoices (and, if they have
- * them, their purchasing records) through the real Veyrafy checks and gets an evidence-based
- * report. Every result on these screens is what the server's engine recorded; this page only
- * shows it. Nothing animates progress the server has not reported.
+ * The 5 Invoice Challenge: a prospect puts up to five real supplier invoices (and, if they have
+ * them, their purchasing records) through the real Veyrafy checks. Upload first (one consent, no
+ * form), then the checks, then the headline result; the full findings, evidence and report open
+ * once they say who the report is for (the server sends nothing more before that). Every result
+ * on these screens is what the server's engine recorded; nothing animates progress the server
+ * has not reported.
  */
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback);
 
 /** On the website (no database): the landing only; starting goes to `elsewhere`. */
 const WEBSITE_CONFIG: ApiChallengeConfig = {
   enabled: true,
-  maxInvoices: 10,
+  maxInvoices: 5,
   aiProvider: null,
   retentionDays: 30,
+  resultsHours: 24,
   templates: [],
 };
+/** The server says this browser has already taken the challenge (one per browser). */
+const alreadyTaken = (e: unknown) => e instanceof ApiError && e.details.used === true;
 
 export function ChallengeApp({ elsewhere }: { elsewhere?: string } = {}) {
   const [config, setConfig] = useState<ApiChallengeConfig | null | 'off'>(
@@ -47,15 +52,15 @@ export function ChallengeApp({ elsewhere }: { elsewhere?: string } = {}) {
   const [state, setState] = useState<ApiChallengeState | null>(null);
   const [known, setKnown] = useState(Boolean(elsewhere));
   const [problem, setProblem] = useState<string | null>(null);
-  const [starting, setStarting] = useState(false);
-  const [collectStep, setCollectStep] = useState<'invoices' | 'records'>('invoices');
+  const [used, setUsed] = useState(false);
 
   useEffect(() => {
     if (!elsewhere) challengeApi.config().then(setConfig, () => setConfig('off'));
   }, [elsewhere]);
 
-  /** No challenge in this browser (or the link expired): the landing page. */
+  /** No challenge in this browser (or the link expired): a fresh start. */
   const failed = useCallback((e: unknown) => {
+    if (alreadyTaken(e)) setUsed(true);
     if (e instanceof ApiError && e.status === 404) setState(null);
     else setProblem(errorText(e, 'Your challenge could not be loaded.'));
     setKnown(true);
@@ -99,38 +104,26 @@ export function ChallengeApp({ elsewhere }: { elsewhere?: string } = {}) {
   }, [working, refresh]);
 
   useEffect(() => {
-    document.title = '10 Invoice Challenge · Veyrafy';
+    document.title = '5 Invoice Challenge · Veyrafy';
   }, []);
 
   let body: ReactNode;
   if (config === null) body = <p className={styles.muted}>Loading…</p>;
-  else if (config === 'off') body = <NotHere />;
+  else if (config === 'off') body = <NotOpen />;
   else if (!known)
     body = problem ? (
       <p className={styles.problem}>{problem}</p>
     ) : (
       <p className={styles.muted}>Loading…</p>
     );
-  else if (!state)
-    body = starting ? (
-      <Details config={config} onBack={() => setStarting(false)} onCreated={setState} />
-    ) : (
-      <Landing
-        config={config}
-        onStart={() => (elsewhere ? window.location.assign(elsewhere) : setStarting(true))}
-      />
-    );
-  else if (state.status === 'collecting')
-    body = (
-      <Collect
-        state={state}
-        config={config}
-        onState={setState}
-        step={collectStep}
-        onStep={setCollectStep}
-      />
-    );
+  else if (used && !state) body = <AlreadyTaken />;
+  else if (elsewhere && !state)
+    body = <Landing config={config} onStart={() => window.location.assign(elsewhere)} />;
+  else if (!state || state.status === 'collecting')
+    body = <Upload state={state} config={config} onState={setState} onUsed={() => setUsed(true)} />;
   else if (state.status === 'checking') body = <Checking state={state} />;
+  else if (!state.unlocked && state.status !== 'purged')
+    body = <Headline state={state} onState={setState} />;
   else body = <Results state={state} onState={setState} />;
 
   return (
@@ -139,10 +132,10 @@ export function ChallengeApp({ elsewhere }: { elsewhere?: string } = {}) {
         <a href={WEBSITE_ADDRESS} className={styles.brand} aria-label="Veyrafy">
           <Logo />
         </a>
-        <span className={styles.tag}>10 Invoice Challenge</span>
+        <span className={styles.tag}>5 Invoice Challenge</span>
       </header>
-      {state && state.status !== 'purged' && (
-        <Steps state={state} records={collectStep === 'records'} />
+      {!elsewhere && config && config !== 'off' && known && state?.status !== 'purged' && (
+        <Steps state={state} />
       )}
       <main className={styles.main} id="main">
         {problem && state && <p className={styles.problem}>{problem}</p>}
@@ -150,8 +143,8 @@ export function ChallengeApp({ elsewhere }: { elsewhere?: string } = {}) {
       </main>
       <footer className={styles.foot}>
         <span>
-          Your invoices are confidential. They are used only for this challenge and deleted after{' '}
-          {config && config !== 'off' ? config.retentionDays : 30} days.
+          Your invoices are confidential. They are used only for this challenge and deleted{' '}
+          {config && config !== 'off' ? config.resultsHours : 24} hours after you see your results.
         </span>
         <span>Prepared by Veyrafy</span>
       </footer>
@@ -159,12 +152,28 @@ export function ChallengeApp({ elsewhere }: { elsewhere?: string } = {}) {
   );
 }
 
-function NotHere() {
+/** The challenge is switched off on this deployment: say so, and how to reach Veyrafy. */
+function NotOpen() {
   return (
     <section className={styles.narrow}>
-      <h1 className={styles.h1}>The 10 Invoice Challenge isn’t available at this address.</h1>
+      <h1 className={styles.h1}>The 5 Invoice Challenge isn’t open right now.</h1>
       <p className={styles.lede}>
-        <a href={WEBSITE_ADDRESS}>Go to veyrafy.com</a> to start it.
+        Call Veyrafy on <a href={CONTACT_PHONE_HREF}>{CONTACT_PHONE}</a> and we will check your
+        invoices with you, or <a href={WEBSITE_ADDRESS}>go back to veyrafy.com</a>.
+      </p>
+    </section>
+  );
+}
+
+/** One challenge per browser: this one has taken it already. */
+function AlreadyTaken() {
+  return (
+    <section className={styles.narrow}>
+      <h1 className={styles.h1}>You’ve already taken the 5 Invoice Challenge.</h1>
+      <p className={styles.lede}>
+        Each company gets one challenge, and your report was e-mailed to you. To check more
+        invoices, call Veyrafy on <a href={CONTACT_PHONE_HREF}>{CONTACT_PHONE}</a> and we will set
+        up a walkthrough or a pilot with your own records.
       </p>
     </section>
   );
@@ -172,16 +181,9 @@ function NotHere() {
 
 // ── Steps ──────────────────────────────────────────────────────────────────
 
-function Steps({ state, records }: { state: ApiChallengeState; records: boolean }) {
-  const at =
-    state.status === 'collecting'
-      ? records && state.invoices.length > 0
-        ? 2
-        : 1
-      : state.status === 'checking'
-        ? 3
-        : 4;
-  const steps = ['Details', 'Invoices', 'Records', 'Checks', 'Results'];
+function Steps({ state }: { state: ApiChallengeState | null }) {
+  const at = !state || state.status === 'collecting' ? 0 : state.status === 'checking' ? 1 : 2;
+  const steps = ['Upload invoices', 'Checks', 'Results'];
   return (
     <ol className={styles.steps} aria-label="Progress">
       {steps.map((s, i) => (
@@ -196,7 +198,7 @@ function Steps({ state, records }: { state: ApiChallengeState; records: boolean 
   );
 }
 
-// ── Landing ────────────────────────────────────────────────────────────────
+// ── Landing (the website) ──────────────────────────────────────────────────
 
 const CHECKS = [
   ['Calculations', 'Line amounts, tax and totals add up.'],
@@ -211,21 +213,21 @@ function Landing({ config, onStart }: { config: ApiChallengeConfig; onStart: () 
   return (
     <>
       <section className={styles.hero} aria-labelledby="challenge-title">
-        <p className={styles.eyebrow}>10 Invoice Challenge</p>
+        <p className={styles.eyebrow}>5 Invoice Challenge</p>
         <h1 id="challenge-title" className={styles.display}>
           Put 10 real invoices through Veyrafy.
         </h1>
         <p className={styles.lede}>
-          See what gets caught before you pay. Veyrafy checks supplier invoices against your
-          purchasing and accounting records and highlights discrepancies that need attention.
+          See what gets caught before you pay. Drop in your supplier invoices: Veyrafy checks the
+          calculations, GST, GSTINs and duplicates, and against your records if you add them.
         </p>
         <div className={styles.ctaRow}>
           <Button size="lg" arrow onClick={onStart}>
-            Start the challenge
+            Check my invoices
           </Button>
         </div>
         <p className={styles.reassure}>
-          Free · {config.maxInvoices} invoices · No integration required
+          Free · No sign-up · Up to {config.maxInvoices} invoices · Results in minutes
         </p>
       </section>
 
@@ -236,19 +238,20 @@ function Landing({ config, onStart }: { config: ApiChallengeConfig; onStart: () 
         <ol className={styles.how}>
           <li>
             <span className={styles.howNum}>1</span>
-            <strong>Upload {config.maxInvoices} recent supplier invoices</strong>
-            <span>PDF, JPG or PNG. Scans and phone photos are fine.</span>
+            <strong>Drop in up to {config.maxInvoices} supplier invoices</strong>
+            <span>PDF, JPG or PNG. Scans and phone photos are fine. No form to fill in first.</span>
           </li>
           <li>
             <span className={styles.howNum}>2</span>
-            <strong>Add the records to check against</strong>
+            <strong>Watch every invoice being checked</strong>
             <span>
-              Purchase orders, goods receipts, supplier list: optional, strongly recommended.
+              Add your purchase orders and goods receipts too, if you like, to check rates and
+              quantities.
             </span>
           </li>
           <li>
             <span className={styles.howNum}>3</span>
-            <strong>Get your verification report</strong>
+            <strong>See what was caught</strong>
             <span>What cleared, what needs attention, and the evidence for each finding.</span>
           </li>
         </ol>
@@ -268,218 +271,65 @@ function Landing({ config, onStart }: { config: ApiChallengeConfig; onStart: () 
         </dl>
         <p className={styles.note}>
           Rates, quantities and receipts can only be checked against records you provide. Without
-          them, Veyrafy verifies each invoice on its own, and the report says so.
+          them, Veyrafy verifies each invoice on its own, and the results say so.
         </p>
       </section>
     </>
   );
 }
 
-// ── Details ────────────────────────────────────────────────────────────────
+// ── Upload: invoices, and (optional) records and GSTIN, on one screen ──────
 
-function Details({
+function Upload({
+  state,
   config,
-  onBack,
-  onCreated,
+  onState,
+  onUsed,
 }: {
+  state: ApiChallengeState | null;
   config: ApiChallengeConfig;
-  onBack: () => void;
-  onCreated: (state: ApiChallengeState) => void;
+  onState: (s: ApiChallengeState) => void;
+  onUsed: () => void;
 }) {
-  const [f, setF] = useState({
-    companyName: '',
-    contactName: '',
-    email: '',
-    phone: '',
-    outlets: '',
-    erpSystem: '',
-  });
   const [consent, setConsent] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) =>
-    setF({ ...f, [k]: e.target.value });
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setProblem(null);
-    challengeApi
-      .create({
-        companyName: f.companyName.trim(),
-        email: f.email.trim(),
-        consent: true,
-        ...(f.contactName.trim() ? { contactName: f.contactName.trim() } : {}),
-        ...(f.phone.trim() ? { phone: f.phone.trim() } : {}),
-        ...(f.outlets.trim() ? { outlets: Number(f.outlets) } : {}),
-        ...(f.erpSystem.trim() ? { erpSystem: f.erpSystem.trim() } : {}),
-      })
-      .then(onCreated)
-      .catch((err: unknown) =>
-        setProblem(
-          err instanceof ApiError && err.code === 'VALIDATION'
-            ? 'Check the details: a company name and a valid work email are needed.'
-            : errorText(err, 'The challenge could not be started.'),
-        ),
-      )
-      .finally(() => setBusy(false));
-  };
-  return (
-    <section className={styles.narrow} aria-labelledby="details-title">
-      <p className={styles.eyebrow}>Step 1 of 4</p>
-      <h1 id="details-title" className={styles.h1}>
-        Who is the report for?
-      </h1>
-      <p className={styles.lede}>We need only this to prepare and send your report.</p>
-      <form className={styles.form} onSubmit={submit}>
-        <Input
-          label="Company name"
-          value={f.companyName}
-          onChange={set('companyName')}
-          required
-          autoComplete="organization"
-        />
-        <Input
-          label="Work email"
-          type="email"
-          value={f.email}
-          onChange={set('email')}
-          required
-          autoComplete="email"
-          hint="Your report is sent here."
-        />
-        <div className={styles.pair}>
-          <Input
-            label="Your name"
-            optional
-            value={f.contactName}
-            onChange={set('contactName')}
-            autoComplete="name"
-          />
-          <Input
-            label="Phone"
-            optional
-            type="tel"
-            value={f.phone}
-            onChange={set('phone')}
-            autoComplete="tel"
-          />
-        </div>
-        <div className={styles.pair}>
-          <Input
-            label="Outlets / locations"
-            optional
-            type="number"
-            min={1}
-            value={f.outlets}
-            onChange={set('outlets')}
-          />
-          <Input
-            label="Accounting / ERP system"
-            optional
-            value={f.erpSystem}
-            onChange={set('erpSystem')}
-            placeholder="Tally, Zoho Books, SAP…"
-          />
-        </div>
-        <label className={styles.consent}>
-          <input
-            type="checkbox"
-            checked={consent}
-            onChange={(e) => setConsent(e.target.checked)}
-            required
-          />
-          <span>
-            I agree that Veyrafy processes these invoices and records to prepare this report
-            {config.aiProvider ? `, using ${config.aiProvider} to read the documents` : ''}. They
-            are kept confidential, never shown to anyone else, and deleted after{' '}
-            {config.retentionDays} days.
-          </span>
-        </label>
-        {problem && (
-          <p className={styles.problem} role="alert">
-            {problem}
-          </p>
-        )}
-        <div className={styles.actions}>
-          <Button type="submit" size="lg" arrow disabled={busy || !consent}>
-            Continue
-          </Button>
-          <Button variant="ghost" onClick={onBack}>
-            Back
-          </Button>
-        </div>
-      </form>
-    </section>
-  );
-}
-
-function Input({
-  label,
-  optional,
-  hint,
-  ...input
-}: {
-  label: string;
-  optional?: boolean;
-  hint?: string;
-} & InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <label className={styles.field}>
-      <span className={styles.label}>
-        {label}
-        {optional && <em> optional</em>}
-      </span>
-      <input className={styles.input} {...input} />
-      {hint && <span className={styles.hint}>{hint}</span>}
-    </label>
-  );
-}
-
-// ── Collecting: invoices, then records ─────────────────────────────────────
-
-function Collect({
-  state,
-  config,
-  onState,
-  step,
-  onStep: setStep,
-}: {
-  state: ApiChallengeState;
-  config: ApiChallengeConfig;
-  onState: (s: ApiChallengeState) => void;
-  step: 'invoices' | 'records';
-  onStep: (s: 'invoices' | 'records') => void;
-}) {
-  return step === 'invoices' || state.invoices.length === 0 ? (
-    <Invoices state={state} onState={onState} onNext={() => setStep('records')} />
-  ) : (
-    <Records state={state} config={config} onState={onState} onBack={() => setStep('invoices')} />
-  );
-}
-
-function Invoices({
-  state,
-  onState,
-  onNext,
-}: {
-  state: ApiChallengeState;
-  onState: (s: ApiChallengeState) => void;
-  onNext: () => void;
-}) {
   const [uploading, setUploading] = useState<string[]>([]);
   const [errors, setErrors] = useState<{ name: string; message: string }[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [gstinEdit, setGstinEdit] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  const room = state.maxInvoices - state.invoices.length;
+  const records = useRef<HTMLInputElement>(null);
+  const invoices = state?.invoices ?? [];
+  const max = state?.maxInvoices ?? config.maxInvoices;
+  const room = max - invoices.length;
+  const agreed = Boolean(state) || consent;
+
   const add = async (files: File[]) => {
+    if (!agreed) {
+      setProblem('Tick the box above first, so Veyrafy may read your invoices.');
+      return;
+    }
+    setProblem(null);
     const take = files.slice(0, Math.max(0, room));
     const over = files.slice(take.length);
     setErrors(
       over.map((f) => ({
         name: f.name,
-        message: `Not added: the challenge takes ${state.maxInvoices} invoices.`,
+        message: `Not added: the challenge takes ${max} invoices.`,
       })),
     );
     setUploading(take.map((f) => f.name));
+    // The challenge starts with the first file (on the consent just given).
+    if (!state && take.length > 0) {
+      try {
+        onState(await challengeApi.create());
+      } catch (e) {
+        setUploading([]);
+        if (alreadyTaken(e)) onUsed();
+        else setProblem(errorText(e, 'The challenge could not be started.'));
+        return;
+      }
+    }
     for (const f of take) {
       try {
         onState(await challengeApi.uploadInvoice(f));
@@ -496,19 +346,65 @@ function Invoices({
       setErrors((x) => [...x, { name: 'Invoice', message: errorText(e, 'That did not work.') }]);
     }
   };
-  const reading = state.invoices.some((i) => i.phase === 'reading') || uploading.length > 0;
+  const addRecords = async (f: File) => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      onState(await challengeApi.addRecords(f));
+    } catch (e) {
+      setProblem(errorText(e, 'This file could not be used.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const top = state?.gstinCandidates[0];
+  const gstin = gstinEdit ?? state?.gstin ?? top?.gstin ?? '';
+  const reading = invoices.filter((i) => i.phase === 'reading').length + uploading.length;
+  const usable = invoices.filter((i) => i.phase !== 'failed').length;
+  const start = async () => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      onState(await challengeApi.start(gstin));
+    } catch (e) {
+      setProblem(errorText(e, 'The checks could not be started.'));
+      setBusy(false);
+    }
+  };
+  const all = config.templates.find((t) => t.file === 'Veyrafy-Master-Data-Import.xlsx');
+  const fileCount = state?.records.files.length ?? 0;
+
   return (
     <section aria-labelledby="upload-title">
-      <p className={styles.eyebrow}>Step 2 of 4</p>
       <h1 id="upload-title" className={styles.h1}>
-        Upload {state.maxInvoices} recent supplier invoices
+        Drop in up to {max} supplier invoices
       </h1>
       <p className={styles.lede}>
-        PDF, JPG or PNG. Each file should hold one invoice. Veyrafy reads them as they arrive.
+        PDF, JPG or PNG, one invoice per file. Scans and phone photos are fine. Veyrafy starts
+        reading them as soon as they arrive.
       </p>
+      {!state && (
+        <label className={styles.consent}>
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => {
+              setConsent(e.target.checked);
+              setProblem(null);
+            }}
+          />
+          <span>
+            I agree that Veyrafy reads these invoices to check them
+            {config.aiProvider ? `, using ${config.aiProvider}` : ''}. They stay confidential and
+            are deleted {config.resultsHours} hours after I see the results. One challenge per
+            company.
+          </span>
+        </label>
+      )}
       <div
         className={styles.drop}
         data-full={room <= 0}
+        data-off={!agreed}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault();
@@ -517,20 +413,24 @@ function Invoices({
       >
         <Icon name="upload" size={22} />
         <p>
-          <strong>{room > 0 ? 'Drop invoices here' : 'All 10 invoices added'}</strong>
+          <strong>{room > 0 ? 'Drop invoices here' : `All ${max} invoices added`}</strong>
           {room > 0 && <span> or </span>}
           {room > 0 && (
             <button
               type="button"
               className={styles.linkButton}
-              onClick={() => input.current?.click()}
+              onClick={() =>
+                agreed
+                  ? input.current?.click()
+                  : setProblem('Tick the box above first, so Veyrafy may read your invoices.')
+              }
             >
               choose files
             </button>
           )}
         </p>
         <p className={styles.muted}>
-          {state.invoices.length} of {state.maxInvoices} added
+          {invoices.length} of {max} added
         </p>
         <input
           ref={input}
@@ -545,7 +445,7 @@ function Invoices({
         />
       </div>
       <ul className={styles.fileList} aria-live="polite">
-        {state.invoices.map((i) => (
+        {invoices.map((i) => (
           <InvoiceRow
             key={i.id}
             invoice={i}
@@ -574,18 +474,136 @@ function Invoices({
           </li>
         ))}
       </ul>
-      <div className={styles.actions}>
-        <Button
-          size="lg"
-          arrow
-          disabled={state.invoices.length === 0 || uploading.length > 0}
-          onClick={onNext}
-        >
-          Continue to records
-        </Button>
-        {reading && <span className={styles.muted}>Reading continues in the background.</span>}
-      </div>
+
+      {state && invoices.length > 0 && (
+        <>
+          <div className={styles.panel}>
+            <h2 className={styles.h3}>Your GSTIN</h2>
+            <p className={styles.muted}>
+              Veyrafy checks every invoice is billed to you.
+              {top
+                ? ` ${top.invoices} of your invoices are billed to ${top.gstin}.`
+                : reading > 0
+                  ? ' It is read from your invoices as they arrive.'
+                  : ''}
+            </p>
+            <label className={styles.field}>
+              <span className={styles.label}>GSTIN</span>
+              <input
+                className={styles.input}
+                value={gstin}
+                onChange={(e) => setGstinEdit(e.target.value.toUpperCase())}
+                maxLength={15}
+                spellCheck={false}
+              />
+            </label>
+          </div>
+
+          <details className={styles.panel} open={fileCount > 0}>
+            <summary className={styles.h3}>
+              Also check rates, quantities and receipts{' '}
+              <em className={styles.optional}>optional: add your records</em>
+            </summary>
+            <ul className={styles.formats}>
+              <li>
+                <strong>Excel or CSV</strong> in Veyrafy’s template columns: suppliers, items,
+                purchase orders and goods receipts.{' '}
+                {all && (
+                  <a href={challengeApi.templateUrl(all.file)} download>
+                    Download the template
+                  </a>
+                )}
+              </li>
+              <li>
+                <strong>ERP goods-receipt export</strong> (JSON), as exported from your ERP.
+              </li>
+            </ul>
+            <div className={styles.actions}>
+              <Button
+                variant="secondary"
+                disabled={busy || fileCount >= 6}
+                onClick={() => records.current?.click()}
+              >
+                Add a records file
+              </Button>
+              <input
+                ref={records}
+                type="file"
+                hidden
+                accept=".xlsx,.csv,.json"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void addRecords(f);
+                  e.target.value = '';
+                }}
+              />
+            </div>
+            {fileCount > 0 && (
+              <ul className={styles.fileList}>
+                {state.records.files.map((f, k) => (
+                  <li key={k} className={styles.fileRow} data-state="done">
+                    <span className={styles.fileMark}>
+                      <Icon name="check" size={13} strokeWidth={2.8} />
+                    </span>
+                    <span className={styles.fileMain}>
+                      <span className={styles.fileName}>{f.name}</span>
+                      <span className={styles.fileMeta}>{f.summary}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </details>
+        </>
+      )}
+
+      {problem && (
+        <p className={styles.problem} role="alert">
+          {problem}
+        </p>
+      )}
+      {state && invoices.length > 0 && (
+        <div className={styles.actions}>
+          <Button
+            size="lg"
+            arrow
+            disabled={busy || reading > 0 || usable === 0 || gstin.length !== 15}
+            onClick={() => void start()}
+          >
+            Check my {usable} invoice{usable === 1 ? '' : 's'}
+          </Button>
+          {reading > 0 ? (
+            <span className={styles.muted}>
+              Reading {reading} invoice{reading === 1 ? '' : 's'}…
+            </span>
+          ) : gstin.length !== 15 ? (
+            <span className={styles.muted}>Enter your GSTIN to start.</span>
+          ) : null}
+        </div>
+      )}
     </section>
+  );
+}
+
+function Input({
+  label,
+  optional,
+  hint,
+  ...input
+}: {
+  label: string;
+  optional?: boolean;
+  hint?: string;
+} & InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <label className={styles.field}>
+      <span className={styles.label}>
+        {label}
+        {optional && <em> optional</em>}
+      </span>
+      <input className={styles.input} {...input} />
+      {hint && <span className={styles.hint}>{hint}</span>}
+    </label>
   );
 }
 
@@ -635,178 +653,6 @@ function InvoiceRow({
   );
 }
 
-function Records({
-  state,
-  config,
-  onState,
-  onBack,
-}: {
-  state: ApiChallengeState;
-  config: ApiChallengeConfig;
-  onState: (s: ApiChallengeState) => void;
-  onBack: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [gstin, setGstin] = useState(state.gstin ?? state.gstinCandidates[0]?.gstin ?? '');
-  const input = useRef<HTMLInputElement>(null);
-  const reading = state.invoices.filter((i) => i.phase === 'reading').length;
-  const usable = state.invoices.filter((i) => i.phase !== 'failed').length;
-  const addRecords = async (f: File) => {
-    setBusy(true);
-    setProblem(null);
-    try {
-      onState(await challengeApi.addRecords(f));
-    } catch (e) {
-      setProblem(errorText(e, 'This file could not be used.'));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const start = async () => {
-    setBusy(true);
-    setProblem(null);
-    try {
-      onState(await challengeApi.start(gstin));
-    } catch (e) {
-      setProblem(errorText(e, 'The checks could not be started.'));
-      setBusy(false);
-    }
-  };
-  const top = state.gstinCandidates[0];
-  const all = config.templates.find((t) => t.file === 'Veyrafy-Master-Data-Import.xlsx');
-  return (
-    <section aria-labelledby="records-title">
-      <p className={styles.eyebrow}>Step 3 of 4</p>
-      <h1 id="records-title" className={styles.h1}>
-        Add the records Veyrafy should check against
-      </h1>
-      <p className={styles.lede}>
-        Veyrafy can only compare an invoice against records that you provide or that are connected
-        to your system. Add your purchase orders, goods receipts and supplier list to check rates,
-        quantities and receipts.
-      </p>
-      <div className={styles.twoCol}>
-        <div className={styles.panel}>
-          <h2 className={styles.h3}>
-            Your records <em className={styles.optional}>optional, strongly recommended</em>
-          </h2>
-          <ul className={styles.formats}>
-            <li>
-              <strong>Excel or CSV</strong> in Veyrafy’s template columns: suppliers, items,
-              purchase orders and goods receipts.{' '}
-              {all && (
-                <a href={challengeApi.templateUrl(all.file)} download>
-                  Download the template
-                </a>
-              )}
-            </li>
-            <li>
-              <strong>ERP goods-receipt export</strong> (JSON), as exported from your ERP.
-            </li>
-          </ul>
-          <p className={styles.muted}>
-            PDF purchase orders and receipts aren’t read as records. Export them from your
-            accounting system instead.
-          </p>
-          <div className={styles.actions}>
-            <Button
-              variant="secondary"
-              disabled={busy || state.records.files.length >= 6}
-              onClick={() => input.current?.click()}
-            >
-              Add a records file
-            </Button>
-            <input
-              ref={input}
-              type="file"
-              hidden
-              accept=".xlsx,.csv,.json"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void addRecords(f);
-                e.target.value = '';
-              }}
-            />
-          </div>
-          {state.records.files.length > 0 && (
-            <ul className={styles.fileList}>
-              {state.records.files.map((f, k) => (
-                <li key={k} className={styles.fileRow} data-state="done">
-                  <span className={styles.fileMark}>
-                    <Icon name="check" size={13} strokeWidth={2.8} />
-                  </span>
-                  <span className={styles.fileMain}>
-                    <span className={styles.fileName}>{f.name}</span>
-                    <span className={styles.fileMeta}>{f.summary}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <div className={styles.panel}>
-          <h2 className={styles.h3}>Your GSTIN</h2>
-          <p className={styles.muted}>
-            Veyrafy checks every invoice is billed to you.
-            {top ? ` ${top.invoices} of your invoices are billed to ${top.gstin}.` : ''} Confirm
-            it’s yours.
-          </p>
-          <label className={styles.field}>
-            <span className={styles.label}>GSTIN</span>
-            <input
-              className={styles.input}
-              value={gstin}
-              onChange={(e) => setGstin(e.target.value.toUpperCase())}
-              maxLength={15}
-              spellCheck={false}
-            />
-          </label>
-          {state.gstinCandidates.length > 1 && (
-            <p className={styles.muted}>
-              Also read:{' '}
-              {state.gstinCandidates
-                .slice(1)
-                .map((c) => `${c.gstin} (${c.invoices})`)
-                .join(', ')}
-            </p>
-          )}
-        </div>
-      </div>
-      {problem && (
-        <p className={styles.problem} role="alert">
-          {problem}
-        </p>
-      )}
-      <div className={styles.actions}>
-        <Button
-          size="lg"
-          arrow
-          disabled={busy || reading > 0 || usable === 0 || gstin.length !== 15}
-          onClick={() => void start()}
-        >
-          {state.records.files.length ? 'Run the checks' : 'Run the checks without records'}
-        </Button>
-        <Button variant="ghost" onClick={onBack}>
-          Back to invoices
-        </Button>
-        {reading > 0 && (
-          <span className={styles.muted}>
-            Waiting for {reading} invoice{reading === 1 ? '' : 's'} to be read…
-          </span>
-        )}
-      </div>
-      {state.records.files.length === 0 && (
-        <p className={styles.note}>
-          Without records, each invoice is verified on its own (calculations, GST, GSTINs,
-          duplicates). The report will say clearly that it was not compared with purchase orders or
-          receipts.
-        </p>
-      )}
-    </section>
-  );
-}
-
 // ── Checking ───────────────────────────────────────────────────────────────
 
 const STAGE_ICON: Record<ApiChallengeStage['status'], ReactNode> = {
@@ -821,13 +667,12 @@ function Checking({ state }: { state: ApiChallengeState }) {
   const done = state.invoices.filter((i) => i.outcome !== 'processing').length;
   return (
     <section aria-labelledby="checking-title">
-      <p className={styles.eyebrow}>Step 4 of 4</p>
       <h1 id="checking-title" className={styles.h1}>
         Checking your invoices
       </h1>
       <p className={styles.lede} aria-live="polite">
         {done} of {state.invoices.length} checked. Each step is marked complete only when Veyrafy
-        has finished it. You can leave this page; your results will wait here and arrive by email.
+        has finished it. This usually takes a minute or two; your results will wait here.
       </p>
       <ul className={styles.checkList}>
         {state.invoices.map((i) => (
@@ -851,6 +696,164 @@ function Checking({ state }: { state: ApiChallengeState }) {
   );
 }
 
+// ── The headline result, then who the report is for ───────────────────────
+
+/**
+ * What the checks found, in numbers and kinds of finding (the server sends no more than this
+ * yet), and the details that open everything: each finding with its evidence, and the report.
+ */
+function Headline({
+  state,
+  onState,
+}: {
+  state: ApiChallengeState;
+  onState: (s: ApiChallengeState) => void;
+}) {
+  const s = state.summary;
+  const [f, setF] = useState({ email: '', companyName: '', contactName: '', phone: '' });
+  const [more, setMore] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  if (!s) return null;
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) =>
+    setF({ ...f, [k]: e.target.value });
+  const kinds = Object.entries(s.byType)
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1]);
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setProblem(null);
+    challengeApi
+      .details({
+        email: f.email.trim(),
+        companyName: f.companyName.trim(),
+        ...(f.contactName.trim() ? { contactName: f.contactName.trim() } : {}),
+        ...(f.phone.trim() ? { phone: f.phone.trim() } : {}),
+      })
+      .then(onState)
+      .catch((err: unknown) =>
+        setProblem(
+          err instanceof ApiError && err.code === 'VALIDATION'
+            ? 'Check the details: a valid work email and your company name are needed.'
+            : errorText(err, 'That did not go through. Please try again.'),
+        ),
+      )
+      .finally(() => setBusy(false));
+  };
+  return (
+    <>
+      <section className={styles.resultHero} aria-labelledby="headline-title">
+        <p className={styles.eyebrow}>Your invoices are checked</p>
+        <h1 id="headline-title" className={styles.h1}>
+          {s.attention > 0
+            ? `Veyrafy found ${s.attention} invoice${s.attention === 1 ? '' : 's'} to look at before you pay`
+            : `All ${s.checked} invoices passed Veyrafy’s checks`}
+        </h1>
+        <dl className={styles.kpis}>
+          <div>
+            <dt>Invoices checked</dt>
+            <dd>{s.checked}</dd>
+          </div>
+          <div>
+            <dt>Invoice value</dt>
+            <dd data-wide="">{inr(s.totalPaise)}</dd>
+          </div>
+          <div>
+            <dt>Cleared</dt>
+            <dd data-tone="good">{s.cleared}</dd>
+          </div>
+          <div>
+            <dt>Need attention</dt>
+            <dd data-tone={s.attention ? 'attention' : undefined}>{s.attention}</dd>
+          </div>
+        </dl>
+        {s.attention > 0 && (
+          <p className={styles.review}>
+            <strong>{inr(s.reviewValuePaise)}</strong> of invoice value to review before payment
+          </p>
+        )}
+        {kinds.length > 0 && (
+          <ul className={styles.kinds}>
+            {kinds.map(([type, n]) => (
+              <li key={type}>
+                <strong>{n}</strong> {FINDING_TYPE_LABEL[type as never] ?? 'Other finding'}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className={styles.gate} aria-labelledby="gate-title">
+        <h2 id="gate-title" className={styles.h2}>
+          {s.attention > 0
+            ? 'See each finding, with the evidence from your invoice'
+            : 'Get your verification report'}
+        </h2>
+        <p className={styles.lede}>
+          Tell us who the report is for. You see the full results at once, and we e-mail you the PDF
+          report.
+        </p>
+        <form className={styles.form} onSubmit={submit}>
+          <div className={styles.pair}>
+            <Input
+              label="Work email"
+              type="email"
+              value={f.email}
+              onChange={set('email')}
+              required
+              autoComplete="email"
+            />
+            <Input
+              label="Company name"
+              value={f.companyName}
+              onChange={set('companyName')}
+              required
+              autoComplete="organization"
+            />
+          </div>
+          {more ? (
+            <div className={styles.pair}>
+              <Input
+                label="Your name"
+                optional
+                value={f.contactName}
+                onChange={set('contactName')}
+                autoComplete="name"
+              />
+              <Input
+                label="Phone"
+                optional
+                type="tel"
+                value={f.phone}
+                onChange={set('phone')}
+                autoComplete="tel"
+              />
+            </div>
+          ) : (
+            <button type="button" className={styles.linkButton} onClick={() => setMore(true)}>
+              Add your name and phone (optional)
+            </button>
+          )}
+          {problem && (
+            <p className={styles.problem} role="alert">
+              {problem}
+            </p>
+          )}
+          <div className={styles.actions}>
+            <Button type="submit" size="lg" arrow disabled={busy}>
+              {busy ? 'Opening…' : 'Show my results'}
+            </Button>
+          </div>
+          <p className={styles.muted}>
+            Used only to send you this report and to follow up about it. Never shared.
+          </p>
+        </form>
+      </section>
+    </>
+  );
+}
+
 // ── Results ────────────────────────────────────────────────────────────────
 
 function Results({
@@ -870,20 +873,26 @@ function Results({
   const failed = state.invoices.filter((i) => i.outcome === 'failed');
   if (state.status === 'purged')
     return (
-      <section className={styles.narrow}>
-        <h1 className={styles.h1}>This challenge has ended</h1>
-        <p className={styles.lede}>
-          Its invoices were deleted after the retention period, as agreed.
-          {s ? ` ${s.checked} invoices were checked; ${s.attention} needed attention.` : ''}
-        </p>
-      </section>
+      <>
+        <section className={styles.narrow}>
+          <h1 className={styles.h1}>Your 5 Invoice Challenge is complete</h1>
+          <p className={styles.lede}>
+            {s
+              ? `${s.checked} invoice${s.checked === 1 ? ' was' : 's were'} checked; ${s.attention} needed attention. `
+              : ''}
+            Your invoices have been deleted, as agreed.
+            {state.unlocked ? ' Your report was e-mailed to you as a PDF.' : ''}
+          </p>
+        </section>
+        {state.unlocked && <NextStep state={state} onState={onState} />}
+      </>
     );
   if (!s) return null;
   const download = async () => {
     setDownloading(true);
     setProblem(null);
     try {
-      await challengeApi.downloadReport(state.companyName);
+      await challengeApi.downloadReport(state.companyName ?? 'Report');
     } catch (e) {
       setProblem(errorText(e, 'The report could not be prepared.'));
     } finally {
@@ -893,7 +902,7 @@ function Results({
   return (
     <>
       <section className={styles.resultHero} aria-labelledby="results-title">
-        <p className={styles.eyebrow}>{state.companyName}</p>
+        {state.companyName && <p className={styles.eyebrow}>{state.companyName}</p>}
         <h1 id="results-title" className={styles.h1}>
           Invoice check complete
         </h1>
@@ -938,6 +947,14 @@ function Results({
             <span className={styles.muted}>Also sent to {state.email}.</span>
           )}
         </div>
+        <p className={styles.muted}>
+          Your invoices are deleted on{' '}
+          {new Date(state.expiresAt).toLocaleString('en-IN', {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          })}
+          , as agreed. The numbers and your report stay yours.
+        </p>
         {problem && <p className={styles.problem}>{problem}</p>}
       </section>
 
@@ -1215,7 +1232,7 @@ function NextStep({
         Want Veyrafy to check every invoice before payment?
       </h2>
       <p className={styles.lede}>
-        The 10 Invoice Challenge showed what Veyrafy can find in your current invoices. Run the same
+        The 5 Invoice Challenge showed what Veyrafy can find in your current invoices. Run the same
         verification process continuously across your supplier invoices.
       </p>
       {done ? (
