@@ -197,7 +197,8 @@ taxable: the line's amount column ("Amount", "Taxable Value"; for quantity 1 it 
 as the rate: give it in both); gstRate: the GST rate printed on the line (for example "18 %").
 otherCharges: charges printed outside the item rows (freight, packing, insurance) with their amount.
 otherPrinted: EVERY other labelled value printed on the invoice that has no field above, with its
-label as printed, for example: buyer name, due date, IRN, Ack No, Ack Date, e-way bill number,
+label as printed (for a tax row under the items, such as "CGST @ 9%", give its tax amount, not the
+value the tax is charged on), for example: buyer name, due date, IRN, Ack No, Ack Date, e-way bill number,
 transporter, vehicle number, dispatch details, delivery note, payment terms, bank name, account
 number, IFSC, currency, tax rate breakup, amount in words, notes, terms. Leave out what is not printed.
 invoiceCount: how many separate invoices this file holds; invoiceNumbers: their numbers.
@@ -374,9 +375,10 @@ export function toExtraction(
     const value = o.printed?.replace(/\s+/g, ' ').trim().slice(0, 2000);
     if (!label || !value || otherFields.length >= 300) continue;
     const page = o.page ?? 1;
+    const shown = taxRowShown(label, value, header);
     otherFields.push({
-      label,
-      value,
+      label: shown.label,
+      value: shown.value,
       confidenceBp: confidenceBp(AI_CONFIDENCE_BP),
       evidence: { page, text: value, bbox: bboxOf(page, o.box, sizes) },
     });
@@ -395,6 +397,39 @@ export function toExtraction(
   }
   return { header, lines, warnings, pages: reading.pageCount ?? 1, otherFields };
 }
+
+/**
+ * A tax row under the items often prints the value the tax is charged on beside its label
+ * ("CGST @ 9%   4780.00   430.20"). A value read beside the label that is not the tax read for that
+ * head is never shown as if it were: it is named as the taxable value when it is the goods value,
+ * and otherwise marked as not the tax read. The printed text itself is kept unchanged.
+ */
+export function taxRowShown(
+  label: string,
+  value: string,
+  header: ExtractedHeader,
+): { label: string; value: string } {
+  const m = /\b(CGST|SGST|UTGST|IGST)\b[^%\d]{0,12}\d{1,2}(?:\.\d{1,2})?\s*%/i.exec(label);
+  if (!m) return { label, value };
+  const head = (m[1] ?? '').toUpperCase();
+  const tax = (
+    head === 'IGST'
+      ? h(header.igstPaise)
+      : head === 'CGST'
+        ? h(header.cgstPaise)
+        : h(header.sgstPaise)
+  ) as number | null;
+  const amounts = [...value.matchAll(/\d[\d,]*\.\d{2}/g)]
+    .map((a) => parseAmount(a[0]))
+    .filter((a): a is number => a !== null);
+  if (tax === null || amounts.length === 0 || amounts.includes(tax)) return { label, value };
+  const rupees = (p: number) => (p / 100).toFixed(2);
+  const goods = h(header.taxablePaise) as number | null;
+  if (amounts.length === 1 && amounts[0] === goods)
+    return { label: `${label} · taxable value`, value: `${value} (tax ${rupees(tax)})` };
+  return { label: `${label} · not the tax read`, value: `${value} (${head} read: ${rupees(tax)})` };
+}
+const h = (f: Field<unknown>) => f.value;
 
 /**
  * A line amount the reading left "not printed" (not one it could not read: that stays not read),

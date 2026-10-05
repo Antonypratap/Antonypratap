@@ -4,6 +4,7 @@ import {
   pickRecord,
   receiptComparison,
   sameName,
+  spellingDiffers,
   type InvoiceSide,
   type RawReceiptRecord,
 } from './erp-receipts';
@@ -309,6 +310,45 @@ describe('reconciliation states: match, mismatch, unmatched, to confirm, not com
     // Not a question about a value read: nothing is asked of the reading.
     expect(r.unread).toEqual([]);
     expectCountsFromRows(r);
+  });
+
+  it('a misspelt item name ("MIRRIOR") with the same values: to confirm, the spelling named', () => {
+    const inv = invoice();
+    (inv.lines[0] as Line).description = 'MIRRIOR';
+    const r = receiptComparison(inv, erp());
+    expect(r.comparison).toMatchObject({
+      verdict: 'incomplete',
+      mismatched: 0,
+      unmatched: 0,
+      needsConfirmation: 1,
+    });
+    const row = rowsOf(r).find((x) => x.label === 'Item' && x.result === 'needs_confirmation');
+    expect(row).toMatchObject({ invoice: 'MIRRIOR', erp: 'MIRROR' });
+    expect(row?.note).toMatch(/^The spelling differs \(MIRRIOR \/ MIRROR\), and quantity, rate/);
+    // Never a match on spelling alone: a different amount leaves both items unmatched.
+    const other = erp();
+    const mirror = other.lines.find((l) => l.name === 'MIRROR');
+    if (!mirror) throw new Error('fixture');
+    mirror.ratePaise = 340_000;
+    mirror.amountPaise = 340_000;
+    const off = receiptComparison(inv, other);
+    expect(off.comparison.unmatched).toBe(2);
+    expect(
+      rowsOf(off).filter((x) => x.label === 'Item' && /MIRR/.test(`${x.invoice}${x.erp}`)),
+    ).toEqual([
+      expect.objectContaining({ invoice: 'MIRRIOR', erp: null, result: 'unmatched' }),
+      expect.objectContaining({ invoice: null, erp: 'MIRROR', result: 'unmatched' }),
+    ]);
+  });
+
+  it('one letter apart: added, left out, changed or swapped; never for short or different words', () => {
+    expect(spellingDiffers('MIRRIOR', 'MIRROR')).toBe(true);
+    expect(spellingDiffers('MIROR', 'MIRROR')).toBe(true);
+    expect(spellingDiffers('MIRRUR', 'MIRROR')).toBe(true);
+    expect(spellingDiffers('MIRORR', 'MIRROR')).toBe(true);
+    expect(spellingDiffers('MIRROR', 'MIRRORS')).toBe(false); // the same name
+    expect(spellingDiffers('GATTA', 'BATTEN')).toBe(false);
+    expect(spellingDiffers('BOLT', 'BELT')).toBe(false); // too short to tell
   });
 
   it('unrelated items that share a quantity and rate are never paired when it is ambiguous', () => {

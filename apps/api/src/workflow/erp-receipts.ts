@@ -231,6 +231,25 @@ const similarity = (a: string | null, b: string | null): number => {
   return common / Math.max(1, new Set([...ta, ...tb]).size);
 };
 
+/**
+ * Two names one letter apart (a letter added, left out, changed or two swapped: "MIRRIOR" and
+ * "MIRROR"), ignoring case, punctuation and plurals. Only explains a difference shown for a person to
+ * confirm; it never makes two items the same.
+ */
+export function spellingDiffers(a: string | null, b: string | null): boolean {
+  if (!a || !b) return false;
+  const x = [...tokens(a)].join(' ');
+  const y = [...tokens(b)].join(' ');
+  if (x === y || Math.min(x.length, y.length) < 5 || Math.abs(x.length - y.length) > 1)
+    return false;
+  let i = 0;
+  while (i < x.length && x[i] === y[i]) i++;
+  const tail = (dx: number, dy: number) => x.slice(i + dx) === y.slice(i + dy);
+  return (
+    tail(1, 1) || tail(1, 0) || tail(0, 1) || (x[i] === y[i + 1] && x[i + 1] === y[i] && tail(2, 2))
+  );
+}
+
 /** How many of the invoice's lines a receipt's lines account for (by name, then quantity). */
 function lineFit(lines: InvoiceSide['lines'], erp: ReceiptRecord): number {
   return lines.reduce((s, l) => {
@@ -602,7 +621,7 @@ export function receiptComparison(
         result: 'needs_confirmation',
         // An item name not read is asked as a question (the rest of the line agrees).
         ...(p.inv.description === null ? { path: `lines[${p.inv.lineNo}].description` } : {}),
-        note: `The names differ, but quantity${p.inv.unitPricePaise !== null && p.inv.unitPricePaise === p.erp.ratePaise ? ', rate' : ''}${p.inv.taxablePaise !== null && p.inv.taxablePaise === p.erp.amountPaise ? ' and amount' : ''} agree. Confirm whether this is the same item: it is not counted as a match or a difference.`,
+        note: `${spellingDiffers(p.inv.description, p.erp.name) ? `The spelling differs (${p.inv.description} / ${p.erp.name}), and quantity` : 'The names differ, but quantity'}${p.inv.unitPricePaise !== null && p.inv.unitPricePaise === p.erp.ratePaise ? ', rate' : ''}${p.inv.taxablePaise !== null && p.inv.taxablePaise === p.erp.amountPaise ? ' and amount' : ''} agree. Confirm whether this is the same item: it is not counted as a match or a difference.`,
       });
       return;
     }

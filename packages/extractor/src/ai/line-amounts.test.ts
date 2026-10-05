@@ -253,3 +253,42 @@ describe('the GST rate printed only under the items, as the AI reader reports it
     expect(rates(toExtraction(x, 't'))).toEqual([1200, null, null, null]);
   });
 });
+
+describe('a tax row’s value under "Also printed on the invoice"', () => {
+  const shown = (other: { label: string; printed: string }[]) =>
+    (toExtraction(rateOnly({ other }), 'test').otherFields ?? []).map((f) => [f.label, f.value]);
+
+  it('the value the tax is charged on is named as such, with the tax beside it', () => {
+    // "CGST @ 9%   4780.00   430.20": the reader gave the middle column.
+    expect(shown(FOOTER.map((f) => ({ ...f, printed: '4780.00' })))).toEqual([
+      ['CGST @ 9% · taxable value', '4780.00 (tax 430.20)'],
+      ['SGST @ 9% · taxable value', '4780.00 (tax 430.20)'],
+    ]);
+  });
+
+  it('the tax itself, or both columns, is shown as printed', () => {
+    expect(shown(FOOTER)).toEqual([
+      ['CGST @ 9%', '430.20'],
+      ['SGST @ 9%', '430.20'],
+    ]);
+    expect(shown([{ label: 'CGST @ 9%', printed: '4780.00 430.20' }])).toEqual([
+      ['CGST @ 9%', '4780.00 430.20'],
+    ]);
+  });
+
+  it('any other value beside a tax label is marked as not the tax read', () => {
+    expect(shown([{ label: 'CGST @ 9%', printed: '1234.00' }])).toEqual([
+      ['CGST @ 9% · not the tax read', '1234.00 (CGST read: 430.20)'],
+    ]);
+    // Labels that are not tax rows are untouched.
+    expect(shown([{ label: 'Total', printed: '4' }])).toEqual([['Total', '4']]);
+  });
+
+  it('the footer rate is still proven from the label when the taxable value is beside it', () => {
+    const r = toExtraction(
+      rateOnly({ other: FOOTER.map((f) => ({ ...f, printed: '4780.00' })) }),
+      'test',
+    );
+    expect(rates(r)).toEqual([1800, 1800, 1800, 1800]);
+  });
+});
