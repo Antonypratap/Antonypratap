@@ -484,6 +484,68 @@ describe('5 Invoice Challenge: the journey against records', () => {
   }, 180_000);
 });
 
+describe('5 Invoice Challenge: compared with the business’s own system', () => {
+  /** The system's record of the footer-tax invoice (D15, made-up supplier), as a register. */
+  const register = (mirrorRate: string) =>
+    new TextEncoder().encode(
+      [
+        'Bill No,Party Name,Bill Date,Name of Item,Qty,Per,Rate,Taxable Value,CGST,SGST,Invoice Total',
+        `13839,Sample Electrical and Hardware,09/12/2025,MIRROR,1,NOS,${mirrorRate},${mirrorRate},${(Number(mirrorRate) * 0.09).toFixed(2)},${(Number(mirrorRate) * 0.09).toFixed(2)},5640.00`,
+        '13839,Sample Electrical and Hardware,09/12/2025,WOOD SCREW 2",1,NOS,40,40,3.60,3.60,5640.00',
+        '13839,Sample Electrical and Hardware,09/12/2025,GATTA,1,NOS,40,40,3.60,3.60,5640.00',
+        '13839,Sample Electrical and Hardware,09/12/2025,Coolie,1,NOS,1250,1250,112.50,112.50,5640.00',
+      ].join('\n'),
+    );
+
+  for (const [rate, verdict] of [
+    ['3450', 'cleared'],
+    ['3400', 'review'],
+  ] as const)
+    it(`a register export (CSV): every line compared; MIRROR at ${rate} → ${verdict}`, async () => {
+      const a = await open();
+      const { token } = await start(a);
+      expect((await upload(a, token, 'D15-tally-style.pdf')).statusCode).toBe(201);
+      const read = await until(a, token, allRead);
+      const rec = await send(
+        a,
+        token,
+        '/api/v1/challenge/me/records',
+        'purchase-register.csv',
+        register(rate),
+      );
+      expect(rec.statusCode, rec.body).toBe(200);
+      expect(rec.json<ApiChallengeState>().records.files[0]).toMatchObject({
+        kind: 'register',
+        summary: '1 invoice from your system (4 lines)',
+      });
+      const gstin = read.gstinCandidates[0]?.gstin ?? BUYER;
+      const started = await post(a, token, '/api/v1/challenge/me/start', { gstin });
+      expect(started.statusCode, `${gstin} ${started.body}`).toBe(200);
+      await until(a, token, (s) => s.status === 'complete');
+      expect((await giveDetails(a, token)).statusCode).toBe(200);
+      const done = await get(a, token);
+      const inv = byFile(done, 'D15-tally-style.pdf');
+      // Compared with the system's record, line by line (the receipt check ran).
+      expect(inv.stages.find((x) => x.key === 'records')).toMatchObject({
+        status: 'done',
+        note: 'Matched to your system’s record',
+      });
+      expect(inv.stages.find((x) => x.key === 'exceptions')?.note).toBe(
+        verdict === 'cleared' ? 'Nothing needs attention' : '1 point found',
+      );
+      if (verdict === 'cleared')
+        expect(inv).toMatchObject({ outcome: 'cleared', basis: 'records' });
+      else
+        expect(inv).toMatchObject({
+          outcome: 'review',
+          finding: {
+            type: 'rate',
+            compare: expect.arrayContaining([expect.objectContaining({ value: '₹3,400.00' })]),
+          },
+        });
+    }, 180_000);
+});
+
 describe('5 Invoice Challenge: without records, failures, limits', () => {
   it('without records: invoice checks only, said as such; failures explained, retryable, removable', async () => {
     const a = await open();

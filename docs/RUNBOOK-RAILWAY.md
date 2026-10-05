@@ -321,6 +321,15 @@ e-mail and company name open the full results, the evidence and the PDF report, 
 e-mail is sent then, with the report attached as a PDF. Until then the server sends the numbers
 only. Up to 5 invoices per challenge.
 
+**What the invoices are compared with.** "Compare with your system" takes the record the prospect's
+own accounting or ERP system holds for the invoices: an Excel or CSV export of their purchase
+register or bills (one row per invoice line; common column names such as "Bill No", "Party",
+"Qty", "Taxable Value" are recognised; templates at `/api/v1/challenge/templates/Veyrafy-Invoice-Register.xlsx`
+and `.csv`), the same in JSON, or an ERP goods-receipt export. Each invoice is then compared line
+by line: item, quantity, rate, amount, GST and total. Without it, each invoice is verified on its
+own (calculations, GST, GSTINs, duplicates). The systems named on the page (Tally, Zoho Books, SAP
+and others) are ones to export from; there is no live connection to them in the challenge.
+
 **One challenge each, then it ends.** A browser that has started a challenge cannot start another
 (a cookie kept for a year), and a work e-mail opens the results of one challenge only. Once the
 full results are shown, the invoices and their readings are deleted after

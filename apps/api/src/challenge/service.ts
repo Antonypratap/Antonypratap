@@ -24,6 +24,15 @@ import { VeyraError } from '../workflow/veyra';
 import type { EmailSender } from './email';
 import { challengeEmail } from './email';
 import { renderChallengeReport } from './report';
+import {
+  looksLikeRegister,
+  registerRowsFromJson,
+  registerRowsFromSheet,
+  registerToReceipts,
+} from './register';
+import { ReceiptFileSchema } from '../workflow/erp-receipts';
+import { readCsv } from '../spreadsheet/csv';
+import { readXlsx, SpreadsheetError } from '../spreadsheet/xlsx';
 import type { ChallengeWorkspace, ChallengeWorkspaces } from './workspaces';
 
 /**
@@ -116,7 +125,12 @@ export const detailsGiven = (ch: { email: string }): boolean => ch.email !== '';
 const companyOf = (ch: { companyName: string }) => ch.companyName || 'Your company';
 
 interface RecordsState {
-  files: { name: string; kind: 'template' | 'receipts'; at: string; summary: string }[];
+  files: {
+    name: string;
+    kind: 'template' | 'receipts' | 'register';
+    at: string;
+    summary: string;
+  }[];
   counts: Record<string, number>;
 }
 
@@ -390,7 +404,15 @@ export class ChallengeService {
     const name = file.filename.slice(0, 200);
     const ext = /\.([a-z0-9]+)$/i.exec(name)?.[1]?.toLowerCase() ?? '';
     let summary: string;
-    let kind: 'template' | 'receipts';
+    let kind: 'template' | 'receipts' | 'register';
+    /** The business's own record of these invoices, compared value by value. */
+    const fromRegister = async (rows: ReturnType<typeof registerRowsFromSheet>) => {
+      const r = await ws.veyra.importReceipts(name, registerToReceipts(rows, name), user);
+      const lines = rows.filter((x) => Object.keys(x).length > 0).length;
+      state.counts.register = (state.counts.register ?? 0) + r.records.length;
+      return `${r.records.length} invoice${r.records.length === 1 ? '' : 's'} from your system (${lines} line${lines === 1 ? '' : 's'})`;
+    };
+    const sheet = ext === 'xlsx' || ext === 'csv' ? readSheetRows(file.bytes, ext, name) : null;
     if (ext === 'json') {
       let json: unknown;
       try {
@@ -398,11 +420,22 @@ export class ChallengeService {
       } catch {
         throw new VeyraError('INVALID_INPUT', 'This JSON file could not be read.');
       }
-      const r = await ws.veyra.importReceipts(name, json, user);
-      const n = r.records.length;
-      kind = 'receipts';
-      summary = `${n} goods receipt${n === 1 ? '' : 's'}`;
-      state.counts.receipts = (state.counts.receipts ?? 0) + r.imported;
+      const register = ReceiptFileSchema.safeParse(json).success
+        ? null
+        : registerRowsFromJson(json);
+      if (register) {
+        kind = 'register';
+        summary = await fromRegister(register);
+      } else {
+        const r = await ws.veyra.importReceipts(name, json, user);
+        const n = r.records.length;
+        kind = 'receipts';
+        summary = `${n} goods receipt${n === 1 ? '' : 's'}`;
+        state.counts.receipts = (state.counts.receipts ?? 0) + r.imported;
+      }
+    } else if (sheet && looksLikeRegister(sheet[0]?.cells.map((c) => c.text) ?? [])) {
+      kind = 'register';
+      summary = await fromRegister(registerRowsFromSheet(sheet));
     } else if (ext === 'xlsx' || ext === 'csv') {
       const check = await ws.imports.check([{ filename: name, bytes: file.bytes }], user);
       if (check.status === 'invalid' || !check.canConfirm) {
@@ -431,7 +464,7 @@ export class ChallengeService {
     } else {
       throw new VeyraError(
         'INVALID_INPUT',
-        'Records are read from Excel or CSV (in the template columns) or from an ERP goods-receipt export (JSON). PDF orders and receipts are not read as records.',
+        'Use an Excel, CSV or JSON export from your system (your purchase register or bills, one row per invoice line), or Veyrafy’s template. PDF orders and receipts are not read as records.',
       );
     }
     state.files.push({ name, kind, at: this.now(), summary });
@@ -642,7 +675,15 @@ export class ChallengeService {
         phase: view.phase,
         outcome: view.outcome,
         basis: view.basis,
-        stages: stagesOf(inv, ws.held, latest, receiptChecked, hasRecords, open.length),
+        stages: stagesOf(
+          inv,
+          ws.held,
+          latest,
+          receiptChecked,
+          hasRecords,
+          // A difference from the system's record is a finding too, without a question.
+          view.outcome === 'review' || view.outcome === 'confirm' ? Math.max(1, open.length) : 0,
+        ),
         finding: view.outcome === 'review' || view.outcome === 'confirm' ? finding : null,
         more:
           view.outcome === 'review' || view.outcome === 'confirm'
@@ -938,10 +979,16 @@ function stagesOf(
       read,
       st('calculations', 'done'),
       st('duplicates', 'done'),
-      st('records', 'done', 'Matched to your goods-receipt record'),
-      st('quantities', 'done', 'Against the goods-receipt record'),
+      st('records', 'done', 'Matched to your system’s record'),
+      st('quantities', 'done', 'Against your system’s record'),
       st('tax', 'done'),
-      st('exceptions', 'done', openCount ? null : 'Nothing needs attention'),
+      st(
+        'exceptions',
+        'done',
+        openCount
+          ? `${openCount} point${openCount === 1 ? '' : 's'} found`
+          : 'Nothing needs attention',
+      ),
     ];
   const group = (key: ApiChallengeStage['key']): ApiChallengeStage => {
     // Nothing to match against: the engine looked and found no record, which is not a finding.
@@ -1006,4 +1053,14 @@ export function summarize(invoices: ApiChallengeInvoice[]): ApiChallengeSummary 
     reviewValuePaise: total(attention),
     byType,
   };
+}
+
+/** The first sheet's rows (Excel) or the rows (CSV), for recognising an invoice register. */
+function readSheetRows(bytes: Uint8Array, ext: 'xlsx' | 'csv', name: string) {
+  try {
+    return ext === 'csv' ? readCsv(bytes, name) : (readXlsx(bytes).sheets[0]?.rows ?? []);
+  } catch (e) {
+    if (e instanceof SpreadsheetError) throw new VeyraError('INVALID_INPUT', e.message);
+    throw e;
+  }
 }

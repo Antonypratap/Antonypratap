@@ -94,7 +94,9 @@ export type ApiChallengeInvoice = z.infer<typeof ApiChallengeInvoiceSchema>;
 
 export const ApiChallengeRecordFileSchema = z.object({
   name: z.string(),
-  kind: z.enum(['template', 'receipts']),
+  /** template: Veyrafy's records template; receipts: an ERP goods-receipt export; register: the
+   *  business's own record of its invoices (Excel, CSV or JSON). */
+  kind: z.enum(['template', 'receipts', 'register']),
   at: z.string(),
   /** What it added, in words ("12 suppliers, 30 purchase orders"). */
   summary: z.string(),

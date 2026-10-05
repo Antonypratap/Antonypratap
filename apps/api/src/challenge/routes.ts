@@ -7,6 +7,9 @@ import {
   ChallengeStartSchema,
 } from '@veyra/shared';
 import { templateWorkbook } from '../imports/templates';
+import { writeCsv } from '../spreadsheet/csv';
+import { writeXlsx } from '../spreadsheet/xlsx';
+import { REGISTER_TEMPLATE } from './register';
 import { VeyraError } from '../workflow/veyra';
 import { reportName, type ChallengeService } from './service';
 
@@ -29,6 +32,11 @@ const USED =
   'This browser has already taken the 5 Invoice Challenge. To check more invoices, book a walkthrough with Veyrafy.';
 const PUBLIC = { config: { access: 'public' } } as const;
 const Id = z.object({ id: z.string().min(1).max(64) });
+/** The invoice register template, as the page links to it. */
+export const REGISTER_FILES = {
+  xlsx: 'Veyrafy-Invoice-Register.xlsx',
+  csv: 'Veyrafy-Invoice-Register.csv',
+} as const;
 
 export function registerChallengeRoutes(
   app: FastifyInstance,
@@ -142,6 +150,31 @@ export function registerChallengeRoutes(
   // The record templates (the product's own), so a prospect can fill in their records.
   app.get('/api/v1/challenge/templates/:file', PUBLIC, async (req, reply) => {
     const { file } = z.object({ file: z.string().max(80) }).parse(req.params);
+    // The invoice register: the simplest record of a business's invoices, in Excel or CSV.
+    if (file === REGISTER_FILES.xlsx || file === REGISTER_FILES.csv) {
+      const rows = [REGISTER_TEMPLATE.header, ...REGISTER_TEMPLATE.rows].map((r) => [...r]);
+      const csv = file === REGISTER_FILES.csv;
+      return reply
+        .header(
+          'content-type',
+          csv
+            ? 'text/csv; charset=utf-8'
+            : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        .header('content-disposition', `attachment; filename="${file}"`)
+        .send(
+          csv
+            ? writeCsv(rows)
+            : writeXlsx([
+                {
+                  name: 'Invoices',
+                  widths: [12, 22, 13, 26, 8, 7, 7, 10, 12, 10, 10, 10, 14],
+                  rows,
+                  header: true,
+                },
+              ]),
+        );
+    }
     const bytes = templateWorkbook(file);
     if (!bytes) throw new VeyraError('NOT_FOUND', 'No such template.');
     return reply

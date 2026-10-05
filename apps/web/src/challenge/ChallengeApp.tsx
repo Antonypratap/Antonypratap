@@ -218,8 +218,8 @@ function Landing({ config, onStart }: { config: ApiChallengeConfig; onStart: () 
           Put 10 real invoices through Veyrafy.
         </h1>
         <p className={styles.lede}>
-          See what gets caught before you pay. Drop in your supplier invoices: Veyrafy checks the
-          calculations, GST, GSTINs and duplicates, and against your records if you add them.
+          See what gets caught before you pay. Drop in your supplier invoices and the record your
+          accounting or ERP system holds for them: Veyrafy compares the two, line by line.
         </p>
         <div className={styles.ctaRow}>
           <Button size="lg" arrow onClick={onStart}>
@@ -243,10 +243,10 @@ function Landing({ config, onStart }: { config: ApiChallengeConfig; onStart: () 
           </li>
           <li>
             <span className={styles.howNum}>2</span>
-            <strong>Watch every invoice being checked</strong>
+            <strong>Compare with your system</strong>
             <span>
-              Add your purchase orders and goods receipts too, if you like, to check rates and
-              quantities.
+              Add your system’s record of them: a JSON, Excel or CSV export from Tally, Zoho Books,
+              SAP or any ERP.
             </span>
           </li>
           <li>
@@ -270,8 +270,9 @@ function Landing({ config, onStart }: { config: ApiChallengeConfig; onStart: () 
           ))}
         </dl>
         <p className={styles.note}>
-          Rates, quantities and receipts can only be checked against records you provide. Without
-          them, Veyrafy verifies each invoice on its own, and the results say so.
+          Rates, quantities and amounts are compared with your system’s record. Without it, Veyrafy
+          verifies each invoice on its own (calculations, GST, GSTINs, duplicates), and the results
+          say so.
         </p>
       </section>
     </>
@@ -279,6 +280,51 @@ function Landing({ config, onStart }: { config: ApiChallengeConfig; onStart: () 
 }
 
 // ── Upload: invoices, and (optional) records and GSTIN, on one screen ──────
+
+/** What a business's own record of its invoices can come as (all read by Veyrafy today). */
+const FORMATS = [
+  { badge: 'JSON', tone: 'json', label: 'JSON', note: 'ERP or API export' },
+  { badge: 'XLSX', tone: 'xlsx', label: 'Excel', note: 'Purchase register or bills' },
+  { badge: 'CSV', tone: 'csv', label: 'CSV', note: 'Any register export' },
+] as const;
+/** Systems businesses commonly export from (exports are read; no live connection here). */
+const SYSTEMS = [
+  'Tally Prime',
+  'Zoho Books',
+  'Busy',
+  'Marg ERP',
+  'SAP Business One',
+  'Microsoft Dynamics 365',
+  'Oracle NetSuite',
+  'QuickBooks',
+  'ERPNext',
+];
+const monogram = (name: string) =>
+  name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase();
+const REGISTER_XLSX = 'Veyrafy-Invoice-Register.xlsx';
+const REGISTER_CSV = 'Veyrafy-Invoice-Register.csv';
+
+/** A file-type icon: a page with a folded corner and the format on a coloured band. */
+function FileBadge({ label, tone }: { label: string; tone: 'json' | 'xlsx' | 'csv' }) {
+  return (
+    <svg className={styles.fileBadge} data-tone={tone} viewBox="0 0 40 48" aria-hidden="true">
+      <path
+        d="M6 2h20l10 10v32a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"
+        className={styles.badgePage}
+      />
+      <path d="M26 2v8a2 2 0 0 0 2 2h8" className={styles.badgeFold} />
+      <rect x="0" y="26" width="34" height="13" rx="2.5" className={styles.badgeBand} />
+      <text x="17" y="35.5" textAnchor="middle" className={styles.badgeText}>
+        {label}
+      </text>
+    </svg>
+  );
+}
 
 function Upload({
   state,
@@ -477,6 +523,100 @@ function Upload({
 
       {state && invoices.length > 0 && (
         <>
+          <section className={styles.system} aria-labelledby="system-title">
+            <div className={styles.systemHead}>
+              <h2 id="system-title" className={styles.h3}>
+                Compare with your system
+              </h2>
+              <span className={styles.recommended}>Recommended</span>
+            </div>
+            <p className={styles.systemLede}>
+              Upload the record your accounting or ERP system already holds for these invoices.
+              Veyrafy compares each invoice with it, line by line: item, quantity, rate, amount, GST
+              and total.
+            </p>
+            <div className={styles.formatGrid}>
+              {FORMATS.map((f) => (
+                <button
+                  key={f.label}
+                  type="button"
+                  className={styles.formatTile}
+                  disabled={busy || fileCount >= 6}
+                  onClick={() => records.current?.click()}
+                >
+                  <FileBadge label={f.badge} tone={f.tone} />
+                  <span className={styles.formatName}>{f.label}</span>
+                  <span className={styles.formatNote}>{f.note}</span>
+                </button>
+              ))}
+            </div>
+            <input
+              ref={records}
+              type="file"
+              hidden
+              accept=".xlsx,.csv,.json"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void addRecords(f);
+                e.target.value = '';
+              }}
+            />
+            <p className={styles.formatHelp}>
+              One row per invoice line, with the invoice number, supplier and item, and the
+              quantity, rate, amount, GST and total where you have them. Column names such as “Bill
+              No”, “Party”, “Qty” and “Taxable Value” are recognised. Template:{' '}
+              <a href={challengeApi.templateUrl(REGISTER_XLSX)} download>
+                Excel
+              </a>{' '}
+              ·{' '}
+              <a href={challengeApi.templateUrl(REGISTER_CSV)} download>
+                CSV
+              </a>
+              {all && (
+                <>
+                  {' '}
+                  · purchase orders and goods receipts:{' '}
+                  <a href={challengeApi.templateUrl(all.file)} download>
+                    records template
+                  </a>
+                </>
+              )}
+            </p>
+            {fileCount > 0 && (
+              <ul className={styles.fileList}>
+                {state.records.files.map((f, k) => (
+                  <li key={k} className={styles.fileRow} data-state="done">
+                    <span className={styles.fileMark}>
+                      <Icon name="check" size={13} strokeWidth={2.8} />
+                    </span>
+                    <span className={styles.fileMain}>
+                      <span className={styles.fileName}>{f.name}</span>
+                      <span className={styles.fileMeta}>{f.summary}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className={styles.systems}>
+              <p className={styles.systemsLabel}>
+                Using one of these? Export your purchase register or bills and upload the file.
+              </p>
+              <ul className={styles.systemList}>
+                {SYSTEMS.map((name) => (
+                  <li key={name}>
+                    <span className={styles.monogram} aria-hidden="true">
+                      {monogram(name)}
+                    </span>
+                    {name}
+                  </li>
+                ))}
+              </ul>
+              <p className={styles.formatNote}>
+                Want a live connection instead of a file? Ask us about a pilot.
+              </p>
+            </div>
+          </section>
+
           <div className={styles.panel}>
             <h2 className={styles.h3}>Your GSTIN</h2>
             <p className={styles.muted}>
@@ -498,62 +638,6 @@ function Upload({
               />
             </label>
           </div>
-
-          <details className={styles.panel} open={fileCount > 0}>
-            <summary className={styles.h3}>
-              Also check rates, quantities and receipts{' '}
-              <em className={styles.optional}>optional: add your records</em>
-            </summary>
-            <ul className={styles.formats}>
-              <li>
-                <strong>Excel or CSV</strong> in Veyrafy’s template columns: suppliers, items,
-                purchase orders and goods receipts.{' '}
-                {all && (
-                  <a href={challengeApi.templateUrl(all.file)} download>
-                    Download the template
-                  </a>
-                )}
-              </li>
-              <li>
-                <strong>ERP goods-receipt export</strong> (JSON), as exported from your ERP.
-              </li>
-            </ul>
-            <div className={styles.actions}>
-              <Button
-                variant="secondary"
-                disabled={busy || fileCount >= 6}
-                onClick={() => records.current?.click()}
-              >
-                Add a records file
-              </Button>
-              <input
-                ref={records}
-                type="file"
-                hidden
-                accept=".xlsx,.csv,.json"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void addRecords(f);
-                  e.target.value = '';
-                }}
-              />
-            </div>
-            {fileCount > 0 && (
-              <ul className={styles.fileList}>
-                {state.records.files.map((f, k) => (
-                  <li key={k} className={styles.fileRow} data-state="done">
-                    <span className={styles.fileMark}>
-                      <Icon name="check" size={13} strokeWidth={2.8} />
-                    </span>
-                    <span className={styles.fileMain}>
-                      <span className={styles.fileName}>{f.name}</span>
-                      <span className={styles.fileMeta}>{f.summary}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </details>
         </>
       )}
 
