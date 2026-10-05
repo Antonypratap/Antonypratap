@@ -97,7 +97,10 @@ export function buildComparison(x: ComparisonInput): ApiComparison | null {
     if (failed.length) return { result: 'mismatch', note: failed.map((c) => c.message).join(' ') };
     if (relevant.some((c) => c.outcome === 'pass')) return { result: 'match', note: null };
     const why = relevant.find((c) => c.naReason)?.naReason ?? null;
-    return { result: 'not_checked', note: why ? naText(why) : 'Not checked yet.' };
+    // A check that does not apply has nothing to compare; one not run yet still has to be, unless
+    // the invoice was cleared without it.
+    if (why || x.cleared) return { result: 'not_compared', note: why ? naText(why) : null };
+    return { result: 'needs_confirmation', note: 'Not checked yet.' };
   };
   const add = (
     section: string,
@@ -125,7 +128,7 @@ export function buildComparison(x: ComparisonInput): ApiComparison | null {
       label: 'All required values read',
       invoice: null,
       erp: null,
-      result: 'not_checked',
+      result: 'needs_confirmation',
       note: 'Some required values could not be read with certainty, so they cannot be compared with the ERP yet.',
     });
   else add('Invoice', 'All required values read', null, null, ['R01']);
@@ -259,7 +262,8 @@ export function buildComparison(x: ComparisonInput): ApiComparison | null {
   add('Totals', 'Invoice total', money(h.totalPaise), money(calculated), ['R09']);
 
   const mismatches = rows.filter((r) => r.result === 'mismatch');
-  const notChecked = rows.filter((r) => r.result === 'not_checked').length;
+  const count = (result: Row['result']) => rows.filter((r) => r.result === result).length;
+  const toConfirm = count('needs_confirmation');
   const matched = rows.filter((r) => r.result === 'match').length;
   const verdict: ApiComparison['verdict'] = mismatches.length
     ? 'mismatch'
@@ -277,7 +281,7 @@ export function buildComparison(x: ComparisonInput): ApiComparison | null {
           }${x.po ? ')' : ''}${h.totalPaise !== null ? `; total ${money(h.totalPaise)}` : ''}.`
         : unread
           ? 'Veyrafy could not read this invoice well enough to compare it with your ERP. Answer the question above, or upload a clearer copy.'
-          : `${notChecked} value${notChecked === 1 ? '' : 's'} still to be confirmed before this invoice can be cleared.`;
+          : `${toConfirm} value${toConfirm === 1 ? '' : 's'} still to be confirmed before this invoice can be cleared.`;
   return {
     source: 'erp_checks',
     verdict,
@@ -292,7 +296,9 @@ export function buildComparison(x: ComparisonInput): ApiComparison | null {
     summary,
     matched,
     mismatched: mismatches.length,
-    notChecked,
+    unmatched: count('unmatched'),
+    needsConfirmation: toConfirm,
+    notCompared: count('not_compared'),
     rows,
   };
 }

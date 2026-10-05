@@ -8,7 +8,9 @@ type Row = ApiComparison['rows'][number];
 const RESULT_LABEL: Record<Row['result'], string> = {
   match: 'Matches',
   mismatch: 'Does not match',
-  not_checked: 'Not checked',
+  unmatched: 'No counterpart',
+  needs_confirmation: 'To confirm',
+  not_compared: 'Not compared',
 };
 
 /**
@@ -35,7 +37,7 @@ export function ErpComparison({
   const { verdict } = comparison;
   const [onlyDifferences, setOnlyDifferences] = useState(verdict === 'mismatch');
   const shown = onlyDifferences
-    ? comparison.rows.filter((r) => r.result !== 'match')
+    ? comparison.rows.filter((r) => r.result !== 'match' && r.result !== 'not_compared')
     : comparison.rows;
   const sections = [...new Set(shown.map((r) => r.section))];
   const total = comparison.rows.length;
@@ -66,9 +68,17 @@ export function ErpComparison({
             <dt>Differ</dt>
             <dd>{comparison.mismatched}</dd>
           </div>
-          <div data-tone="not_checked">
-            <dt>Open</dt>
-            <dd>{comparison.notChecked}</dd>
+          <div data-tone="unmatched">
+            <dt>Unmatched</dt>
+            <dd>{comparison.unmatched}</dd>
+          </div>
+          <div data-tone="needs_confirmation">
+            <dt>To confirm</dt>
+            <dd>{comparison.needsConfirmation}</dd>
+          </div>
+          <div data-tone="not_compared">
+            <dt>Not compared</dt>
+            <dd>{comparison.notCompared}</dd>
           </div>
         </dl>
       </header>
@@ -109,7 +119,7 @@ export function ErpComparison({
       </div>
 
       {shown.length === 0 ? (
-        <p className={styles.empty}>Nothing needs attention: every value matches.</p>
+        <p className={styles.empty}>Nothing needs attention: every value compared matches.</p>
       ) : (
         <div className={styles.scroll}>
           <table className={styles.table}>
@@ -146,8 +156,10 @@ export function ErpComparison({
                         <span className={styles.mark} aria-label={RESULT_LABEL[r.result]}>
                           {r.result === 'match' ? (
                             <Icon name="check" size={15} strokeWidth={2.6} />
-                          ) : r.result === 'mismatch' ? (
+                          ) : r.result === 'mismatch' || r.result === 'unmatched' ? (
                             <Icon name="close" size={14} strokeWidth={2.6} />
+                          ) : r.result === 'needs_confirmation' ? (
+                            '?'
                           ) : (
                             '–'
                           )}

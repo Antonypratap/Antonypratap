@@ -1930,6 +1930,18 @@ export class Veyra {
     const min = (await this.settings()).confidenceMinBp;
     const v = <T extends string | number>(path: string) =>
       readField<T>(f, path as never, min).value;
+    // Printed but not read with certainty: never taken as "not printed" (zero) by the comparison.
+    const unclear = [
+      'header.taxablePaise',
+      'header.cgstPaise',
+      'header.sgstPaise',
+      'header.igstPaise',
+      'header.roundOffPaise',
+      'header.totalPaise',
+    ].filter((path) => {
+      const state = readField(f, path as never, min).state;
+      return state !== 'usable' && state !== 'absent';
+    });
     const lines = await this.db
       .select({ lineNo: t.invoiceLines.lineNo })
       .from(t.invoiceLines)
@@ -1964,6 +1976,7 @@ export class Veyra {
       roundOffPaise: v<number>('header.roundOffPaise'),
       totalPaise: v<number>('header.totalPaise'),
       freightPaise: freight.length ? freight.reduce((a, b) => a + b, 0) : null,
+      unclear,
       lines: lines.map(({ lineNo }) => ({
         lineNo,
         description: v<string>(`lines[${lineNo}].description`),
@@ -2021,14 +2034,20 @@ export class Veyra {
   /** The receipt comparison for an invoice, exactly as it is decided and shown. */
   async receiptView(invoiceId: string) {
     const side = await this.invoiceSide(invoiceId);
-    const record = await this.receiptRecordFor(side);
-    if (!record) return null;
+    const found = await this.receiptRecordFor(side);
+    if (!found) return null;
+    const { record, otherReceipts } = found;
     const duplicates = await this.receiptDuplicates(invoiceId, side);
-    return { side, record, ...receiptComparison(side, record, { duplicates }) };
+    return { side, record, ...receiptComparison(side, record, { duplicates, otherReceipts }) };
   }
 
-  /** The ERP receipt record this invoice belongs to, if the ERP exported one. */
-  async receiptRecordFor(side: InvoiceSide): Promise<ReceiptRecord | null> {
+  /**
+   * The ERP receipt record this invoice belongs to, if the ERP exported one, and the other
+   * receipts the ERP holds for the same invoice (the comparison asks which is right).
+   */
+  async receiptRecordFor(
+    side: InvoiceSide,
+  ): Promise<{ record: ReceiptRecord; otherReceipts: string[] } | null> {
     if (!side.invoiceNumber) return null;
     const rows = await this.db
       .select()
@@ -2038,8 +2057,14 @@ export class Veyra {
     const picked = pickRecord(
       rows.map((r) => ({ record: JSON.parse(r.recordJson) as ReceiptRecord })),
       side.vendorName,
+      side.lines,
     );
-    return picked?.record ?? null;
+    return picked
+      ? {
+          record: picked.picked.record,
+          otherReceipts: picked.alternatives.map((a) => a.record.grnNo),
+        }
+      : null;
   }
 
   /**
@@ -2070,7 +2095,9 @@ export class Veyra {
         verdict: c.verdict,
         matched: c.matched,
         mismatched: c.mismatched,
-        notChecked: c.notChecked,
+        unmatched: c.unmatched,
+        needsConfirmation: c.needsConfirmation,
+        notCompared: c.notCompared,
         summary: c.summary.slice(0, 2000),
       });
       await this.syncQuestions(tx, invoiceId, questions);

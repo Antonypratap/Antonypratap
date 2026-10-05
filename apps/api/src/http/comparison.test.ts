@@ -60,7 +60,9 @@ describe('invoice compared with the ERP', () => {
       result: 'match',
     });
     expect(row(c, 'Totals', 'Invoice total')).toMatchObject({ result: 'match' });
-    expect(c?.rows.filter((r) => r.result === 'not_checked')).toEqual([]);
+    expect(
+      c?.rows.filter((r) => r.result === 'needs_confirmation' || r.result === 'not_compared'),
+    ).toEqual([]);
   });
 
   it('a rate above the order is a mismatch, with both values and a summary for rejecting', async () => {

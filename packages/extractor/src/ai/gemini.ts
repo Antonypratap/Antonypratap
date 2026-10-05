@@ -13,7 +13,7 @@ import {
 } from '@veyra/shared';
 import { ExtractorError, type Extractor, type ExtractorInput } from '../extractor';
 import { imageSize } from '../local/image';
-import { parseAmount, parseDate } from '../local/parse';
+import { footerRateProven, parseAmount, parseDate } from '../local/parse';
 import { rotationNote, uprightImage, type Rotation } from '../local/orientation';
 
 /**
@@ -193,7 +193,8 @@ Header fields:
   roundOff: as printed including its sign, for example "(-)0.29"; total: the grand total.
 Lines: one entry per item row, in printed order. quantity: only the number (for example "16,000.00");
 uom: only the unit (for example "Nos"); rate: the unit price; discount: the discount amount;
-taxable: the line amount; gstRate: the GST rate (for example "18 %").
+taxable: the line's amount column ("Amount", "Taxable Value"; for quantity 1 it is printed the same
+as the rate: give it in both); gstRate: the GST rate printed on the line (for example "18 %").
 otherCharges: charges printed outside the item rows (freight, packing, insurance) with their amount.
 otherPrinted: EVERY other labelled value printed on the invoice that has no field above, with its
 label as printed, for example: buyer name, due date, IRN, Ack No, Ack Date, e-way bill number,
@@ -358,10 +359,10 @@ export function toExtraction(
     } as ExtractedLine;
   });
   const warnings = [`Read by the AI reader (${version}); every value is checked by Veyrafy.`];
-  if (lineAmountsFromTotals(header, lines))
-    warnings.push(
-      'The line amounts were read from the amount column; they add up to the invoice’s own totals.',
-    );
+  const amounts = lineAmountsFromTotals(header, lines);
+  if (amounts) warnings.push(amounts);
+  const footer = footerRateFromPrinted(header, lines, reading.otherPrinted ?? [], sizes);
+  if (footer) warnings.push(footer);
   for (const c of reading.otherCharges ?? [])
     warnings.push(
       `${c.label}${c.amount ? ` ${c.amount}` : ''} is printed outside the item lines; check it against the order.`,
@@ -396,27 +397,45 @@ export function toExtraction(
 }
 
 /**
- * An invoice with no per-line tax (tax only in the footer, as Tally prints it) has one amount
- * column: the line amount before tax. A reading that gives that amount as the line total and
- * leaves the line's taxable value "not printed" means the same printed number. It is taken as the
- * taxable value only when every such line has one and they add up exactly to the invoice's own
- * goods value (or to its total less its tax and round-off); otherwise nothing changes and a value
- * not read stays not read. Returns whether it applied.
+ * A line amount the reading left "not printed" (not one it could not read: that stays not read),
+ * filled only by a rule that is proven on the invoice itself, never from the ERP:
+ *
+ * - the amount column given as the line total, on an invoice with no per-line tax (Tally prints
+ *   tax only in the footer: its one amount column is the line amount before tax); or
+ * - quantity × rate, when that is exact to the paisa and the line has no discount.
+ *
+ * Applied only when every line then has an amount, the two rules never disagree on a line, and
+ * the amounts add up EXACTLY to the invoice's own goods value (or, when none is printed, to its
+ * total less its tax and round-off). Otherwise nothing changes and the amounts are asked. Returns
+ * the explanation when it applied, else null.
  */
-export function lineAmountsFromTotals(header: ExtractedHeader, lines: ExtractedLine[]): boolean {
+export function lineAmountsFromTotals(
+  header: ExtractedHeader,
+  lines: ExtractedLine[],
+): string | null {
   const notPrinted = (f: Field<unknown>) =>
     f.value === null && f.evidence === null && f.confidenceBp > 0;
-  const moved = lines.filter((l) => notPrinted(l.taxablePaise) && l.lineTotalPaise.value !== null);
-  if (moved.length === 0) return false;
-  if (
-    lines.some(
-      (l) => l.cgstPaise.value !== null || l.sgstPaise.value !== null || l.igstPaise.value !== null,
-    )
-  )
-    return false;
-  if (lines.some((l) => l.taxablePaise.value === null && !moved.includes(l))) return false;
+  const lineTax = lines.some(
+    (l) => l.cgstPaise.value !== null || l.sgstPaise.value !== null || l.igstPaise.value !== null,
+  );
+  const filled = new Map<ExtractedLine, { paise: number; from: 'column' | 'qty_rate' }>();
+  for (const l of lines) {
+    if (l.taxablePaise.value !== null) continue;
+    if (!notPrinted(l.taxablePaise)) return null;
+    const column = !lineTax ? (l.lineTotalPaise.value as number | null) : null;
+    const calc = exactProduct(
+      l.qtyMilli.value as number | null,
+      l.unitPricePaise.value as number | null,
+      l.discountPaise.value as number | null,
+    );
+    if (column !== null && calc !== null && column !== calc) return null;
+    if (column !== null) filled.set(l, { paise: column, from: 'column' });
+    else if (calc !== null) filled.set(l, { paise: calc, from: 'qty_rate' });
+    else return null;
+  }
+  if (filled.size === 0) return null;
   const sum = lines.reduce(
-    (a, l) => a + ((l.taxablePaise.value ?? l.lineTotalPaise.value) as number),
+    (a, l) => a + ((l.taxablePaise.value as number | null) ?? filled.get(l)?.paise ?? 0),
     0,
   );
   const h = header;
@@ -430,9 +449,112 @@ export function lineAmountsFromTotals(header: ExtractedHeader, lines: ExtractedL
     goods !== null
       ? goods === sum
       : total !== null && total === sum + tax + ((h.roundOffPaise.value as number | null) ?? 0);
-  if (!proven) return false;
-  for (const l of moved) l.taxablePaise = { ...l.lineTotalPaise } as ExtractedLine['taxablePaise'];
-  return true;
+  if (!proven) return null;
+  const calculated: number[] = [];
+  for (const [l, v] of filled) {
+    if (v.from === 'column') {
+      l.taxablePaise = { ...l.lineTotalPaise } as ExtractedLine['taxablePaise'];
+      continue;
+    }
+    calculated.push(l.lineNo);
+    // Calculated, not printed: the evidence says so, and points at the rate it came from.
+    l.taxablePaise = {
+      value: v.paise,
+      confidenceBp: l.unitPricePaise.confidenceBp,
+      evidence: l.unitPricePaise.evidence
+        ? {
+            ...l.unitPricePaise.evidence,
+            text: `quantity × rate (${l.qtyMilli.evidence?.text ?? ''} × ${l.unitPricePaise.evidence.text})`,
+          }
+        : null,
+      source: l.unitPricePaise.source,
+    } as ExtractedLine['taxablePaise'];
+  }
+  const what = goods !== null ? 'the goods value printed' : 'the total less tax and round-off';
+  return calculated.length
+    ? `The amount of line${calculated.length === 1 ? '' : 's'} ${calculated.join(', ')} was not given separately: it is quantity × rate, exact to the paisa, and every line amount adds up exactly to ${what}.`
+    : `The line amounts were read from the amount column; they add up exactly to ${what}.`;
+}
+
+/** quantity × rate in paise when exact to the paisa (no rounding), and no discount; else null. */
+function exactProduct(
+  qtyMilli: number | null,
+  ratePaise: number | null,
+  discountPaise: number | null,
+): number | null {
+  if (qtyMilli === null || ratePaise === null || qtyMilli <= 0 || ratePaise < 0) return null;
+  if (discountPaise !== null && discountPaise !== 0) return null;
+  const product = BigInt(qtyMilli) * BigInt(ratePaise);
+  if (product % 1000n !== 0n) return null;
+  const v = product / 1000n;
+  return v <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(v) : null;
+}
+
+/**
+ * The GST rate printed only in the footer ("CGST @ 9%", "SGST @ 9%"), as the AI reports it among
+ * the other labelled values: given to every line only when no line has a rate of its own, the
+ * footer names exactly one CGST and one SGST rate, equal, with equal CGST and SGST amounts (or
+ * exactly one IGST rate and no CGST/SGST), and that rate gives EXACTLY the tax printed (see
+ * footerRateProven: exempt lines, lines at another rate, or a second rate leave it asked).
+ */
+type Found = { printed: string; page: number; box: number[] | null };
+export function footerRateFromPrinted(
+  header: ExtractedHeader,
+  lines: ExtractedLine[],
+  other: AiReading['otherPrinted'],
+  sizes: PageSizes = new Map(),
+): string | null {
+  if (lines.length === 0 || lines.some((l) => l.gstRateBp.value !== null || l.gstRateBp.evidence))
+    return null;
+  const found = {
+    cgst: new Map<number, Found>(),
+    sgst: new Map<number, Found>(),
+    igst: new Map<number, Found>(),
+  };
+  for (const o of other ?? []) {
+    const textOf = `${o.label} ${o.printed ?? ''}`.replace(/\s+/g, ' ');
+    for (const m of textOf.matchAll(
+      /\b(CGST|SGST|UTGST|IGST)\b[^%\d]{0,12}(\d{1,2}(?:\.\d{1,2})?)\s*%/gi,
+    )) {
+      const r = parseRatePercent(`${m[2]}%`);
+      if (!r.ok) return null;
+      const head = (m[1] ?? '').toLowerCase();
+      const key = head === 'utgst' ? 'sgst' : (head as 'cgst' | 'sgst' | 'igst');
+      found[key].set(r.value as number, { printed: m[0], page: o.page ?? 1, box: o.box ?? null });
+    }
+  }
+  const h = header;
+  let rateBp: number;
+  let divisor: number;
+  let printed: number | null;
+  let evidence: Found;
+  if (found.cgst.size === 1 && found.sgst.size === 1 && found.igst.size === 0) {
+    const [[c, cp]] = [...found.cgst] as [[number, Found]];
+    const [[g]] = [...found.sgst] as [[number, Found]];
+    if (c !== g || h.cgstPaise.value === null || h.cgstPaise.value !== h.sgstPaise.value)
+      return null;
+    rateBp = c * 2;
+    divisor = 20_000;
+    printed = h.cgstPaise.value as number;
+    evidence = cp;
+  } else if (found.igst.size === 1 && found.cgst.size === 0 && found.sgst.size === 0) {
+    const [[i, ip]] = [...found.igst] as [[number, Found]];
+    rateBp = i;
+    divisor = 10_000;
+    printed = h.igstPaise.value as number | null;
+    evidence = ip;
+  } else return null;
+  if (!footerRateProven(lines, rateBp, divisor, printed, h.taxablePaise.value as number | null))
+    return null;
+  const page = evidence.page;
+  for (const l of lines)
+    l.gstRateBp = {
+      value: rateBp,
+      confidenceBp: confidenceBp(AI_CONFIDENCE_BP),
+      evidence: { page, text: evidence.printed, bbox: bboxOf(page, evidence.box, sizes) },
+      source: 'ai_vision',
+    } as ExtractedLine['gstRateBp'];
+  return `GST rate ${rateBp / 100}% read from the tax printed under the items (${evidence.printed}) for every line: no line prints its own rate, and that rate gives exactly the tax printed.`;
 }
 
 type Part = { text: string } | { inline_data: { mime_type: string; data: string } };

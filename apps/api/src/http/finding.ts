@@ -37,6 +37,8 @@ export interface ReceiptDifferences {
     invoice: string | null;
     erp: string | null;
     path: string | null;
+    /** Not a proven difference: for a person to confirm (two items that may be the same). */
+    confirm?: boolean;
   }[];
   totalDeltaPaise: number | null;
 }
@@ -341,6 +343,17 @@ const RECEIPT_ACTION: Partial<Record<ApiFinding['type'], string>> = {
   item: 'Check item',
 };
 
+/** On the receipt path, what a person must confirm (not a difference). */
+const RECEIPT_CONFIRM: Record<string, { type: ApiFinding['type']; label: string; action: string }> =
+  {
+    Item: { type: 'item', label: 'Confirm same item', action: 'Confirm item' },
+    'Matched ERP record': {
+      type: 'item',
+      label: 'Confirm goods receipt',
+      action: 'Confirm receipt',
+    },
+  };
+
 /** The invoice's own checks on the receipt path, named as the screen names them. */
 const RECEIPT_OWN: Record<string, { type: ApiFinding['type']; label: string; action: string }> = {
   'Not already in Veyrafy': {
@@ -368,16 +381,21 @@ const RECEIPT_OWN: Record<string, { type: ApiFinding['type']; label: string; act
 
 function fromReceipt(input: FindingInput, r: ReceiptDifferences): ApiFinding | null {
   // Most serious first: a duplicate, an invalid GSTIN, then the value behind a difference (a
-  // line or supplier value) before the totals it moves, then the invoice's own arithmetic.
+  // line or supplier value) before the totals it moves, then the invoice's own arithmetic. A
+  // proven difference comes before anything that is only to be confirmed.
+  const proven = r.differences.filter((d) => !d.confirm);
   const first =
-    r.differences.find((d) => d.label === 'Not already in Veyrafy') ??
-    r.differences.find((d) => d.label === 'GSTIN valid') ??
-    r.differences.find(
+    proven.find((d) => d.label === 'Not already in Veyrafy') ??
+    proven.find((d) => d.label === 'GSTIN valid') ??
+    proven.find(
       (d) => d.section !== 'Totals' && d.section !== 'Invoice arithmetic' && d.label !== 'Amount',
     ) ??
+    proven[0] ??
     r.differences[0];
   if (!first) return null;
+  const confirm = first.confirm === true;
   const own =
+    (confirm ? RECEIPT_CONFIRM[first.label] : undefined) ??
     RECEIPT_OWN[first.label] ??
     (first.section === 'Invoice arithmetic'
       ? { type: 'totals' as const, label: "Line amount doesn't add up", action: 'Check line' }
@@ -387,7 +405,7 @@ function fromReceipt(input: FindingInput, r: ReceiptDifferences): ApiFinding | n
   const others = r.differences.length - 1;
   return {
     type,
-    state: 'review',
+    state: confirm ? 'confirm' : 'review',
     label:
       own?.label ??
       (type === 'totals'
@@ -401,9 +419,11 @@ function fromReceipt(input: FindingInput, r: ReceiptDifferences): ApiFinding | n
           ? 'May be paid twice'
           : `${rupees(input.totalPaise)} could be paid twice`
         : impactText(delta, `ERP receipt GRN ${r.grnNo}`),
-    explanation: own
-      ? `${first.label === 'Not already in Veyrafy' ? `${first.erp ?? 'Another copy is in Veyrafy'}.` : `The invoice says ${first.invoice ?? 'nothing'}; ${first.erp ?? ''}.`}`
-      : `${first.section}: the invoice says ${first.invoice ?? 'nothing'}, your ERP receipt GRN ${r.grnNo} says ${first.erp ?? 'nothing'}.`,
+    explanation: confirm
+      ? `${first.section}: the invoice says ${first.invoice ?? 'nothing'}, your ERP receipt GRN ${r.grnNo} says ${first.erp ?? 'nothing'}. Not a proven difference: confirm it before the invoice is cleared.`
+      : own
+        ? `${first.label === 'Not already in Veyrafy' ? `${first.erp ?? 'Another copy is in Veyrafy'}.` : `The invoice says ${first.invoice ?? 'nothing'}; ${first.erp ?? ''}.`}`
+        : `${first.section}: the invoice says ${first.invoice ?? 'nothing'}, your ERP receipt GRN ${r.grnNo} says ${first.erp ?? 'nothing'}.`,
     compare: [
       {
         label: own

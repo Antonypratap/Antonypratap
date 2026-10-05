@@ -167,18 +167,56 @@ export function normalizeReceipt(raw: RawReceiptRecord): ReceiptRecord {
 export const invoiceNoKey = (invoiceNo: string): string => normalizeInvoiceNumber(invoiceNo);
 
 const STOP = new Set(['pvt', 'ltd', 'private', 'limited', 'co', 'the', 'and', 'fy', 'm', 's']);
+/**
+ * Cyrillic and Greek letters that print exactly like a Latin capital (an OCR or a font can give
+ * "МIRROR" with a Cyrillic М). Mapped to the Latin letter they look like in capitals, the way
+ * item names are printed; nothing else is changed.
+ */
+const LOOKALIKE: Readonly<Record<string, string>> = Object.fromEntries(
+  (
+    [
+      ['АаΑα', 'a'],
+      ['ВвΒβ', 'b'],
+      ['СсϹϲ', 'c'],
+      ['ЕеΕε', 'e'],
+      ['НнΗη', 'h'],
+      ['ІіΙι', 'i'],
+      ['Јј', 'j'],
+      ['КкΚκ', 'k'],
+      ['МмΜμ', 'm'],
+      ['Νν', 'n'],
+      ['ОоΟο', 'o'],
+      ['РрΡρ', 'p'],
+      ['Ѕѕ', 's'],
+      ['ТтΤτ', 't'],
+      ['УуΥυ', 'y'],
+      ['ХхΧχ', 'x'],
+      ['Ζζ', 'z'],
+    ] as const
+  ).flatMap(([from, to]) => [...from].map((c) => [c, to])),
+);
+/** "mirrors" → "mirror", "boxes" → "box", "batteries" → "battery"; "glass" and short words stay. */
+function singular(t: string): string {
+  if (t.length <= 3 || !t.endsWith('s') || t.endsWith('ss') || /\d/.test(t)) return t;
+  if (t.length > 4 && t.endsWith('ies')) return `${t.slice(0, -3)}y`;
+  if (/(?:x|ch|sh|ss)es$/.test(t)) return t.slice(0, -2);
+  return t.slice(0, -1);
+}
 const tokens = (s: string): Set<string> =>
   new Set(
-    s
-      .normalize('NFKC')
+    [...s.normalize('NFKC')]
+      .map((c) => LOOKALIKE[c] ?? c)
+      .join('')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, ' ')
       .split(' ')
-      .filter((t) => t && !STOP.has(t) && !/^\d{2,4}$/.test(t)),
+      .filter((t) => t && !STOP.has(t) && !/^\d{2,4}$/.test(t))
+      .map(singular),
   );
 const subset = (a: Set<string>, b: Set<string>) => a.size > 0 && [...a].every((t) => b.has(t));
-/** Two names are the same when every word of one appears in the other (case, punctuation and
- *  "Pvt Ltd"-style words ignored). "176x89mm" and "175x89mm" are different words. */
+/** Two names are the same when every word of one appears in the other (case, punctuation,
+ *  plurals, look-alike letters and "Pvt Ltd"-style words ignored). "176x89mm" and "175x89mm" are
+ *  different words. */
 export function sameName(a: string | null, b: string | null): boolean {
   if (!a || !b) return false;
   const ta = tokens(a);
@@ -193,15 +231,47 @@ const similarity = (a: string | null, b: string | null): number => {
   return common / Math.max(1, new Set([...ta, ...tb]).size);
 };
 
-/** The ERP record an invoice belongs to: same invoice number, and the same supplier if read. */
+/** How many of the invoice's lines a receipt's lines account for (by name, then quantity). */
+function lineFit(lines: InvoiceSide['lines'], erp: ReceiptRecord): number {
+  return lines.reduce((s, l) => {
+    const named = erp.lines.filter((e) => sameName(l.description, e.name));
+    if (named.length === 0) return s;
+    return s + 1 + (named.some((e) => l.qtyMilli !== null && e.qtyMilli === l.qtyMilli) ? 1 : 0);
+  }, 0);
+}
+
+/**
+ * The ERP record an invoice belongs to: same invoice number, and the same supplier if read. A
+ * receipt exported again (same GRN number) replaces the earlier export. When the ERP holds more
+ * than one receipt for the invoice, the one whose lines fit the invoice best is compared and the
+ * others are returned, so the comparison asks which receipt is right instead of assuming it.
+ */
 export function pickRecord<T extends { record: ReceiptRecord }>(
   candidates: readonly T[],
   vendorName: string | null,
-): T | null {
+  lines: InvoiceSide['lines'] = [],
+): { picked: T; alternatives: T[] } | null {
   const fits = vendorName
     ? candidates.filter((c) => sameName(c.record.vendorName, vendorName))
     : [...candidates];
-  return fits.at(-1) ?? null;
+  const latest = new Map<string, T>();
+  for (const c of fits) {
+    latest.delete(c.record.grnNo);
+    latest.set(c.record.grnNo, c);
+  }
+  const all = [...latest.values()];
+  if (all.length === 0) return null;
+  // Best fit; on a tie the most recently exported.
+  let picked = all[all.length - 1] as T;
+  let best = lineFit(lines, picked.record);
+  for (const c of all) {
+    const f = lineFit(lines, c.record);
+    if (f > best) {
+      best = f;
+      picked = c;
+    }
+  }
+  return { picked, alternatives: all.filter((c) => c !== picked) };
 }
 
 /** What the invoice says, as Veyrafy read it (null: not read with certainty). */
@@ -220,6 +290,11 @@ export interface InvoiceSide {
   totalPaise: number | null;
   /** Freight or other charges printed outside the item lines, as read. */
   freightPaise: number | null;
+  /**
+   * Header values printed but not read with certainty (paths). Null above means "not printed"
+   * only when the path is not listed here: an unread round-off or tax is never taken as zero.
+   */
+  unclear?: readonly string[];
   lines: {
     lineNo: number;
     description: string | null;
@@ -237,16 +312,29 @@ export interface InvoiceSide {
 export interface ReceiptContext {
   /** Other invoices already in Veyrafy with this supplier's invoice number (not rejected). */
   duplicates?: readonly string[];
+  /** Other ERP receipts (GRN numbers) for the same supplier invoice, not compared. */
+  otherReceipts?: readonly string[];
 }
 
+type Result = ApiComparison['rows'][number]['result'];
 type Row = ApiComparison['rows'][number] & {
-  blocking: boolean;
-  /** The invoice field the row compares (a blocking row waits for it as a question). */
+  /** The invoice field the row compares (a value to confirm is asked as a question). */
   path?: string;
 };
 const money = (p: number | null) => (p === null ? null : formatInr(paise(p)));
 const qty = (m: number | null, uom: string | null) =>
   m === null ? null : `${formatQty(milliQty(m))}${uom ? ` ${uom.toUpperCase()}` : ''}`;
+
+/** A row that is a difference or something to confirm, as the finding and the summary use it. */
+export interface ReceiptDifference {
+  section: string;
+  label: string;
+  invoice: string | null;
+  erp: string | null;
+  path: string | null;
+  /** Not a proven difference: a person must confirm it (shown as "confirm", never "differ"). */
+  confirm: boolean;
+}
 
 export function compareWithReceipt(
   inv: InvoiceSide,
@@ -259,6 +347,15 @@ export function compareWithReceipt(
 /**
  * The comparison, and the invoice fields that could not be compared because they were not read
  * with certainty (each is asked as a question, like any other value not read).
+ *
+ * Every row has exactly one result:
+ * - `match` / `mismatch`: both sides hold the value and it was compared;
+ * - `unmatched`: an item on one side with no counterpart on the other;
+ * - `needs_confirmation`: there is not enough evidence either way (a required value not read with
+ *   certainty, or two items that may be the same); the invoice waits for a person;
+ * - `not_compared`: there is nothing to compare it with (the ERP does not hold the value, or the
+ *   two are different kinds of value); it never holds the invoice up and is never a difference.
+ * The counts are taken from these final rows only.
  */
 export function receiptComparison(
   inv: InvoiceSide,
@@ -267,49 +364,53 @@ export function receiptComparison(
 ): {
   comparison: ApiComparison;
   unread: string[];
-  /** The mismatched values with the invoice field each was read from. */
-  differences: {
-    section: string;
-    label: string;
-    invoice: string | null;
-    erp: string | null;
-    path: string | null;
-  }[];
+  /** Differences (mismatched and unmatched) and the items to confirm, with their invoice field. */
+  differences: ReceiptDifference[];
   /** Invoice total (before its round-off) less the receipt's total; null when not read. */
   totalDeltaPaise: number | null;
 } {
   const rows: Row[] = [];
   const push = (r: Omit<Row, 'note'> & { note?: string | null }) => rows.push({ note: null, ...r });
-  /** Compare two values: not read → not checked (blocking); ERP lacks it → not checked. */
+  /**
+   * Compare two values. A required value not read on the invoice must be confirmed; an optional
+   * one not read, a value the ERP does not hold, or one that cannot be compared, is not compared.
+   */
   const cmp = (
     section: string,
     label: string,
     invoice: string | null,
     erpText: string | null,
     equal: boolean | null,
-    note?: string,
-    path?: string,
+    o: { note?: string; path?: string; required?: boolean } = {},
   ) => {
+    const path = o.path ? { path: o.path } : {};
     if (invoice === null)
-      return push({
-        section,
-        label,
-        invoice,
-        erp: erpText,
-        result: 'not_checked',
-        blocking: true,
-        note: 'Not read on the invoice with certainty.',
-        ...(path ? { path } : {}),
-      });
+      return o.required === false
+        ? push({
+            section,
+            label,
+            invoice,
+            erp: erpText,
+            result: 'not_compared',
+            note: 'Not read on the invoice; not needed to clear it.',
+          })
+        : push({
+            section,
+            label,
+            invoice,
+            erp: erpText,
+            result: 'needs_confirmation',
+            note: 'Not read on the invoice with certainty. Confirm it to compare.',
+            ...path,
+          });
     if (erpText === null || equal === null)
       return push({
         section,
         label,
         invoice,
         erp: erpText,
-        result: 'not_checked',
-        blocking: false,
-        note: note ?? 'The ERP record does not hold this value.',
+        result: 'not_compared',
+        note: o.note ?? 'The ERP record does not hold this value.',
       });
     return push({
       section,
@@ -317,21 +418,22 @@ export function receiptComparison(
       invoice,
       erp: erpText,
       result: equal ? 'match' : 'mismatch',
-      blocking: false,
-      note: equal ? null : (note ?? 'The invoice and the ERP differ.'),
-      ...(path ? { path } : {}),
+      note: equal ? null : (o.note ?? 'The invoice and the ERP differ.'),
+      ...path,
     });
   };
 
   // The record itself.
+  const others = context.otherReceipts ?? [];
   push({
     section: 'ERP receipt',
     label: 'Matched ERP record',
     invoice: inv.invoiceNumber,
     erp: `GRN ${erp.grnNo}${erp.grnDate ? ` of ${dateText(erp.grnDate)}` : ''}`,
-    result: 'match',
-    blocking: false,
-    note: 'Found by the supplier’s invoice number and name.',
+    result: others.length ? 'needs_confirmation' : 'match',
+    note: others.length
+      ? `Your ERP holds more than one receipt for this invoice (also GRN ${others.join(', GRN ')}). GRN ${erp.grnNo} fits the invoice best; confirm it is the right one.`
+      : 'Found by the supplier’s invoice number and name.',
   });
 
   // Paying the same invoice twice: another copy (a second scan, or the ERP's attachment) of this
@@ -343,7 +445,6 @@ export function receiptComparison(
     invoice: inv.invoiceNumber,
     erp: dups.length ? `Also in Veyrafy: ${dups.join(', ')}` : 'No other copy',
     result: dups.length ? 'mismatch' : 'match',
-    blocking: false,
     note: dups.length
       ? 'The same supplier invoice number is already in Veyrafy. Check it is not a duplicate before paying.'
       : null,
@@ -356,18 +457,14 @@ export function receiptComparison(
     inv.vendorName,
     erp.vendorName,
     sameName(inv.vendorName, erp.vendorName),
-    undefined,
-    'header.vendorName',
+    {
+      path: 'header.vendorName',
+    },
   );
-  cmp(
-    'Supplier',
-    'GSTIN',
-    inv.vendorGstin,
-    null,
-    null,
-    'The ERP record carries no GSTIN.',
-    'header.vendorGstin',
-  );
+  cmp('Supplier', 'GSTIN', inv.vendorGstin, null, null, {
+    note: 'The ERP record carries no GSTIN.',
+    path: 'header.vendorGstin',
+  });
   // The GSTIN itself (format, checksum, state code), whether or not the ERP holds one.
   if (inv.vendorGstin !== null) {
     const valid = validateGstin(inv.vendorGstin).ok;
@@ -377,7 +474,6 @@ export function receiptComparison(
       invoice: inv.vendorGstin,
       erp: valid ? 'Valid format, state and checksum' : 'Not a valid GSTIN',
       result: valid ? 'match' : 'mismatch',
-      blocking: false,
       note: valid
         ? null
         : 'The GSTIN fails the format or checksum test: input tax credit is at risk.',
@@ -392,8 +488,7 @@ export function receiptComparison(
     inv.invoiceNumber,
     erp.invoiceNo,
     inv.invoiceNumber !== null && invoiceNoKey(inv.invoiceNumber) === invoiceNoKey(erp.invoiceNo),
-    undefined,
-    'header.invoiceNumber',
+    { path: 'header.invoiceNumber' },
   );
   const recorded = erp.erpInvoiceAmountPaise !== null && erp.erpInvoiceAmountPaise > 0;
   cmp(
@@ -402,27 +497,32 @@ export function receiptComparison(
     inv.invoiceDate ? dateText(inv.invoiceDate) : null,
     recorded && erp.erpInvoiceDate ? dateText(erp.erpInvoiceDate) : null,
     recorded ? inv.invoiceDate === erp.erpInvoiceDate : null,
-    recorded
-      ? undefined
-      : `The ERP has not recorded this invoice yet (its invoice amount is 0)${erp.erpInvoiceDate ? `, so its date ${dateText(erp.erpInvoiceDate)} is not compared` : ''}.`,
-    'header.invoiceDate',
+    {
+      ...(recorded
+        ? {}
+        : {
+            note: `The ERP has not recorded this invoice yet (its invoice amount is 0)${erp.erpInvoiceDate ? `, so its date ${dateText(erp.erpInvoiceDate)} is not compared` : ''}.`,
+          }),
+      path: 'header.invoiceDate',
+    },
   );
   // Never compared: the ERP record holds its internal order id, and nothing links it to the
-  // order number printed on the invoice. So it is shown, never matched, and an order number not
-  // read does not hold the invoice up (it would not be compared if it were read).
+  // order number printed on the invoice. Both are shown as they are, never matched, and an order
+  // number not read does not hold the invoice up (it would not be compared if it were read).
   push({
     section: 'Purchase order',
     label: 'Order',
     invoice: inv.poNumber,
-    erp: erp.poRef ? `ERP reference ${erp.poRef}` : null,
-    result: 'not_checked',
-    blocking: false,
+    erp: erp.poRef ? `ERP internal reference ${erp.poRef}` : null,
+    result: 'not_compared',
     note: 'The ERP record holds its internal order id, not the order number printed on the invoice, so the two are not compared.',
   });
 
-  // Lines: paired by item name, then quantity and rate (the ERP may list them in another order).
-  // Two lines whose names share no word are never paired by quantity or rate alone: equal
-  // quantities are common, and a wrong pairing reports a matching item as different.
+  // Lines, one to one. First by item name (the ERP may list them in another order); then two
+  // items whose names share no word are never paired: when exactly one invoice item and one ERP
+  // item are left that agree on quantity, rate and amount, they are shown once as "possibly the
+  // same item" for a person to confirm, never as a match and never as two differences.
+  type InvLine = InvoiceSide['lines'][number];
   const pairs: { inv: InvoiceSide['lines'][number] | null; erp: ReceiptLine | null }[] = [];
   const freeInv = new Set(inv.lines.map((_, i) => i));
   const freeErp = new Set(erp.lines.map((_, i) => i));
@@ -436,64 +536,130 @@ export function receiptComparison(
       const sameQty = l.qtyMilli !== null && l.qtyMilli === el.qtyMilli;
       const sameRate = l.unitPricePaise !== null && l.unitPricePaise === el.ratePaise;
       if (nameUnread && !(sameQty && sameRate)) return;
-      const s = name + (sameQty ? 1 : 0) + (sameRate ? 0.5 : 0);
+      const s =
+        (sameName(l.description, el.name) ? 2 : name) + (sameQty ? 1 : 0) + (sameRate ? 0.5 : 0);
       scored.push({ i, e, s });
     }),
   );
-  for (const { i, e } of scored.sort((a, b) => b.s - a.s))
+  // Highest score first; equal scores in document order (repeated names pair in order).
+  scored.sort((a, b) => b.s - a.s || a.i - b.i || a.e - b.e);
+  for (const { i, e } of scored)
     if (freeInv.has(i) && freeErp.has(e)) {
       freeInv.delete(i);
       freeErp.delete(e);
       pairs.push({ inv: inv.lines[i] ?? null, erp: erp.lines[e] ?? null });
     }
-  for (const i of freeInv) pairs.push({ inv: inv.lines[i] ?? null, erp: null });
-  for (const e of freeErp) pairs.push({ inv: null, erp: erp.lines[e] ?? null });
-  pairs.sort((a, b) => (a.inv?.lineNo ?? 999) - (b.inv?.lineNo ?? 999));
+  /** Agree on quantity, and on rate and amount wherever both sides hold them (one at least). */
+  const sameValues = (l: InvLine, e: ReceiptLine) =>
+    l.qtyMilli !== null &&
+    l.qtyMilli === e.qtyMilli &&
+    (l.unitPricePaise === null || e.ratePaise === null || l.unitPricePaise === e.ratePaise) &&
+    (l.taxablePaise === null || e.amountPaise === null || l.taxablePaise === e.amountPaise) &&
+    ((l.unitPricePaise !== null && l.unitPricePaise === e.ratePaise) ||
+      (l.taxablePaise !== null && l.taxablePaise === e.amountPaise));
+  const possible: { inv: InvLine; erp: ReceiptLine }[] = [];
+  for (const i of [...freeInv]) {
+    const l = inv.lines[i] as InvLine;
+    const fit = [...freeErp].filter((e) => sameValues(l, erp.lines[e] as ReceiptLine));
+    if (fit.length !== 1) continue;
+    const e = fit[0] as number;
+    const back = [...freeInv].filter((j) =>
+      sameValues(inv.lines[j] as InvLine, erp.lines[e] as ReceiptLine),
+    );
+    if (back.length !== 1) continue;
+    freeInv.delete(i);
+    freeErp.delete(e);
+    possible.push({ inv: l, erp: erp.lines[e] as ReceiptLine });
+  }
+  // An invoice item whose name was not read could be any ERP item left over.
+  const unreadLeft = [...freeInv].some((i) => inv.lines[i]?.description === null);
+  type Entry =
+    | { kind: 'pair'; inv: InvLine; erp: ReceiptLine }
+    | { kind: 'possible'; inv: InvLine; erp: ReceiptLine }
+    | { kind: 'invoice'; inv: InvLine }
+    | { kind: 'erp'; erp: ReceiptLine };
+  const entries: Entry[] = [
+    ...pairs.map((p) => ({
+      kind: 'pair' as const,
+      inv: p.inv as InvLine,
+      erp: p.erp as ReceiptLine,
+    })),
+    ...possible.map((p) => ({ kind: 'possible' as const, ...p })),
+    ...[...freeInv].map((i) => ({ kind: 'invoice' as const, inv: inv.lines[i] as InvLine })),
+    ...[...freeErp].map((e) => ({ kind: 'erp' as const, erp: erp.lines[e] as ReceiptLine })),
+  ];
+  const lineOf = (x: Entry) => ('inv' in x ? x.inv.lineNo : 999);
+  entries.sort((a, b) => lineOf(a) - lineOf(b));
 
-  pairs.forEach((p, n) => {
-    const section = `Line ${p.inv?.lineNo ?? n + 1} · ${p.erp?.name ?? p.inv?.description ?? ''}`;
-    if (!p.erp || !p.inv) {
+  entries.forEach((p, n) => {
+    const section = `Line ${'inv' in p ? p.inv.lineNo : n + 1} · ${'erp' in p ? p.erp.name : (p.inv.description ?? '')}`;
+    if (p.kind === 'possible') {
       push({
         section,
         label: 'Item',
-        invoice: p.inv?.description ?? null,
-        erp: p.erp?.name ?? null,
-        result: 'mismatch',
-        blocking: false,
-        note: p.erp
-          ? 'Received in the ERP, but not on the invoice.'
-          : 'On the invoice, but not in the ERP receipt.',
+        invoice: p.inv.description,
+        erp: p.erp.name,
+        result: 'needs_confirmation',
+        // An item name not read is asked as a question (the rest of the line agrees).
+        ...(p.inv.description === null ? { path: `lines[${p.inv.lineNo}].description` } : {}),
+        note: `The names differ, but quantity${p.inv.unitPricePaise !== null && p.inv.unitPricePaise === p.erp.ratePaise ? ', rate' : ''}${p.inv.taxablePaise !== null && p.inv.taxablePaise === p.erp.amountPaise ? ' and amount' : ''} agree. Confirm whether this is the same item: it is not counted as a match or a difference.`,
+      });
+      return;
+    }
+    if (p.kind === 'invoice') {
+      if (p.inv.description === null) {
+        push({
+          section,
+          label: 'Item',
+          invoice: null,
+          erp: null,
+          result: 'needs_confirmation',
+          note: 'The item name was not read with certainty, so it could not be found in the ERP receipt. Confirm it to compare.',
+          path: `lines[${p.inv.lineNo}].description`,
+        });
+        return;
+      }
+      push({
+        section,
+        label: 'Item',
+        invoice: p.inv.description,
+        erp: null,
+        result: 'unmatched',
+        note: 'On the invoice, but not in the ERP receipt.',
+      });
+      return;
+    }
+    if (p.kind === 'erp') {
+      push({
+        section,
+        label: 'Item',
+        invoice: null,
+        erp: p.erp.name,
+        result: unreadLeft ? 'needs_confirmation' : 'unmatched',
+        note: unreadLeft
+          ? 'Received in the ERP; it may be the invoice item whose name was not read.'
+          : 'Received in the ERP, but not on the invoice.',
       });
       return;
     }
     const l = p.inv;
     const e = p.erp;
-    cmp(
-      section,
-      'Item',
-      l.description,
-      e.name,
-      sameName(l.description, e.name),
-      'The item names differ.',
-      `lines[${l.lineNo}].description`,
-    );
-    cmp(
-      section,
-      'HSN/SAC',
-      l.hsnSac,
-      e.hsn,
-      e.hsn === null ? null : l.hsnSac === e.hsn,
-      undefined,
-      `lines[${l.lineNo}].hsnSac`,
-    );
+    cmp(section, 'Item', l.description, e.name, sameName(l.description, e.name), {
+      note: 'The item names differ.',
+      path: `lines[${l.lineNo}].description`,
+    });
+    cmp(section, 'HSN/SAC', l.hsnSac, e.hsn, e.hsn === null ? null : l.hsnSac === e.hsn, {
+      path: `lines[${l.lineNo}].hsnSac`,
+      // Only needed when the ERP holds one to compare.
+      required: e.hsn !== null,
+    });
     cmp(
       section,
       'Quantity',
       qty(l.qtyMilli, l.uom),
       qty(e.qtyMilli, e.uom),
       e.qtyMilli === null ? null : l.qtyMilli === e.qtyMilli,
-      'Quantity received differs from the invoice.',
-      `lines[${l.lineNo}].qtyMilli`,
+      { note: 'Quantity received differs from the invoice.', path: `lines[${l.lineNo}].qtyMilli` },
     );
     cmp(
       section,
@@ -501,8 +667,11 @@ export function receiptComparison(
       money(l.unitPricePaise),
       money(e.ratePaise),
       e.ratePaise === null ? null : l.unitPricePaise === e.ratePaise,
-      'Rate differs.',
-      `lines[${l.lineNo}].unitPricePaise`,
+      {
+        note: 'Rate differs.',
+        path: `lines[${l.lineNo}].unitPricePaise`,
+        required: e.ratePaise !== null,
+      },
     );
     cmp(
       section,
@@ -510,8 +679,7 @@ export function receiptComparison(
       money(l.taxablePaise),
       money(e.amountPaise),
       e.amountPaise === null ? null : l.taxablePaise === e.amountPaise,
-      'Amount differs.',
-      `lines[${l.lineNo}].taxablePaise`,
+      { note: 'Amount differs.', path: `lines[${l.lineNo}].taxablePaise` },
     );
   });
 
@@ -526,7 +694,6 @@ export function receiptComparison(
       invoice: money(l.taxablePaise),
       erp: `${money(expected)} calculated`,
       result: expected === l.taxablePaise ? 'match' : 'mismatch',
-      blocking: false,
       note: expected === l.taxablePaise ? null : 'The line amount is not quantity × rate.',
       path: `lines[${l.lineNo}].taxablePaise`,
     });
@@ -554,22 +721,35 @@ export function receiptComparison(
       invoice: money(printedTaxable),
       erp: `${money(lineTaxable)}${withFreight ? ` + freight ${money(invFreight)}` : ''} calculated`,
       result: ok ? 'match' : 'mismatch',
-      blocking: false,
       note: ok ? null : 'The line amounts do not add up to the goods value printed.',
       path: 'header.taxablePaise',
     });
   }
   const printedTax = (inv.cgstPaise ?? 0) + (inv.sgstPaise ?? 0) + (inv.igstPaise ?? 0);
   const unreadRate = inv.lines.find((l) => l.gstRateBp === null || l.gstRateBp === undefined);
+  const unclear = (...paths: string[]) => paths.find((x) => inv.unclear?.includes(x));
+  const taxUnclear = unclear('header.cgstPaise', 'header.sgstPaise', 'header.igstPaise');
+  const sumUnclear = unclear('header.roundOffPaise') ?? taxUnclear;
+  const notRead =
+    'A value it depends on was not read with certainty; it is asked, never taken as zero.';
   if ((inv.freightPaise ?? 0) !== 0) {
     push({
       section: 'Invoice arithmetic',
       label: 'GST calculated from the rates',
       invoice: money(printedTax),
       erp: null,
-      result: 'not_checked',
-      blocking: false,
+      result: 'not_compared',
       note: 'Freight is taxed on its own, so the tax is compared with the ERP instead.',
+    });
+  } else if (taxUnclear) {
+    push({
+      section: 'Invoice arithmetic',
+      label: 'GST calculated from the rates',
+      invoice: null,
+      erp: null,
+      result: 'needs_confirmation',
+      note: notRead,
+      path: taxUnclear,
     });
   } else if (unreadRate) {
     push({
@@ -577,8 +757,7 @@ export function receiptComparison(
       label: 'GST calculated from the rates',
       invoice: money(printedTax),
       erp: null,
-      result: 'not_checked',
-      blocking: true,
+      result: 'needs_confirmation',
       note: 'The GST rate was not read with certainty on every line.',
       path: `lines[${unreadRate.lineNo}].gstRateBp`,
     });
@@ -603,11 +782,20 @@ export function receiptComparison(
       invoice: money(printedTax),
       erp: `${money(perRate)} calculated`,
       result: ok ? 'match' : 'mismatch',
-      blocking: false,
       note: ok ? null : 'The tax printed is not the GST rate applied to the line amounts.',
     });
   }
-  if (invGoods !== null && inv.totalPaise !== null) {
+  if (invGoods !== null && inv.totalPaise !== null && sumUnclear) {
+    push({
+      section: 'Invoice arithmetic',
+      label: 'Lines + tax + round-off = total',
+      invoice: money(inv.totalPaise),
+      erp: null,
+      result: 'needs_confirmation',
+      note: notRead,
+      path: sumUnclear,
+    });
+  } else if (invGoods !== null && inv.totalPaise !== null) {
     const expected = invGoods + printedTax + (inv.freightPaise ?? 0) + (inv.roundOffPaise ?? 0);
     push({
       section: 'Invoice arithmetic',
@@ -615,7 +803,6 @@ export function receiptComparison(
       invoice: money(inv.totalPaise),
       erp: `${money(expected)} calculated`,
       result: expected === inv.totalPaise ? 'match' : 'mismatch',
-      blocking: false,
       note: expected === inv.totalPaise ? null : 'The invoice total does not add up.',
     });
   }
@@ -634,8 +821,7 @@ export function receiptComparison(
         : null,
     money(goods),
     invGoods === goods,
-    undefined,
-    printedGoods !== null ? 'header.taxablePaise' : undefined,
+    printedGoods !== null ? { path: 'header.taxablePaise' } : {},
   );
   const freight = sum('freightPaise');
   if (freight !== 0 || (inv.freightPaise ?? 0) !== 0)
@@ -647,25 +833,18 @@ export function receiptComparison(
   ] as const) {
     const erpTax = sum(k);
     if (erpTax === 0 && (printed ?? 0) === 0) continue;
-    cmp(
-      'Totals',
-      label,
-      money(printed),
-      money(erpTax),
-      printed === erpTax,
-      undefined,
-      `header.${k}`,
-    );
+    cmp('Totals', label, money(printed), money(erpTax), printed === erpTax, {
+      path: `header.${k}`,
+    });
   }
-  const others = erp.lines.flatMap((l) => l.other);
-  for (const code of [...new Set(others.map((o) => o.code))])
+  const charges = erp.lines.flatMap((l) => l.other);
+  for (const code of [...new Set(charges.map((o) => o.code))])
     push({
       section: 'Totals',
       label: `Other charge (your ERP's code ${code})`,
       invoice: null,
-      erp: money(others.filter((o) => o.code === code).reduce((s, o) => s + o.paise, 0)),
-      result: 'not_checked',
-      blocking: true,
+      erp: money(charges.filter((o) => o.code === code).reduce((s, o) => s + o.paise, 0)),
+      result: 'needs_confirmation',
       note: "A charge in your ERP that Veyrafy doesn't recognise yet; it is included in the ERP total.",
     });
   const erpTotal =
@@ -674,58 +853,89 @@ export function receiptComparison(
     sum('cgstPaise') +
     sum('sgstPaise') +
     sum('igstPaise') +
-    others.reduce((s, o) => s + o.paise, 0);
-  const beforeRounding = inv.totalPaise === null ? null : inv.totalPaise - (inv.roundOffPaise ?? 0);
-  cmp(
-    'Totals',
-    'Invoice total',
-    money(inv.totalPaise),
-    `${money(erpTotal)}${inv.roundOffPaise ? ` (invoice rounds by ${money(inv.roundOffPaise)})` : ''}`,
-    beforeRounding === erpTotal,
-    'The invoice total differs from the ERP receipt’s total.',
-    'header.totalPaise',
-  );
+    charges.reduce((s, o) => s + o.paise, 0);
+  const roundOffUnclear = unclear('header.roundOffPaise');
+  const beforeRounding =
+    inv.totalPaise === null || roundOffUnclear ? null : inv.totalPaise - (inv.roundOffPaise ?? 0);
+  if (inv.totalPaise !== null && roundOffUnclear)
+    push({
+      section: 'Totals',
+      label: 'Invoice total',
+      invoice: money(inv.totalPaise),
+      erp: money(erpTotal),
+      result: 'needs_confirmation',
+      note: 'The round-off was not read with certainty, so the total is not compared yet.',
+      path: roundOffUnclear,
+    });
+  else
+    cmp(
+      'Totals',
+      'Invoice total',
+      money(inv.totalPaise),
+      `${money(erpTotal)}${inv.roundOffPaise ? ` (invoice rounds by ${money(inv.roundOffPaise)})` : ''}`,
+      beforeRounding === erpTotal,
+      {
+        note: 'The invoice total differs from the ERP receipt’s total.',
+        path: 'header.totalPaise',
+      },
+    );
+  // The ERP's own record of the invoice amount: compared only when the ERP holds it. A total not
+  // read is already asked once, above.
   cmp(
     'Totals',
     'Invoice amount recorded in the ERP',
     money(inv.totalPaise),
     recorded ? money(erp.erpInvoiceAmountPaise) : null,
     recorded ? inv.totalPaise === erp.erpInvoiceAmountPaise : null,
-    recorded ? undefined : 'The ERP has not recorded the invoice amount yet (it is 0).',
-    'header.totalPaise',
+    {
+      ...(recorded ? {} : { note: 'The ERP has not recorded the invoice amount yet (it is 0).' }),
+      path: 'header.totalPaise',
+      required: false,
+    },
   );
 
-  const mismatches = rows.filter((r) => r.result === 'mismatch');
-  const blocking = rows.filter((r) => r.result === 'not_checked' && r.blocking);
-  const verdict: ApiComparison['verdict'] = mismatches.length
+  const of = (result: Result) => rows.filter((r) => r.result === result);
+  const mismatched = of('mismatch');
+  const unmatched = of('unmatched');
+  const toConfirm = of('needs_confirmation');
+  const notCompared = of('not_compared');
+  const matchedCount = of('match').length;
+  const differing = rows.filter((r) => r.result === 'mismatch' || r.result === 'unmatched');
+  const verdict: ApiComparison['verdict'] = differing.length
     ? 'mismatch'
-    : blocking.length
+    : toConfirm.length
       ? 'incomplete'
       : 'cleared';
-  const matchedCount = rows.filter((r) => r.result === 'match').length;
-  const notCompared = rows.filter((r) => r.result === 'not_checked').length;
   const describe = (r: Row) =>
-    `${r.section} – ${r.label}: invoice ${r.invoice ?? 'not read'}, ERP ${r.erp ?? 'none'}`;
+    r.result === 'unmatched'
+      ? `${r.section}: ${r.invoice !== null ? 'on the invoice, not in the ERP receipt' : 'in the ERP receipt, not on the invoice'}`
+      : `${r.section} – ${r.label}: invoice ${r.invoice ?? 'not read'}, ERP ${r.erp ?? 'none'}`;
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  const confirmText = toConfirm.length
+    ? ` To confirm: ${toConfirm.map((r) => `${r.section} – ${r.label}`).join('; ')}.`
+    : '';
   const comparison: ApiComparison = {
     source: 'erp_receipt',
     verdict,
     headline:
       verdict === 'cleared'
-        ? notCompared > 0
+        ? notCompared.length > 0
           ? `Cleared: ${matchedCount} values match ERP receipt GRN ${erp.grnNo}`
           : `Cleared: every value matches ERP receipt GRN ${erp.grnNo}`
         : verdict === 'mismatch'
-          ? `${mismatches.length} value${mismatches.length === 1 ? ' does' : 's do'} not match ERP receipt GRN ${erp.grnNo}`
-          : `Not cleared yet: ${blocking.length} value${blocking.length === 1 ? '' : 's'} could not be compared`,
+          ? `${plural(differing.length, 'difference', 'differences')} from ERP receipt GRN ${erp.grnNo}${toConfirm.length ? `; ${toConfirm.length} to confirm` : ''}`
+          : `Not cleared yet: ${plural(toConfirm.length, 'value', 'values')} to confirm`,
     summary:
       verdict === 'mismatch'
-        ? `Does not match ERP receipt GRN ${erp.grnNo}. ${listed(mismatches.map(describe))}.`
+        ? `Does not match ERP receipt GRN ${erp.grnNo}. ${listed(differing.map(describe))}.${confirmText}`
         : verdict === 'cleared'
-          ? `${notCompared > 0 ? `${matchedCount} values match ERP receipt GRN ${erp.grnNo} and the invoice's own checks; ${notCompared} not held by the ERP were not compared (${listed(rows.filter((r) => r.result === 'not_checked').map((r) => r.label))})` : `Every value read on the invoice matches ERP receipt GRN ${erp.grnNo}`}; total ${money(inv.totalPaise)}.`
-          : `To compare: ${blocking.map((r) => `${r.section} – ${r.label}`).join('; ')}.`,
-    matched: rows.filter((r) => r.result === 'match').length,
-    mismatched: mismatches.length,
-    notChecked: rows.filter((r) => r.result === 'not_checked').length,
+          ? `${notCompared.length > 0 ? `${matchedCount} values match ERP receipt GRN ${erp.grnNo} and the invoice's own checks; ${notCompared.length} not held by the ERP were not compared (${listed(notCompared.map((r) => r.label))})` : `Every value read on the invoice matches ERP receipt GRN ${erp.grnNo}`}; total ${money(inv.totalPaise)}.`
+          : `To confirm: ${toConfirm.map((r) => `${r.section} – ${r.label}`).join('; ')}.`,
+    matched: matchedCount,
+    mismatched: mismatched.length,
+    unmatched: unmatched.length,
+    needsConfirmation: toConfirm.length,
+    notCompared: notCompared.length,
     rows: rows.map((r) => ({
       section: r.section,
       label: r.label,
@@ -735,13 +945,18 @@ export function receiptComparison(
       note: r.note,
     })),
   };
-  const unread = [...new Set(blocking.flatMap((r) => (r.path ? [r.path] : [])))];
-  const differences = mismatches.map((r) => ({
+  const unread = [...new Set(toConfirm.flatMap((r) => (r.path ? [r.path] : [])))];
+  const differences: ReceiptDifference[] = [
+    ...differing.map((r) => ({ r, confirm: false })),
+    // Values to confirm that are not a question about a value read (the same item? which GRN?).
+    ...toConfirm.filter((r) => !r.path).map((r) => ({ r, confirm: true })),
+  ].map(({ r, confirm }) => ({
     section: r.section,
     label: r.label,
     invoice: r.invoice,
     erp: r.erp,
     path: r.path ?? null,
+    confirm,
   }));
   const totalDeltaPaise = beforeRounding === null ? null : beforeRounding - erpTotal;
   return { comparison, unread, differences, totalDeltaPaise };

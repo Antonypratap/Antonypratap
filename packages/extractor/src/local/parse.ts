@@ -558,6 +558,33 @@ const isMeta = (t: string) =>
   );
 
 /**
+ * Whether one GST rate for every line gives EXACTLY the tax printed for one head (CGST: divisor
+ * 20,000 with the combined rate; IGST: 10,000), rounded on the whole or line by line. Every line
+ * amount must be read and large enough that its own tax exceeds any rounding difference (a paisa a
+ * line), so a line wrongly given the rate (exempt, or at another rate) always shows in the tax;
+ * and the amounts must add up to the goods value printed, when one is printed. Integer paise only.
+ */
+export function footerRateProven(
+  lines: readonly ExtractedLine[],
+  rateBp: number,
+  divisor: number,
+  printed: number | null,
+  goodsPrinted: number | null,
+): boolean {
+  if (rateBp <= 0 || printed === null || lines.length === 0) return false;
+  const amounts: number[] = [];
+  for (const l of lines) {
+    const v = l.taxablePaise.value as number | null;
+    if (v === null || (v * rateBp) / divisor < lines.length + 1) return false;
+    amounts.push(v);
+  }
+  const goods = amounts.reduce((a, b) => a + b, 0);
+  if (goodsPrinted !== null && goodsPrinted !== goods) return false;
+  const head = (amount: number) => Math.round((amount * rateBp) / divisor);
+  return printed === head(goods) || printed === amounts.reduce((a, v) => a + head(v), 0);
+}
+
+/**
  * Tax printed only under the item rows (Tally: "CGST @ 9%", "SGST @ 9%"): one rate for every line.
  * Given to the lines only when no line prints its own rate, the footer has exactly one CGST and
  * one SGST row at the same printed rate (or exactly one IGST row), every line amount was read and
@@ -611,21 +638,8 @@ export function footerRate(
     spelled = i.spelled;
     printed = totals.igst.value;
   }
-  if (rateBp === null || rateBp <= 0 || printed === null) return null;
-  const amounts: number[] = [];
-  for (const l of lines) {
-    const v = l.taxablePaise.value as number | null;
-    // Each line's own tax must be larger than any rounding difference (a paisa a line), so a
-    // line wrongly given the rate always shows in the tax; tiny lines leave the rate asked.
-    if (v === null || (v * (rateBp as number)) / divisor < lines.length + 1) return null;
-    amounts.push(v);
-  }
-  const goods = amounts.reduce((a, b) => a + b, 0);
-  if (totals.taxable.value !== null && totals.taxable.value !== goods) return null;
-  const head = (amount: number) => Math.round((amount * (rateBp as number)) / divisor);
-  const onWhole = head(goods);
-  const perLine = amounts.reduce((a, v) => a + head(v), 0);
-  if (printed !== onWhole && printed !== perLine) return null;
+  if (rateBp === null || !footerRateProven(lines, rateBp, divisor, printed, totals.taxable.value))
+    return null;
   for (const l of lines)
     l.gstRateBp = toField(rateBp, segs, false, spelled) as ExtractedLine['gstRateBp'];
   return `GST rate ${rateBp / 100}% read from the tax rows under the items (${segs.map((x) => clean(x.text)).join(', ')}) for every line: no line prints its own rate, and that rate gives exactly the tax printed.`;

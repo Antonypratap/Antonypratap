@@ -219,7 +219,7 @@ describe('the receipt check: invoices against the ERP’s own goods-receipt reco
     expect(row(inv, 'Invoice total')).toMatchObject({ result: 'match' });
     // What the ERP does not hold is said, never ticked.
     expect(row(inv, 'GSTIN')).toMatchObject({
-      result: 'not_checked',
+      result: 'not_compared',
       note: 'The ERP record carries no GSTIN.',
     });
     const audit = JSON.stringify(
@@ -274,7 +274,10 @@ describe('the receipt check: invoices against the ERP’s own goods-receipt reco
     const inv = await checkAttached();
     expect(inv.state).toBe('NEEDS_INPUT');
     expect(inv.comparison?.verdict).toBe('incomplete');
-    expect(row(inv, 'Invoice date')).toMatchObject({ invoice: null, result: 'not_checked' });
+    expect(row(inv, 'Invoice date')).toMatchObject({
+      invoice: null,
+      result: 'needs_confirmation',
+    });
     const open = inv.questions.filter((q) => q.status === 'open');
     expect(open.map((q) => q.code)).toEqual(['MD_FIELD']);
     expect(open[0]?.headline).toBe('What is the invoice date?');

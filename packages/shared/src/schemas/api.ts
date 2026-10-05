@@ -217,7 +217,12 @@ export const ApiComparisonRowSchema = z.object({
   label: z.string(),
   invoice: z.string().nullable(),
   erp: z.string().nullable(),
-  result: z.enum(['match', 'mismatch', 'not_checked']),
+  /**
+   * match / mismatch: compared. unmatched: an item with no counterpart on the other side.
+   * needs_confirmation: not enough evidence either way; holds the invoice for a person.
+   * not_compared: nothing to compare it with; never a difference, never holds the invoice.
+   */
+  result: z.enum(['match', 'mismatch', 'unmatched', 'needs_confirmation', 'not_compared']),
   note: z.string().nullable(),
 });
 export const ApiComparisonSchema = z.object({
@@ -227,9 +232,12 @@ export const ApiComparisonSchema = z.object({
   headline: z.string(),
   /** One paragraph naming every mismatch with both values (used as a rejection reason). */
   summary: z.string(),
+  /** Counted from the final rows, one per row. */
   matched: int,
   mismatched: int,
-  notChecked: int,
+  unmatched: int,
+  needsConfirmation: int,
+  notCompared: int,
   rows: z.array(ApiComparisonRowSchema),
 });
 export type ApiComparison = z.infer<typeof ApiComparisonSchema>;

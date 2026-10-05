@@ -51,7 +51,7 @@ const item = (name: string, rate: string, hsn: string) => ({
   ],
 });
 /** The ERP's goods receipt for the invoice: its own internal order id, lines in its own order. */
-const erpExport = (mirrorRate = '3450') => ({
+const erpExport = (mirrorRate = '3450', mirrorName = 'MIRROR') => ({
   data: [
     {
       invoice_info: {
@@ -66,7 +66,7 @@ const erpExport = (mirrorRate = '3450') => ({
       },
       items: [
         item('GATTA', '40', '3926'),
-        item('MIRROR', mirrorRate, '7009'),
+        item(mirrorName, mirrorRate, '7009'),
         item('WOOD SCREW 2"', '40', '7318'),
         item('COOLIE', '1250', '9987'),
       ],
@@ -139,8 +139,8 @@ describe('a footer-tax invoice, read locally and compared with the ERP receipt',
     // The printed order number is shown beside the ERP's internal id, never compared.
     expect(row(inv, /Purchase order/, 'Order')).toMatchObject({
       invoice: '684',
-      erp: 'ERP reference 55012',
-      result: 'not_checked',
+      erp: 'ERP internal reference 55012',
+      result: 'not_compared',
     });
     expect(inv.comparison?.rows.filter((r) => r.result === 'mismatch')).toEqual([]);
     // The rate printed in the footer ("CGST @ 9%") proves the tax; nothing is left to ask.
@@ -165,4 +165,79 @@ describe('a footer-tax invoice, read locally and compared with the ERP receipt',
     expect(row(inv, /MIRROR/, 'Item')?.result).toBe('match');
     expect(inv.lines[0]?.taxablePaise).toBe(345_000);
   }, 60_000);
+
+  it('the ERP names the mirror differently: one item to confirm, never "missing" and "extra"', async () => {
+    await importErp(erpExport('3450', 'MIR-1824 GLASS'));
+    const id = await upload('D15-tally-style.pdf');
+    const inv = await detail(id);
+    expect(inv.state).toBe('NEEDS_INPUT');
+    expect(inv.comparison).toMatchObject({
+      verdict: 'incomplete',
+      mismatched: 0,
+      unmatched: 0,
+      needsConfirmation: 1,
+    });
+    expect(inv.comparison?.headline).toBe('Not cleared yet: 1 value to confirm');
+    expect(inv.comparison?.rows.filter((r) => r.label === 'Item' && r.result !== 'match')).toEqual([
+      expect.objectContaining({
+        invoice: 'MIRROR',
+        erp: 'MIR-1824 GLASS',
+        result: 'needs_confirmation',
+      }),
+    ]);
+    // Read values are never questioned for it, and the conclusion is to confirm, not a difference.
+    expect(inv.questions).toEqual([]);
+    expect(inv.finding).toMatchObject({
+      state: 'confirm',
+      type: 'item',
+      label: 'Confirm same item',
+      more: 0,
+    });
+
+    // Checked again (the same export imported again): the same result, nothing added twice.
+    const res = await app.server.inject({
+      method: 'POST',
+      url: '/api/v1/erp/receipt-records',
+      payload: {
+        filename: 'grn-9001-again.json',
+        content: JSON.stringify(erpExport('3450', 'MIR-1824 GLASS')),
+      },
+    });
+    expect(res.statusCode, res.body).toBeLessThan(300);
+    await app.runner.drain();
+    const again = await detail(id);
+    expect(again.comparison).toEqual(inv.comparison);
+    expect(again.questions).toEqual([]);
+    expect(again.finding).toEqual(inv.finding);
+    const audit = (
+      await app.server.inject({ method: 'GET', url: `/api/v1/audit?invoiceId=${id}` })
+    ).json<{ entries?: unknown[] } | unknown[]>();
+    expect(JSON.stringify(audit)).not.toContain('notChecked');
+  }, 60_000);
+
+  it('the scanned copy: a value OCR cannot read is to confirm, never a difference from the ERP', async () => {
+    await importErp(erpExport());
+    const inv = await detail(await upload('D16-tally-style-scan.pdf'));
+    const c = inv.comparison;
+    expect(c?.source).toBe('erp_receipt');
+    expect(c?.mismatched).toBe(0);
+    expect(c?.unmatched).toBe(0);
+    expect(['cleared', 'incomplete']).toContain(c?.verdict);
+    // A round-off OCR could not read is asked, and the totals wait for it (never taken as zero).
+    if (c?.rows.find((r) => r.label === 'Invoice total')?.result === 'needs_confirmation')
+      expect(inv.questions.map((q) => q.headline)).toContain('What is the round-off?');
+    // Every line amount and rate read from the scan is the printed one, or asked.
+    for (const [i, amount] of [345_000, 4_000, 4_000, 125_000].entries())
+      expect([amount, null]).toContain(inv.lines[i]?.taxablePaise ?? null);
+    // MIRROR is found on both sides, once.
+    expect(c?.rows.filter((r) => r.label === 'Item' && /MIRROR/.test(r.section))).toHaveLength(1);
+    // Every value to confirm is asked (or is the item to confirm): nothing is silently open.
+    const counted =
+      (c?.matched ?? 0) +
+      (c?.mismatched ?? 0) +
+      (c?.unmatched ?? 0) +
+      (c?.needsConfirmation ?? 0) +
+      (c?.notCompared ?? 0);
+    expect(counted).toBe(c?.rows.length);
+  }, 120_000);
 });
