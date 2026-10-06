@@ -99,6 +99,10 @@ export interface AppConfig {
     /** Hours the invoices are kept after the full results are shown (default 24). */
     resultsHours?: number;
     dailyLimit?: number;
+    /** New challenges per internet address per day (default 3). */
+    perAddressLimit?: number;
+    /** 'local': prospects' documents are read on Veyrafy's server even when the AI reader is on. */
+    reader?: 'ai' | 'local';
     bookingUrl?: string | null;
     notifyEmail?: string | null;
     /** Tests only: how long an idle workspace stays open. */
@@ -121,6 +125,8 @@ function makeExtractor(
   extractor: Extractor & { close?: () => Promise<void> };
   /** The real reader, never the demo's scripted one (the 5 Invoice Challenge reads with it). */
   real: Extractor;
+  /** The local reader alone (Veyrafy's own server; never the AI reader). */
+  local: Extractor;
   warmUp: () => Promise<void>;
   aiReader: GeminiExtractor | null;
 } {
@@ -149,7 +155,8 @@ function makeExtractor(
     : base;
   const environment = environmentOf(config);
   const demo = (mode === 'demo' || mode === 'fixture') && environment !== 'production';
-  if (!demo || !config.allowFixtureExtractor) return { extractor: real, real, warmUp, aiReader };
+  if (!demo || !config.allowFixtureExtractor)
+    return { extractor: real, real, local: base, warmUp, aiReader };
   const fixture = new FixtureExtractor({
     allow: config.allowFixtureExtractor,
     nodeEnv: environment,
@@ -159,6 +166,7 @@ function makeExtractor(
       close: () => real.close?.() ?? Promise.resolve(),
     }),
     real,
+    local: base,
     warmUp,
     aiReader,
   };
@@ -201,6 +209,7 @@ export async function createApp(config: AppConfig) {
   const {
     extractor,
     real: realExtractor,
+    local: localExtractor,
     warmUp: warmUpExtractor,
     aiReader,
   } = makeExtractor(initialSettings.extractorMode, config);
@@ -281,14 +290,16 @@ export async function createApp(config: AppConfig) {
   };
 
   // The 5 Invoice Challenge: each prospect's invoices in their own isolated workspace, read by
-  // the real reader (never the demo's scripted one) and checked by the same pipeline.
+  // the real reader (never the demo's scripted one) and checked by the same pipeline. With
+  // reader 'local', prospects' documents never leave Veyrafy's server, whatever the demo uses.
+  const challengeAi = Boolean(aiReader) && config.challenge?.reader !== 'local';
   const challenge = config.challenge
     ? new ChallengeService({
         db,
         commercial,
         workspaces: new ChallengeWorkspaces({
           root: join(config.dataDir, 'challenges'),
-          extractor: realExtractor,
+          extractor: challengeAi ? realExtractor : localExtractor,
           erp: (filename, fresh) => {
             const store = FakeErpConnector.open({
               filename,
@@ -313,7 +324,10 @@ export async function createApp(config: AppConfig) {
           : {}),
         ...(config.challenge.dailyLimit ? { dailyLimit: config.challenge.dailyLimit } : {}),
         ...(config.challenge.resultsHours ? { resultsHours: config.challenge.resultsHours } : {}),
-        aiProvider: aiReader ? 'Google Gemini' : null,
+        ...(config.challenge.perAddressLimit
+          ? { perAddressLimit: config.challenge.perAddressLimit }
+          : {}),
+        aiProvider: challengeAi ? 'Google Gemini' : null,
         publicOrigin: config.auth?.publicOrigins?.[0] ?? null,
         bookingUrl: config.challenge.bookingUrl ?? null,
         notifyEmail: config.challenge.notifyEmail ?? null,

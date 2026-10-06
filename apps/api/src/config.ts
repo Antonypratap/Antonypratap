@@ -121,6 +121,10 @@ export interface VeyraConfig {
   challenge: {
     retentionDays: number;
     resultsHours: number;
+    /** New challenges per internet address per day. */
+    perAddressLimit: number;
+    /** How prospects' documents are read: 'ai' (the AI reader, when it is on) or 'local'. */
+    reader: 'ai' | 'local';
     dailyLimit: number;
     /** "Book a walkthrough" opens this; null: the request is recorded and the team follows up. */
     bookingUrl: string | null;
@@ -224,6 +228,8 @@ const VARS = {
   VEYRA_CHALLENGE: bool,
   VEYRA_CHALLENGE_RETENTION_DAYS: int(1, 365),
   VEYRA_CHALLENGE_RESULTS_HOURS: int(1, 720),
+  VEYRA_CHALLENGE_PER_ADDRESS: int(1, 100),
+  VEYRA_CHALLENGE_READER: z.enum(['ai', 'local']),
   VEYRA_CHALLENGE_DAILY_LIMIT: int(1, 10_000),
   VEYRA_CHALLENGE_NOTIFY_EMAIL: z.email().max(254),
   VEYRA_BOOKING_URL: z.url({ protocol: /^https$/ }).max(500),
@@ -443,7 +449,9 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
       ? {
           retentionDays: read('VEYRA_CHALLENGE_RETENTION_DAYS') ?? 30,
           resultsHours: read('VEYRA_CHALLENGE_RESULTS_HOURS') ?? 24,
-          dailyLimit: read('VEYRA_CHALLENGE_DAILY_LIMIT') ?? 50,
+          dailyLimit: read('VEYRA_CHALLENGE_DAILY_LIMIT') ?? 20,
+          perAddressLimit: read('VEYRA_CHALLENGE_PER_ADDRESS') ?? 3,
+          reader: read('VEYRA_CHALLENGE_READER') ?? 'ai',
           bookingUrl: read('VEYRA_BOOKING_URL') ?? null,
           notifyEmail: read('VEYRA_CHALLENGE_NOTIFY_EMAIL') ?? null,
         }

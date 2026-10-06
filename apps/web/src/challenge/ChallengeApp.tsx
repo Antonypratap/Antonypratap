@@ -19,6 +19,7 @@ import { ApiError } from '../product/api/client';
 import { EvidenceList } from '../product/components/Finding';
 import { inr } from '../product/format';
 import { CONTACT_PHONE, CONTACT_PHONE_HREF, WEBSITE_ADDRESS } from '../site/host';
+import { LEGAL_PATHS } from '../site/legal';
 import { challengeApi, takeLinkSecret } from './api';
 import styles from './Challenge.module.css';
 
@@ -440,10 +441,19 @@ function Upload({
             }}
           />
           <span>
-            I agree that Veyrafy reads these invoices to check them
+            I’m authorised by my company to share these invoices, and I agree that Veyrafy reads
+            them to check them
             {config.aiProvider ? `, using ${config.aiProvider}` : ''}. They stay confidential and
             are deleted {config.resultsHours} hours after I see the results. One challenge per
-            company.
+            company. See the{' '}
+            <a href={LEGAL_PATHS.privacy} target="_blank" rel="noopener">
+              privacy notice
+            </a>{' '}
+            and{' '}
+            <a href={LEGAL_PATHS.terms} target="_blank" rel="noopener">
+              terms
+            </a>
+            .
           </span>
         </label>
       )}
@@ -664,6 +674,13 @@ function Upload({
             <span className={styles.muted}>Enter your GSTIN to start.</span>
           ) : null}
         </div>
+      )}
+      {state && usable > 0 && fileCount === 0 && (
+        <p className={styles.nudge} role="note">
+          <strong>Your system’s record is not added.</strong> Without it, each invoice is checked on
+          its own (calculations, GST, duplicates). Add it under “Compare with your system” to
+          compare items, quantities, rates and amounts.
+        </p>
       )}
     </section>
   );

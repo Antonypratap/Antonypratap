@@ -342,3 +342,29 @@ describe('configuration: hosted demo (Phase 7C)', () => {
     expect(JSON.stringify(describeConfig(c))).not.toMatch(/482913|vercel|db-staging/);
   });
 });
+
+describe('the 5 Invoice Challenge settings', () => {
+  it('defaults: 20 a day, 3 per connection, 24 hours after the results, the AI reader if on', () => {
+    const c = loadConfig({ VEYRA_CHALLENGE: 'true' }, defaults);
+    expect(c.challenge).toMatchObject({
+      dailyLimit: 20,
+      perAddressLimit: 3,
+      resultsHours: 24,
+      reader: 'ai',
+    });
+  });
+  it('keeps prospects’ documents on Veyrafy’s server when asked', () => {
+    const c = loadConfig(
+      {
+        VEYRA_CHALLENGE: 'true',
+        VEYRA_CHALLENGE_READER: 'local',
+        VEYRA_CHALLENGE_PER_ADDRESS: '1',
+      },
+      defaults,
+    );
+    expect(c.challenge).toMatchObject({ reader: 'local', perAddressLimit: 1 });
+    expect(() =>
+      loadConfig({ VEYRA_CHALLENGE: 'true', VEYRA_CHALLENGE_READER: 'gemini' }, defaults),
+    ).toThrow(ConfigError);
+  });
+});

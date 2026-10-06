@@ -349,13 +349,27 @@ In **veyrafy-demo → Variables**, add:
 | `VEYRA_CHALLENGE` | `true` |
 | `VEYRA_CHALLENGE_RETENTION_DAYS` | `30` (the longest invoices are kept, if the results are never opened) |
 | `VEYRA_CHALLENGE_RESULTS_HOURS` | `24` (how long invoices are kept after the results are shown) |
-| `VEYRA_CHALLENGE_DAILY_LIMIT` | `50` (new challenges per day, all prospects together) |
+| `VEYRA_CHALLENGE_DAILY_LIMIT` | `20` (new challenges per day, all prospects together; the notify address is told once when it is reached) |
+| `VEYRA_CHALLENGE_PER_ADDRESS` | `3` (new challenges per internet connection per day, so one person cannot use up the day) |
+| `VEYRA_CHALLENGE_READER` | `ai` or `local`: `local` keeps prospects' documents on Veyrafy's server even when the demo reads with Gemini |
 | `VEYRA_PUBLIC_ORIGIN` | `https://demo.veyrafy.com` (links in the e-mail point here) |
 | `VEYRA_BOOKING_URL` | optional: your booking page, e.g. a Calendly 15-minute link |
 | `VEYRA_CHALLENGE_NOTIFY_EMAIL` | optional: where you are told about completions and walkthrough requests |
 | `VEYRA_EMAIL_PROVIDER` | `resend` to send the follow-up e-mail (otherwise nothing is sent, and the Control Centre shows "not configured") |
 | `VEYRA_EMAIL_API_KEY` | your Resend API key (type it in Railway only) |
 | `VEYRA_EMAIL_FROM` | e.g. `Veyrafy <reports@veyrafy.com>` (a domain verified in Resend) |
+
+**Privacy notice and terms.** `/privacy` and `/terms` (on every Veyrafy address; linked from the
+consent box and the website footer) describe what the challenge keeps, for how long and who
+processes it. Fill in the legal entity, registered address, grievance e-mail and jurisdiction in
+`apps/web/src/site/legal.ts` before opening the challenge publicly: until then both pages say
+they are a draft. Have them reviewed by your counsel.
+
+**Its own service (recommended once traffic grows).** The challenge can run on a separate Railway
+service from the same image, so heavy scans never slow the demo: copy veyrafy-demo's variables
+to a new service with its own PostgreSQL and volume and its own address, then point the
+challenge address (`CHALLENGE_ADDRESS` in `apps/web/src/site/host.ts`) at it and switch the
+challenge off on the demo. Not done yet; it needs a new domain name and a release.
 
 **Before you switch it on**, decide how invoices are read. If the demo has the AI reader on
 (`VEYRA_AI_READER=gemini`), the prospect is told that Google Gemini reads their documents, and must

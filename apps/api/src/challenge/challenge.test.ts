@@ -42,7 +42,7 @@ const email: EmailSender = {
   },
 };
 
-async function open(opts: { challenge?: boolean } = {}) {
+async function open(opts: { challenge?: boolean; perAddressLimit?: number; notify?: string } = {}) {
   dir = mkdtempSync(join(tmpdir(), 'veyra-challenge-'));
   now = new Date(DEMO_NOW);
   sent.length = 0;
@@ -52,7 +52,17 @@ async function open(opts: { challenge?: boolean } = {}) {
     allowFixtureExtractor: true,
     nodeEnv: 'test',
     clock: () => now,
-    ...(opts.challenge === false ? {} : { challenge: { retentionDays: 30, dailyLimit: 5 }, email }),
+    ...(opts.challenge === false
+      ? {}
+      : {
+          challenge: {
+            retentionDays: 30,
+            dailyLimit: 5,
+            perAddressLimit: opts.perAddressLimit ?? 50,
+            ...(opts.notify ? { notifyEmail: opts.notify } : {}),
+          },
+          email,
+        }),
     auth: { publicOrigins: ['https://challenge.example.com'] },
   });
   return app;
@@ -264,6 +274,36 @@ describe('5 Invoice Challenge: access', () => {
     expect((await giveDetails(a, A.token, { ...DETAILS, contactName: 'Asha R' })).statusCode).toBe(
       200,
     );
+  }, 60_000);
+
+  it('a few challenges per connection a day; the team is told once when the day is full', async () => {
+    const a = await open({ perAddressLimit: 2, notify: 'team@veyrafy.example' });
+    const from = (ip: string) =>
+      a.anonymous({
+        method: 'POST',
+        url: '/api/v1/challenge',
+        payload: START,
+        headers: PAGE,
+        remoteAddress: ip,
+      });
+    expect((await from('203.0.113.7')).statusCode).toBe(201);
+    expect((await from('203.0.113.7')).statusCode).toBe(201);
+    const third = await from('203.0.113.7');
+    expect(third.statusCode).toBe(429);
+    expect(third.json<{ error: { message: string } }>().error.message).toMatch(/this connection/);
+    // Another connection is not held back by the first…
+    expect((await from('198.51.100.4')).statusCode).toBe(201);
+    expect((await from('198.51.100.5')).statusCode).toBe(201);
+    expect((await from('198.51.100.6')).statusCode).toBe(201);
+    // …until the day's cap (5 here) is reached: then the team is told, once.
+    expect((await from('198.51.100.8')).statusCode).toBe(429);
+    expect((await from('198.51.100.9')).statusCode).toBe(429);
+    const alerts = sent.filter((m) => m.to === 'team@veyrafy.example');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.subject).toMatch(/today’s limit reached/);
+    // The next day starts afresh.
+    now = new Date(now.getTime() + 86_400_000);
+    expect((await from('203.0.113.7')).statusCode).toBe(201);
   }, 60_000);
 
   it('one company never reaches another’s invoices or pages', async () => {

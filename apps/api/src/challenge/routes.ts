@@ -84,7 +84,7 @@ export function registerChallengeRoutes(
     ChallengeStartSchema.parse(req.body ?? {});
     if (req.cookies[CHALLENGE_USED_COOKIE])
       throw new VeyraError('LIMIT_REACHED', USED, { used: true });
-    const { token, challenge: row } = await challenge.create();
+    const { token, challenge: row } = await challenge.create(req.ip);
     keep(reply, token, row.expiresAt);
     reply.setCookie(CHALLENGE_USED_COOKIE, '1', {
       httpOnly: true,

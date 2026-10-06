@@ -67,6 +67,8 @@ export interface ChallengeServiceOptions {
   dailyLimit?: number;
   /** Hours the invoices are kept after the full results are shown (then deleted). */
   resultsHours?: number;
+  /** New challenges per internet address per UTC day (one person cannot use up the day). */
+  perAddressLimit?: number;
   /** The reading service named to prospects ("Google Gemini"), or null: local reading only. */
   aiProvider: string | null;
   /** Where links in e-mails point (https://challenge.veyrafy.com). */
@@ -140,15 +142,21 @@ export class ChallengeService {
     retentionDays: number;
     dailyLimit: number;
     resultsHours: number;
+    perAddressLimit: number;
   };
+  /** Challenges started today per address (hashed; kept in memory only, for the day). */
+  #byAddress = { day: '', counts: new Map<string, number>() };
+  /** The day the team was last told the daily cap was reached (once a day). */
+  #capAlerted = '';
   #ticker: NodeJS.Timeout | null = null;
 
   constructor(options: ChallengeServiceOptions) {
     this.#o = {
       clock: () => new Date(),
       retentionDays: 30,
-      dailyLimit: 50,
+      dailyLimit: 20,
       resultsHours: 24,
+      perAddressLimit: 3,
       ...options,
     };
   }
@@ -175,19 +183,39 @@ export class ChallengeService {
   // ── Starting, and finding a challenge by its token ───────────────────────
 
   /** Starts a challenge on the prospect's consent alone (details come after the results). */
-  async create(): Promise<{ token: string; challenge: Challenge }> {
+  async create(address?: string): Promise<{ token: string; challenge: Challenge }> {
     const now = this.#o.clock();
     const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const dayKey = day.toISOString().slice(0, 10);
+    if (this.#byAddress.day !== dayKey) this.#byAddress = { day: dayKey, counts: new Map() };
+    const who = address ? sha256(`${dayKey}|${address}`) : null;
+    if (who && (this.#byAddress.counts.get(who) ?? 0) >= this.#o.perAddressLimit)
+      throw new VeyraError(
+        'RATE_LIMITED',
+        'Too many challenges have been started from this connection today. Please try again tomorrow, or contact Veyrafy.',
+      );
     const today = await this.#o.db
       .select({ id: t.challenges.id })
       .from(t.challenges)
       .where(gte(t.challenges.createdAt, day.toISOString()))
       .limit(this.#o.dailyLimit);
-    if (today.length >= this.#o.dailyLimit)
+    if (today.length >= this.#o.dailyLimit) {
+      if (this.#capAlerted !== dayKey) {
+        this.#capAlerted = dayKey;
+        this.#o.log?.warn({ dailyLimit: this.#o.dailyLimit }, 'challenge daily cap reached');
+        if (this.#o.notifyEmail)
+          await this.#o.email.send({
+            to: this.#o.notifyEmail,
+            subject: '5 Invoice Challenge: today’s limit reached',
+            text: `The ${this.#o.dailyLimit} challenges allowed today have all been started; new prospects are asked to come back tomorrow. To allow more, raise VEYRA_CHALLENGE_DAILY_LIMIT on the challenge service. See the Control Centre for today's challenges.`,
+          });
+      }
       throw new VeyraError(
         'RATE_LIMITED',
         'The challenge is fully booked for today. Please try again tomorrow, or contact Veyrafy.',
       );
+    }
+    if (who) this.#byAddress.counts.set(who, (this.#byAddress.counts.get(who) ?? 0) + 1);
     const token = randomBytes(32).toString('base64url');
     const iso = now.toISOString();
     const [row] = await this.#o.db

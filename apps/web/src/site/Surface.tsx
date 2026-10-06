@@ -5,6 +5,8 @@ import { HomePage } from '../marketing/HomePage';
 import { parseHash, useHash } from '../product/router';
 import { CHALLENGE_ADDRESS, WEBSITE_ADDRESS, isChallengePage, type HostKind } from './host';
 import { checkInstance, type InstanceCheck } from './instance';
+import { legalPageOf } from './legal';
+import { LegalPageView } from './LegalPages';
 import { AddressNotSetUp, ClientLogin, RequestAccess, sitePageOf } from './SitePages';
 import site from './SitePages.module.css';
 
@@ -101,6 +103,9 @@ export function Surface({ host, hash: forced }: { host: HostKind; hash?: string 
   const live = useHash();
   const hash = forced ?? live;
   if (host.kind === 'unknown') return <AddressNotSetUp />;
+  // The privacy notice and terms, at /privacy and /terms on every Veyrafy address.
+  const legal = legalPageOf(typeof window === 'undefined' ? '' : window.location.pathname);
+  if (legal) return <LegalPageView page={legal} />;
   // The challenge is open to anyone; on the website (no database) it starts on its own host.
   if (isChallengePage(typeof window === 'undefined' ? '' : window.location.pathname, hash))
     return (

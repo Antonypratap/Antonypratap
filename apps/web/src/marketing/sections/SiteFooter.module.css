@@ -72,6 +72,11 @@
   text-underline-offset: 3px;
 }
 
+.bottom a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .bottom {
   display: flex;
   flex-wrap: wrap;

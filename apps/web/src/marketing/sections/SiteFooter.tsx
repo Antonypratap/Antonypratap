@@ -1,6 +1,7 @@
 import { Container, Logo } from '../../design-system';
 import { demoEntryHref } from '../../access/demoAccess';
 import { CONTACT_PHONE, CONTACT_PHONE_HREF } from '../../site/host';
+import { LEGAL_PATHS } from '../../site/legal';
 import styles from './SiteFooter.module.css';
 
 const COLUMNS = [
@@ -69,7 +70,10 @@ export function SiteFooter() {
           </div>
         </div>
         <div className={styles.bottom}>
-          <p>© {new Date().getFullYear()} Veyrafy. All rights reserved.</p>
+          <p>
+            © {new Date().getFullYear()} Veyrafy. All rights reserved. ·{' '}
+            <a href={LEGAL_PATHS.privacy}>Privacy</a> · <a href={LEGAL_PATHS.terms}>Terms</a>
+          </p>
           <p>Invoices, figures and names shown on this site are illustrative sample data.</p>
         </div>
       </Container>
