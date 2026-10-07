@@ -28,6 +28,7 @@ export { DemoRoutedExtractor } from './routed';
 export {
   AI_CONFIDENCE_BP,
   GeminiExtractor,
+  describeTaxRow,
   toExtraction,
   type AiReading,
   type GeminiOptions,

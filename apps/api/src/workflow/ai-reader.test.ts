@@ -1,11 +1,13 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { eq } from 'drizzle-orm';
 import { pino } from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { imageOnlyStripPdf } from '@veyra/extractor';
 import type { ApiInvoiceDetail } from '@veyra/shared';
 import type { createApp } from '../app';
+import { extractions } from '../db/schema';
 import { DEMO_NOW } from '../test/harness';
 import { createTestApp } from '../test/app';
 
@@ -44,7 +46,10 @@ const READING = {
       gstRate: p('18%'),
     },
   ],
-  otherPrinted: [{ label: 'Terms of Payment', printed: '30 days', page: 1 }],
+  otherPrinted: [
+    { label: 'Terms of Payment', printed: '30 days', page: 1 },
+    { label: 'CGST @ 9%', printed: '58,000.00', page: 1 },
+  ],
 };
 /** What each (fake) Gemini call was sent: the kinds of its parts, never asserted on content. */
 const sent: string[][] = [];
@@ -144,7 +149,35 @@ describe('AI reader in the workflow', () => {
     ).json<{ extraction: { pages: number; otherFields: unknown[] } }>();
     expect(doc.extraction).toMatchObject({
       pages: 1,
-      otherFields: [{ label: 'Terms of Payment', value: '30 days', page: 1 }],
+      otherFields: [
+        { label: 'Terms of Payment', value: '30 days', page: 1 },
+        // The taxable value printed beside "CGST @ 9%" is never shown as the tax.
+        { label: 'CGST @ 9% · taxable value', value: '58,000.00 (tax 5220.00)', page: 1 },
+      ],
+    });
+
+    // A reading stored before tax rows were described is described when it is shown.
+    const [stored] = await app.database.db
+      .select()
+      .from(extractions)
+      .where(eq(extractions.invoiceId, invoiceId));
+    const raw = JSON.parse(stored?.rawJson ?? '{}') as {
+      otherFields: { label: string; value: string }[];
+    };
+    raw.otherFields = raw.otherFields.map((f) =>
+      f.label.startsWith('CGST') ? { ...f, label: 'CGST @ 9%', value: '58,000.00' } : f,
+    );
+    await app.database.db
+      .update(extractions)
+      .set({ rawJson: JSON.stringify(raw) })
+      .where(eq(extractions.invoiceId, invoiceId));
+    const before = (
+      await app.server.inject({ method: 'GET', url: `/api/v1/documents/${documentId}` })
+    ).json<{ extraction: { otherFields: unknown[] } }>();
+    expect(before.extraction.otherFields).toContainEqual({
+      label: 'CGST @ 9% · taxable value',
+      value: '58,000.00 (tax 5220.00)',
+      page: 1,
     });
 
     // The log says how it was read, with counts only: no values, no key.
@@ -159,7 +192,7 @@ describe('AI reader in the workflow', () => {
       imagePages: 1,
       rendered: true,
       lines: 1,
-      otherFields: 1,
+      otherFields: 2,
     });
     expect(read?.fieldsRead).toBeGreaterThan(10);
     expect(

@@ -35,7 +35,7 @@ import {
   milliQty,
   paise,
 } from '@veyra/shared';
-import { renderPdfPage, uprightImage } from '@veyra/extractor';
+import { describeTaxRow, renderPdfPage, uprightImage } from '@veyra/extractor';
 import { stateName } from '@veyra/india-tax';
 import {
   CAPABILITY_LABEL,
@@ -602,6 +602,21 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       pages?: number;
       warnings?: string[];
       otherFields?: { label: string; value: string; evidence: { page: number } | null }[];
+      header?: Partial<
+        Record<'cgstPaise' | 'sgstPaise' | 'igstPaise' | 'taxablePaise', { value: unknown }>
+      >;
+    };
+    const num = (k: 'cgstPaise' | 'sgstPaise' | 'igstPaise' | 'taxablePaise') => {
+      const v = raw.header?.[k]?.value;
+      return typeof v === 'number' && Number.isInteger(v) ? v : null;
+    };
+    // The tax and goods value read on the invoice: a tax row's printed value that is not its tax
+    // (the taxable value Tally prints beside the rate) is never shown as if it were.
+    const read = {
+      cgst: num('cgstPaise'),
+      sgst: num('sgstPaise'),
+      igst: num('igstPaise'),
+      taxable: num('taxablePaise'),
     };
     const methods = (
       await veyra.db
@@ -620,8 +635,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       warnings: raw.warnings ?? [],
       // Everything else printed on the document, exactly as printed (label, value, page).
       otherFields: (raw.otherFields ?? []).map((f) => ({
-        label: f.label,
-        value: f.value,
+        ...describeTaxRow(f.label, f.value, read),
         page: f.evidence?.page ?? null,
       })),
       readAt: x.createdAt,

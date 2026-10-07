@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AI_CONFIDENCE_BP, toExtraction, type AiReading } from './gemini';
+import { AI_CONFIDENCE_BP, describeTaxRow, toExtraction, type AiReading } from './gemini';
 
 /**
  * A Tally-style invoice (tax only in the footer, one "Amount" column) as the AI reader may return
@@ -290,5 +290,32 @@ describe('a tax row’s value under "Also printed on the invoice"', () => {
       'test',
     );
     expect(rates(r)).toEqual([1800, 1800, 1800, 1800]);
+  });
+});
+
+describe('a tax row read before the check existed, as it is shown', () => {
+  const read = { cgst: 43_020, sgst: 43_020, igst: null, taxable: 478_000 };
+
+  it('the taxable value beside "CGST @ 9%" is named as such, with the tax read', () => {
+    expect(describeTaxRow('CGST @ 9%', '4780.00', read)).toEqual({
+      label: 'CGST @ 9% · taxable value',
+      value: '4780.00 (tax 430.20)',
+    });
+    expect(describeTaxRow('SGST @ 9%', '4780.00', read).label).toBe('SGST @ 9% · taxable value');
+  });
+
+  it('even when the tax itself was not read, the goods value is not shown as the tax', () => {
+    expect(describeTaxRow('CGST @ 9%', '4780.00', { ...read, cgst: null })).toEqual({
+      label: 'CGST @ 9% · taxable value',
+      value: '4780.00',
+    });
+  });
+
+  it('the tax itself, other labels and rows already described are left as they are', () => {
+    expect(describeTaxRow('CGST @ 9%', '430.20', read).label).toBe('CGST @ 9%');
+    expect(describeTaxRow('Total', '4', read).label).toBe('Total');
+    expect(describeTaxRow('CGST @ 9% · taxable value', '4780.00', read).label).toBe(
+      'CGST @ 9% · taxable value',
+    );
   });
 });

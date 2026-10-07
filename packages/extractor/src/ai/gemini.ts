@@ -409,27 +409,44 @@ export function taxRowShown(
   value: string,
   header: ExtractedHeader,
 ): { label: string; value: string } {
+  return describeTaxRow(label, value, {
+    cgst: h(header.cgstPaise) as number | null,
+    sgst: h(header.sgstPaise) as number | null,
+    igst: h(header.igstPaise) as number | null,
+    taxable: h(header.taxablePaise) as number | null,
+  });
+}
+const h = (f: Field<unknown>) => f.value;
+
+/**
+ * The same, from the invoice's tax and goods value as numbers (paise): used when an invoice is
+ * shown, so readings made before this check existed are labelled correctly too. A row already
+ * described is left as it is.
+ */
+export function describeTaxRow(
+  label: string,
+  value: string,
+  read: { cgst: number | null; sgst: number | null; igst: number | null; taxable: number | null },
+): { label: string; value: string } {
+  if (label.includes(' · ')) return { label, value };
   const m = /\b(CGST|SGST|UTGST|IGST)\b[^%\d]{0,12}\d{1,2}(?:\.\d{1,2})?\s*%/i.exec(label);
   if (!m) return { label, value };
   const head = (m[1] ?? '').toUpperCase();
-  const tax = (
-    head === 'IGST'
-      ? h(header.igstPaise)
-      : head === 'CGST'
-        ? h(header.cgstPaise)
-        : h(header.sgstPaise)
-  ) as number | null;
+  const tax = head === 'IGST' ? read.igst : head === 'CGST' ? read.cgst : read.sgst;
   const amounts = [...value.matchAll(/\d[\d,]*\.\d{2}/g)]
     .map((a) => parseAmount(a[0]))
     .filter((a): a is number => a !== null);
-  if (tax === null || amounts.length === 0 || amounts.includes(tax)) return { label, value };
+  if (amounts.length === 0 || (tax !== null && amounts.includes(tax))) return { label, value };
   const rupees = (p: number) => (p / 100).toFixed(2);
-  const goods = h(header.taxablePaise) as number | null;
-  if (amounts.length === 1 && amounts[0] === goods)
-    return { label: `${label} · taxable value`, value: `${value} (tax ${rupees(tax)})` };
+  // The value the tax is charged on (Tally prints it beside the rate): never shown as the tax.
+  if (amounts.length === 1 && amounts[0] === read.taxable)
+    return {
+      label: `${label} · taxable value`,
+      value: tax === null ? value : `${value} (tax ${rupees(tax)})`,
+    };
+  if (tax === null) return { label, value };
   return { label: `${label} · not the tax read`, value: `${value} (${head} read: ${rupees(tax)})` };
 }
-const h = (f: Field<unknown>) => f.value;
 
 /**
  * A line amount the reading left "not printed" (not one it could not read: that stays not read),
