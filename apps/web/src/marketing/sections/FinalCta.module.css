@@ -35,6 +35,19 @@
   color: #d3e6de;
 }
 
+.demo {
+  margin-top: var(--space-3);
+  font-size: var(--text-small);
+}
+.demo a {
+  color: #d3e6de;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.demo a:hover {
+  color: #ffffff;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

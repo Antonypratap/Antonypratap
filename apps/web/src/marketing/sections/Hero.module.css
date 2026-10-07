@@ -38,7 +38,7 @@
 }
 
 .title {
-  max-width: 17ch;
+  max-width: 18ch;
   font-size: clamp(2.25rem, 1.3rem + 2.9vw, 3.75rem);
   line-height: 1.04;
   letter-spacing: -0.03em;

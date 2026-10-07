@@ -1,6 +1,6 @@
 import { ButtonLink, Container, Icon } from '../../design-system';
 import { demoEntryHref } from '../../access/demoAccess';
-import { InvoiceStory } from '../visuals/InvoiceStory';
+import { ControlFlow } from '../visuals/ControlFlow';
 import { challengeEntryHref } from '../../site/host';
 import styles from './Hero.module.css';
 
@@ -13,29 +13,33 @@ export function Hero() {
         <div className={styles.copy}>
           <p className={styles.kicker}>
             <span className={styles.dot} aria-hidden="true" />
-            Invoice verification before payment
+            Supplier invoice control, before payment
           </p>
           <h1 id="hero-title" className={styles.title}>
-            Check every invoice against your accounting records{' '}
-            <span className={styles.accent}>before you pay.</span>
+            Before you pay the invoice,{' '}
+            <span className={styles.accent}>verify what you ordered and received.</span>
           </h1>
           <p className={styles.lede}>
-            Veyrafy reads each supplier invoice, checks it against your accounting and purchasing
-            records (the order, the goods received, the agreed rates and GST) and puts every
-            difference in front of your team before it becomes a payment problem.
+            Veyrafy checks supplier invoices against your purchase orders, goods received and
+            reference records — so discrepancies are caught before money leaves.
           </p>
           <div className={styles.ctas}>
-            <ButtonLink href={challengeEntryHref()} size="lg" arrow>
-              Check 5 of your invoices free
+            <ButtonLink href="#/request-access" size="lg" arrow>
+              Book a Demo
             </ButtonLink>
-            <ButtonLink href="#how-veyrafy-checks" size="lg" variant="secondary">
-              See how it works
+            <ButtonLink href="#how-it-works" size="lg" variant="secondary">
+              See How It Works
             </ButtonLink>
           </div>
           <p className={styles.challenge}>
-            No sign-up: drop in your supplier invoices and see what gets caught.{' '}
+            Want to see it on your own bills?{' '}
+            <a href={challengeEntryHref()}>
+              Check 5 of your invoices free
+              <Icon name="arrowRight" size={14} />
+            </a>{' '}
+            or{' '}
             <a href={demoEntryHref()}>
-              Or try the demo with sample invoices
+              try the demo with sample invoices
               <Icon name="arrowRight" size={14} />
             </a>
           </p>
@@ -49,7 +53,7 @@ export function Hero() {
           </ul>
         </div>
         <div className={styles.visual}>
-          <InvoiceStory />
+          <ControlFlow />
         </div>
       </Container>
     </section>

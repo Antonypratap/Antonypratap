@@ -4,9 +4,9 @@ import { ButtonLink, Container, Icon, Logo } from '../design-system';
 import styles from './SiteNav.module.css';
 
 const LINKS = [
-  { href: '#why-now', label: 'Why now' },
+  { href: '#the-problem', label: 'The problem' },
   { href: '#how-it-works', label: 'How it works' },
-  { href: '#built-for-india', label: 'Built for India' },
+  { href: '#who-its-for', label: 'Who it’s for' },
 ];
 /** The website's way in for clients (Client login) and for prospects (Request access). */
 const ACCESS_LINKS = [

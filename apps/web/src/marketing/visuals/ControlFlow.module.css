@@ -1,0 +1,158 @@
+/* The hero's control-point diagram: documents in, Veyrafy, two outcomes. */
+.flow {
+  display: grid;
+  justify-items: center;
+  margin: 0;
+  padding: clamp(1.25rem, 0.8rem + 1.6vw, 2rem);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-panel);
+}
+
+.source {
+  width: 100%;
+  max-width: 17rem;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  text-align: center;
+}
+.who {
+  font-size: var(--text-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+}
+.doc {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+.what {
+  margin-top: 0.125rem;
+  font-size: var(--text-xsmall);
+  color: var(--color-ink-2);
+}
+
+.records {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+.records .source {
+  max-width: none;
+}
+.plus {
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink-3);
+}
+
+/* A short vertical connector with an arrowhead. */
+.down {
+  position: relative;
+  width: 1px;
+  height: 1.5rem;
+  margin-block: 0.25rem;
+  background: var(--color-ink-4);
+}
+.down::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 50%;
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-right: 1px solid var(--color-ink-4);
+  border-bottom: 1px solid var(--color-ink-4);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.veyrafy {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--color-inverse);
+  color: var(--color-inverse-ink);
+}
+.veyrafy strong {
+  display: block;
+  font-size: 1.0625rem;
+  letter-spacing: -0.01em;
+}
+.veyrafySub {
+  display: block;
+  font-size: var(--text-xsmall);
+  color: var(--color-inverse-ink-2);
+}
+.mark {
+  flex: none;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 999px;
+  background: var(--color-inverse-accent);
+}
+
+.outcomes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  width: 100%;
+  margin-top: var(--space-3);
+}
+.outcome {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-accent-line);
+  background: var(--color-accent-soft);
+}
+.outcome[data-tone='difference'] {
+  border-color: var(--color-attention-line);
+  background: var(--color-attention-soft);
+}
+.result {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-label);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+.outcome[data-tone='difference'] .result {
+  color: var(--color-attention);
+}
+.path {
+  margin-top: var(--space-1);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+.step {
+  white-space: nowrap;
+}
+.note {
+  margin-top: 0.125rem;
+  font-size: var(--text-xsmall);
+  line-height: 1.45;
+  color: var(--color-ink-2);
+}
+
+@media (max-width: 420px) {
+  .records,
+  .outcomes {
+    grid-template-columns: 1fr;
+  }
+  .plus {
+    justify-self: center;
+  }
+}

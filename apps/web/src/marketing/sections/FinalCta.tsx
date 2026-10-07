@@ -10,15 +10,18 @@ export function FinalCta() {
         <Reveal className={styles.band}>
           <div className={styles.copy}>
             <h2 id="cta-title" className={styles.title}>
-              See an invoice handled in three minutes.
+              Know what you’re paying for before you pay.
             </h2>
             <p className={styles.lede}>
-              Open the demo with sample invoices, or call us and we’ll walk you through it.
+              See how Veyrafy can fit into your supplier invoice and payment workflow.
+            </p>
+            <p className={styles.demo}>
+              <a href={demoEntryHref()}>Or try the demo with sample invoices</a>
             </p>
           </div>
           <div className={styles.actions}>
-            <ButtonLink href={demoEntryHref()} size="lg" variant="inverse" arrow>
-              See Veyrafy in action
+            <ButtonLink href="#/request-access" size="lg" variant="inverse" arrow>
+              Book a Demo
             </ButtonLink>
             <a href={CONTACT_PHONE_HREF} className={styles.phone}>
               {CONTACT_PHONE}

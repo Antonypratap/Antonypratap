@@ -4,13 +4,14 @@
  * file (vite.config.ts), so they can never say different things. Every statement here must be
  * true of the product today: no claim Veyrafy cannot back.
  *
- * Audience: owners, finance controllers and accounts teams at Indian breweries, brewpubs and
- * restaurant groups (and other businesses that buy against orders and record what arrives).
+ * Audience: owners, finance controllers and accounts teams at businesses that buy from suppliers,
+ * receive goods against orders and pay supplier invoices: restaurants and F&B, hotels, retail,
+ * manufacturing, warehouses, facilities, healthcare and institutions.
  */
 export const SITE_URL = 'https://veyrafy.com/';
 
 export const SEO = {
-  title: 'Veyrafy · Invoice verification against your accounting records, before payment',
+  title: 'Veyrafy · Verify invoices against PO and GRN before payment',
   description:
     'Veyrafy checks every supplier invoice against your accounting/ERP and purchasing records before it is approved for payment: the purchase order, the goods received, agreed rates, GST and duplicates. Differences are put in front of your team to resolve; Veyrafy never pays anything.',
   keywords: [
@@ -31,7 +32,7 @@ export const SEO = {
     'brewery invoice management',
     'restaurant supplier invoice checking',
   ],
-  shareTitle: 'Veyrafy · Check every invoice against your accounting records before you pay',
+  shareTitle: 'Veyrafy · Before you pay the invoice, verify what you ordered and received',
   shareDescription:
     'Veyrafy checks supplier invoices against your accounting/ERP records, purchase orders and goods receipts, and surfaces every difference before payment.',
 } as const;
@@ -44,7 +45,7 @@ export const FAQ: readonly { q: string; a: string }[] = [
   },
   {
     q: 'Who is Veyrafy for?',
-    a: 'Breweries, brewpubs and restaurant groups in India, and any business that orders from suppliers and records what arrives: their owners, finance controllers and accounts teams.',
+    a: 'Businesses that buy, receive and pay: restaurants and F&B, hotels and hospitality, retail and supermarkets, manufacturing, warehouses and distribution, co-working and commercial facilities, healthcare and institutions. Their owners, finance controllers, accounts and store teams.',
   },
   {
     q: 'What is three-way matching?',
@@ -78,9 +79,9 @@ export const FAQ: readonly { q: string; a: string }[] = [
 
 /** The homepage as plain HTML, for crawlers that do not run JavaScript (same words as the page). */
 export const CRAWLABLE_SUMMARY = {
-  kicker: 'Invoice verification before payment',
-  h1: 'Check every invoice against your accounting records before you pay.',
-  lede: 'Veyrafy reads each supplier invoice, checks it against your accounting and purchasing records (the order, the goods received, the agreed rates and GST) and puts every difference in front of your team before it becomes a payment problem.',
+  kicker: 'Supplier invoice control, before payment',
+  h1: 'Before you pay the invoice, verify what you ordered and received.',
+  lede: 'Veyrafy checks supplier invoices against your purchase orders, goods received and reference records — so discrepancies are caught before money leaves.',
   points: [
     'Checks every invoice against your accounting/ERP records before payment',
     'Validates GSTIN, CGST, SGST and IGST, HSN and SAC codes',

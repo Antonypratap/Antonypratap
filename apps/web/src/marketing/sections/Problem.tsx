@@ -63,7 +63,7 @@ export function Problem() {
       <Container>
         <div className={styles.grid}>
           <div className={styles.copy}>
-            <p className={styles.eyebrow}>The problem</p>
+            <p className={styles.eyebrow}>What slips through</p>
             <h2 id="problem-title" className={styles.title}>
               Supplier bills pile up. The mistakes hide inside them.
             </h2>

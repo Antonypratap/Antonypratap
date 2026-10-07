@@ -4,110 +4,73 @@
 
 .flow {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   margin-top: clamp(2.5rem, 1.5rem + 3vw, 4.5rem);
   border-top: 1px solid var(--color-ink);
 }
 
 .stage {
   position: relative;
-  padding: var(--space-8) var(--space-8) 0 0;
+  padding: var(--space-6) var(--space-5) var(--space-6) 0;
 }
 .stage + .stage {
-  padding-left: var(--space-8);
+  padding-left: var(--space-5);
   border-left: 1px solid var(--color-line);
 }
 
-.state {
-  display: flex;
-  align-items: center;
-  height: 1.75rem;
+/* Steps 3 and 4: Veyrafy, the control point between receipt and payment. */
+.control {
+  background: var(--color-accent-soft);
+  box-shadow: inset 0 3px 0 var(--color-accent);
+}
+.stage.control {
+  padding-left: var(--space-5);
 }
 
-.struckChip {
-  display: inline-flex;
-  align-items: center;
-  height: 1.375rem;
-  padding: 0 0.5rem;
-  border-radius: var(--radius-pill);
-  box-shadow: inset 0 0 0 1px var(--color-line);
-  font-size: 0.71875rem;
-  font-weight: var(--weight-medium);
+.num {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-3);
+}
+.control .num {
+  color: var(--color-accent);
 }
 
 .stageTitle {
-  margin-top: var(--space-6);
-  font-size: clamp(1.375rem, 1.1rem + 0.8vw, 1.75rem);
-  line-height: 1.15;
-  letter-spacing: -0.03em;
+  margin-top: var(--space-4);
+  font-size: clamp(1.1875rem, 1rem + 0.5vw, 1.375rem);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
 }
 
 .stageText {
-  max-width: 17rem;
   margin-top: var(--space-3);
   font-size: var(--text-small);
   line-height: 1.6;
   color: var(--color-ink-2);
 }
 
-.arrow {
-  position: absolute;
-  top: calc(var(--space-8) + 0.1875rem);
-  right: calc(-1 * 0.6875rem);
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  width: 1.375rem;
-  height: 1.375rem;
-  background: var(--color-canvas);
+.who {
+  margin-top: var(--space-4);
+  font-size: var(--text-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   color: var(--color-ink-3);
+}
+.control .who {
+  color: var(--color-accent);
 }
 
 @media (max-width: 960px) {
-  .flow {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .stage:nth-child(3) {
-    padding-left: 0;
-    border-left: 0;
-  }
-  .stage:nth-child(n + 3) {
-    margin-top: var(--space-8);
-    border-top: 1px solid var(--color-line);
-  }
-  .stage:nth-child(2) .arrow {
-    display: none;
-  }
-}
-
-@media (max-width: 560px) {
   .flow {
     grid-template-columns: 1fr;
   }
   .stage,
   .stage + .stage,
-  .stage:nth-child(n + 3) {
-    margin-top: 0;
-    padding: var(--space-6) 0 var(--space-8);
+  .stage.control {
+    padding: var(--space-5) var(--space-4);
     border-left: 0;
-    border-top: 1px solid var(--color-line);
-  }
-  .stage:first-child {
-    border-top: 0;
-  }
-  .stageTitle {
-    margin-top: var(--space-4);
-  }
-  .arrow,
-  .stage:nth-child(2) .arrow {
-    display: grid;
-    top: auto;
-    right: auto;
-    bottom: calc(-1 * 0.6875rem);
-    left: 0;
-    transform: rotate(90deg);
-  }
-  .stage:last-child .arrow {
-    display: none;
+    border-bottom: 1px solid var(--color-line);
   }
 }
