@@ -6,11 +6,12 @@
  */
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ConfigError, loadConfig } from '../config';
+import { ConfigError, cliDatabase } from '../config';
 import { PendingMigrationsError, openVeyraDb, pendingMigrations } from '../db/open';
 
 try {
-  const config = loadConfig(process.env, {
+  // The application's database, or on the website service the blog's (VEYRA_BLOG=true).
+  const config = cliDatabase(process.env, {
     dataDir: fileURLToPath(new URL('../../../../data/veyra', import.meta.url)),
   });
   const target = {

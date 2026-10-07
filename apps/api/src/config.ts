@@ -224,6 +224,12 @@ const VARS = {
   VEYRA_WEB_DIST: z.string().min(1),
   // true: this process is the public website only (site.ts); read by main.ts before anything else.
   VEYRA_SITE_ONLY: bool,
+  // The website's blog (docs/BLOG.md): its own database, editors' sign-in and the studio.
+  VEYRA_BLOG: bool,
+  // Google Analytics 4 measurement id (public, e.g. G-ABC123XYZ); loaded only after consent.
+  VEYRA_GA4_MEASUREMENT_ID: z.string().regex(/^G-[A-Z0-9]{4,16}$/),
+  // Google Search Console HTML-tag verification token (the content of its meta tag; public).
+  VEYRA_GSC_VERIFICATION: z.string().regex(/^[A-Za-z0-9_-]{10,100}$/),
   // The 5 Invoice Challenge (acquisition), and its follow-up e-mail.
   VEYRA_CHALLENGE: bool,
   VEYRA_CHALLENGE_RETENTION_DAYS: int(1, 365),
@@ -474,11 +480,28 @@ export interface SiteConfig {
   trustProxy: number;
   logLevel: VeyraConfig['logLevel'];
   release: string | null;
+  /** Public analytics settings (never secrets): GA4 loads only after a visitor consents. */
+  analytics: { ga4MeasurementId: string | null; gscVerification: string | null };
+  /** The blog (VEYRA_BLOG=true): its database and the editors' sign-in. Null: no blog. */
+  blog: SiteBlogConfig | null;
+}
+
+export interface SiteBlogConfig {
+  /** Null only in development: the embedded engine in `<dataDir>/pgdata`. */
+  database: VeyraConfig['database'];
+  dataDir: string;
+  migrateOnStart: boolean;
+  session: { idleMs: number; absoluteMs: number };
+  cookieSecure: boolean;
+  /** Where editors open the studio (state-changing requests from elsewhere are refused). */
+  publicOrigins: string[];
+  loginPerMinute: number;
 }
 
 /**
- * Configuration for the website process. It reads ONLY what a static website needs: no database,
- * storage, ERP, sign-in or job settings are read or required (DATABASE_URL may be absent).
+ * Configuration for the website process. Without VEYRA_BLOG it reads ONLY what a static website
+ * needs: no database, storage, ERP, sign-in or job settings are read or required (DATABASE_URL may
+ * be absent). With VEYRA_BLOG=true it also reads the blog's database and the editors' sign-in.
  */
 export function loadSiteConfig(env: Env): SiteConfig {
   const problems: string[] = [];
@@ -494,9 +517,115 @@ export function loadSiteConfig(env: Env): SiteConfig {
     trustProxy: read('VEYRA_TRUST_PROXY') ?? 0,
     logLevel: read('VEYRA_LOG_LEVEL') ?? (deployed ? 'info' : 'warn'),
     release: releaseOf(env),
+    analytics: {
+      ga4MeasurementId: read('VEYRA_GA4_MEASUREMENT_ID') ?? null,
+      gscVerification: read('VEYRA_GSC_VERIFICATION') ?? null,
+    },
+    blog: read('VEYRA_BLOG')
+      ? siteBlogConfig(read, require, environment, deployed, problems)
+      : null,
   };
   if (problems.length > 0) throw new ConfigError(problems);
   return config;
+}
+
+/**
+ * The website's blog: its own PostgreSQL database (the same schema and migrations as every
+ * Veyrafy database) and sign-in for Veyrafy's editors, with the application's production rules
+ * (TLS to a remote database, secure cookies, https origins).
+ */
+function siteBlogConfig(
+  read: ReturnType<typeof reader>['read'],
+  require: ReturnType<typeof reader>['require'],
+  environment: Environment,
+  deployed: boolean,
+  problems: string[],
+): SiteBlogConfig {
+  const url = deployed
+    ? require('DATABASE_URL', `when VEYRA_BLOG is true in ${environment} (the blog's database)`)
+    : read('DATABASE_URL');
+  const migrationUrl = read('DATABASE_MIGRATION_URL');
+  if (environment === 'production' && (read('VEYRA_DB_REQUIRE_TLS') ?? true))
+    for (const [name, value] of [
+      ['DATABASE_URL', url],
+      ['DATABASE_MIGRATION_URL', migrationUrl],
+    ] as const)
+      if (value && !tlsOrLocal(value))
+        problems.push(
+          `${name} must set sslmode=verify-full (or require) for a database on another host in production`,
+        );
+  const dataDirRaw = read('VEYRA_DATA_DIR');
+  if (dataDirRaw !== undefined && deployed && !isAbsolute(dataDirRaw))
+    problems.push('VEYRA_DATA_DIR must be an absolute path outside development');
+  const publicOrigins = deployed
+    ? require('VEYRA_PUBLIC_ORIGIN', `when VEYRA_BLOG is true in ${environment} (https://veyrafy.com)`)
+    : (read('VEYRA_PUBLIC_ORIGIN') ?? DEV_ORIGINS);
+  const cookieSecure = read('VEYRA_COOKIE_SECURE') ?? deployed;
+  if (environment === 'production') {
+    if (!cookieSecure) problems.push('VEYRA_COOKIE_SECURE must not be false in production');
+    if ((publicOrigins ?? []).some((o) => !o.startsWith('https://')))
+      problems.push('VEYRA_PUBLIC_ORIGIN must be https:// in production');
+  }
+  const idleMinutes = read('VEYRA_SESSION_IDLE_MINUTES') ?? 30;
+  const absoluteHours = read('VEYRA_SESSION_ABSOLUTE_HOURS') ?? 12;
+  if (idleMinutes > absoluteHours * 60)
+    problems.push(
+      'VEYRA_SESSION_IDLE_MINUTES must not be longer than VEYRA_SESSION_ABSOLUTE_HOURS',
+    );
+  return {
+    database: {
+      url: url ? new Secret(url) : null,
+      migrationUrl: migrationUrl ? new Secret(migrationUrl) : null,
+      pool: {
+        max: read('VEYRA_DB_POOL_MAX') ?? 5,
+        connectTimeoutMs: read('VEYRA_DB_CONNECT_TIMEOUT_MS') ?? 5_000,
+        statementTimeoutMs: read('VEYRA_DB_STATEMENT_TIMEOUT_MS') ?? 30_000,
+      },
+    },
+    dataDir: resolve(dataDirRaw ?? 'data/veyrafy-site'),
+    migrateOnStart: read('VEYRA_MIGRATE_ON_START') ?? environment !== 'production',
+    session: { idleMs: idleMinutes * 60_000, absoluteMs: absoluteHours * 3_600_000 },
+    cookieSecure,
+    publicOrigins: publicOrigins ?? [],
+    loginPerMinute: read('VEYRA_RATE_LIMIT_LOGIN_PER_MINUTE') ?? 10,
+  };
+}
+
+/** Whether this process is the public website (VEYRA_SITE_ONLY=true). */
+export function isSiteOnly(env: Env): boolean {
+  const parsed = VARS.VEYRA_SITE_ONLY.safeParse(env.VEYRA_SITE_ONLY ?? 'false');
+  return parsed.success && parsed.data;
+}
+
+/**
+ * The database the command-line tools (db:migrate, users, blog:seed) work on: the application's,
+ * or on the website service the blog's (VEYRA_SITE_ONLY with VEYRA_BLOG). `site` tells the tools
+ * which accounts belong there (on the website, Veyrafy's editors only).
+ */
+export function cliDatabase(
+  env: Env,
+  defaults: { dataDir: string },
+): {
+  site: boolean;
+  database: VeyraConfig['database'];
+  dataDir: string;
+  session: { idleMs: number; absoluteMs: number };
+} {
+  if (isSiteOnly(env)) {
+    const blog = loadSiteConfig(env).blog;
+    if (!blog)
+      throw new ConfigError([
+        'VEYRA_BLOG is not true: this website service has no database (see docs/BLOG.md)',
+      ]);
+    return { site: true, database: blog.database, dataDir: blog.dataDir, session: blog.session };
+  }
+  const config = loadConfig(env, defaults);
+  return {
+    site: false,
+    database: config.database,
+    dataDir: config.dataDir,
+    session: config.auth.session,
+  };
 }
 
 /** Outbound e-mail: a provider needs its key and a sender address. */

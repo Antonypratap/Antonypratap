@@ -3,6 +3,7 @@ import { loadSession, signOut, useAccountSuspended, useSession } from '../access
 import { Logo } from '../design-system';
 import { HomePage } from '../marketing/HomePage';
 import { parseHash, useHash } from '../product/router';
+import { isStudioPage } from '../blog-studio/common';
 import { CHALLENGE_ADDRESS, WEBSITE_ADDRESS, isChallengePage, type HostKind } from './host';
 import { checkInstance, type InstanceCheck } from './instance';
 import { legalPageOf } from './legal';
@@ -20,6 +21,10 @@ const OpsApp = lazy(() => import('../ops/OpsApp').then((m) => ({ default: m.OpsA
 // The 5 Invoice Challenge (public, no sign-in), loaded only when opened.
 const ChallengeApp = lazy(() =>
   import('../challenge/ChallengeApp').then((m) => ({ default: m.ChallengeApp })),
+);
+// The blog's publishing studio (veyrafy.com/admin/blog), loaded only when opened.
+const StudioApp = lazy(() =>
+  import('../blog-studio/StudioApp').then((m) => ({ default: m.StudioApp })),
 );
 const OperatorNotice = lazy(() =>
   import('../ops/OperatorNotice').then((m) => ({ default: m.OperatorNotice })),
@@ -83,6 +88,24 @@ function Suspended() {
   );
 }
 
+/** The blog studio: Veyrafy's editors sign in with their own accounts (no demo PIN). */
+function Studio() {
+  const session = useSession();
+  useEffect(() => {
+    if (session.status === 'loading') void loadSession();
+  }, [session.status]);
+  if (session.status === 'loading') return null;
+  return (
+    <Suspense fallback={null}>
+      {session.status === 'signedOut' ? (
+        <SignIn demo={false} notice={session.notice} organization="Veyrafy blog studio" home="/" />
+      ) : (
+        <StudioApp />
+      )}
+    </Suspense>
+  );
+}
+
 /** A client address: confirmed by its own instance before anything else is shown. */
 function ClientInstance() {
   const [check, setCheck] = useState<InstanceCheck | null>(null);
@@ -114,6 +137,9 @@ export function Surface({ host, hash: forced }: { host: HostKind; hash?: string 
       </Suspense>
     );
   if (host.kind === 'client') return <ClientInstance />;
+  // The blog studio lives on the website (and in development), never on a client's address.
+  if (isStudioPage(typeof window === 'undefined' ? '' : window.location.pathname))
+    return <Studio />;
   const page = sitePageOf(hash);
   if (page === 'login') return <ClientLogin />;
   if (page === 'request-access') return <RequestAccess />;

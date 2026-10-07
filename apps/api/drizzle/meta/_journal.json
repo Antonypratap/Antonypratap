@@ -64,6 +64,13 @@
       "when": 1791090445014,
       "tag": "0008_ten_invoice_challenge",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791138337314,
+      "tag": "0009_blog",
+      "breakpoints": true
     }
   ]
 }

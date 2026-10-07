@@ -25,7 +25,11 @@ REVOKE DELETE, TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public FROM
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO veyra_app;
 
 -- The workflow, security and commercial audit trails are append-only for the application.
-REVOKE UPDATE ON audit_events, security_events, commercial_events, processing_usage FROM veyra_app;
+REVOKE UPDATE ON audit_events, security_events, commercial_events, processing_usage, blog_events FROM veyra_app;
+
+-- The blog's one exception (docs/BLOG.md): removing a tag from an article deletes that one
+-- assignment row. Articles, revisions, media and redirects are never deleted (retired instead).
+GRANT DELETE ON blog_article_tags TO veyra_app;
 
 -- The API reads which migrations are applied (it refuses to start with pending ones).
 GRANT USAGE ON SCHEMA drizzle TO veyra_app;

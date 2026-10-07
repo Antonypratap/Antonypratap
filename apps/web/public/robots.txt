@@ -4,5 +4,9 @@ User-agent: *
 Allow: /
 Disallow: /api/
 Disallow: /app/
+# The blog's publishing studio, editors' previews and search results (docs/BLOG.md).
+Disallow: /admin/
+Disallow: /blog/preview/
+Disallow: /blog/search
 
 Sitemap: https://veyrafy.com/sitemap.xml

@@ -18,7 +18,8 @@
     "db:migrate-from-sqlite": "tsx src/cli/migrate-from-sqlite.ts",
     "users": "tsx src/cli/users.ts",
     "bench": "tsx bench/run.ts",
-    "bench:load": "tsx bench/load.ts"
+    "bench:load": "tsx bench/load.ts",
+    "blog:seed": "tsx src/cli/blog-seed.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",

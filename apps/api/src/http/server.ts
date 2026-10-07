@@ -15,9 +15,7 @@ import { z } from 'zod';
 import {
   ApiAnswerBodySchema,
   ApiInstanceSchema,
-  ApiLoginBodySchema,
   ApiSecurityEventSchema,
-  ApiSessionSchema,
   ApiUserSchema,
   type Permission,
   ApiCapabilitiesSchema,
@@ -48,9 +46,8 @@ import {
 import * as t from '../db/schema';
 import { InvalidTransitionError } from '../workflow/state-machine';
 import { DEMO_USER, VeyraError, uploadLimitText, type Veyra } from '../workflow/veyra';
-import { safeEqual, type ActiveSession, type SessionStore } from '../auth/sessions';
-import { normalizeEmail, type Users } from '../auth/users';
-import { verifyPassword } from '../auth/passwords';
+import type { ActiveSession, SessionStore } from '../auth/sessions';
+import type { Users } from '../auth/users';
 import type { Secret } from '../secret';
 import {
   actorOf,
@@ -79,6 +76,7 @@ import { usageOf, usedFor } from '../commercial/usage';
 import { registerOps } from './ops';
 import { registerSecurityHeaders } from './security-headers';
 import { registerWebApp, type WebFiles } from './web-static';
+import { registerAuthRoutes } from './auth-routes';
 import {
   auditTable,
   businessRecordsXlsx,
@@ -380,20 +378,9 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   });
 
   const PUBLIC = { config: { access: 'public' } } as const;
-  const SESSION = { config: { access: 'session' } } as const;
-  /** Sign-in routes: responses carry the CSRF token, so they are never compressed. */
-  const AUTH_PUBLIC = { ...PUBLIC, compress: false } as const;
-  const AUTH_SESSION = { ...SESSION, compress: false } as const;
   const may = (access: Permission) => ({ config: { access } });
 
   // ── Sign-in and sessions (Phase 6C) ──────────────────────────────────────
-  const cookieOptions = (expiresAt: string) => ({
-    httpOnly: true,
-    secure: options.auth.cookieSecure,
-    sameSite: 'strict' as const,
-    path: '/',
-    expires: new Date(expiresAt),
-  });
   const ctx = (req: FastifyRequest) => ({ userId: req.auth?.user.id ?? null, requestId: req.id });
   const sessionView = (auth: ActiveSession): ApiSession => ({
     authenticated: true,
@@ -404,9 +391,9 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       email: auth.user.email,
       role: auth.user.role,
     },
-    // Demo tooling is only offered where it exists.
+    // Demo tooling is only offered where it exists; the blog exists only on the website.
     permissions: ROLE_PERMISSIONS[auth.user.role].filter(
-      (p) => p !== 'demo.manage' || options.resetDemo !== undefined,
+      (p) => (p !== 'demo.manage' || options.resetDemo !== undefined) && !p.startsWith('blog.'),
     ),
     // Veyra's operators belong to the platform organization, not to the customer's.
     organization:
@@ -416,17 +403,6 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     csrfToken: auth.csrfToken,
     expiresAt: auth.expiresAt,
   });
-  /** A new session (after sign-in or a password change): the old one, if any, ends first. */
-  const startSession = async (req: FastifyRequest, reply: FastifyReply, userId: string) => {
-    if (req.auth) await sessions.revokeHash(req.auth.tokenHash);
-    else await sessions.revoke(req.cookies[cookieName]);
-    const created = await sessions.create(userId);
-    void reply.setCookie(cookieName, created.token, cookieOptions(created.expiresAt));
-    const auth = await sessions.resolve(created.token);
-    if (!auth) throw new Error('new session did not resolve');
-    return auth;
-  };
-
   // Which Veyrafy instance answers at this address: the organization's display name and whether it
   // is the demo, nothing else (ApiInstanceSchema is strict). The web app uses it to confirm that a
   // client address is set up. Authorization never depends on it: it is the configured
@@ -435,87 +411,16 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     send(ApiInstanceSchema, { name: veyra.organizationName, demo: demoPin !== null }),
   );
 
-  app.get('/api/v1/auth/session', AUTH_PUBLIC, async (req) =>
-    send(
-      ApiSessionSchema,
-      req.auth ? sessionView(req.auth) : { authenticated: false, demoSignIn: demoPin !== null },
-    ),
-  );
-
-  app.post('/api/v1/auth/login', AUTH_PUBLIC, async (req, reply) => {
-    const body = ApiLoginBodySchema.parse(req.body ?? {});
-    // Per account as well as per address: guessing one account's password from many addresses.
-    const retryAfter = limiter.hit('login', `account:${normalizeEmail(body.email)}`);
-    if (retryAfter !== null) return tooMany(req, reply, retryAfter);
-    const user = await users.authenticate(body.email, body.password);
-    if (!user) {
-      await users.record(
-        'login.failed',
-        { userId: null, requestId: req.id },
-        { method: 'password' },
-        await users.idOf(body.email),
-      );
-      // One answer for unknown account, wrong password and disabled account.
-      return reply
-        .status(401)
-        .send(error('INVALID_CREDENTIALS', 'The email or password is not correct.', {}, req.id));
-    }
-    const auth = await startSession(req, reply, user.id);
-    await users.record(
-      'login.succeeded',
-      { userId: user.id, requestId: req.id },
-      { method: 'password' },
-    );
-    return send(ApiSessionSchema, sessionView(auth));
-  });
-
-  // Demo only (never production): the demo PIN opens a session as the demo's designated user.
-  if (demoPin) {
-    app.post('/api/v1/auth/demo', AUTH_PUBLIC, async (req, reply) => {
-      const { pin } = z.object({ pin: z.string().max(32) }).parse(req.body ?? {});
-      if (!safeEqual(pin, demoPin.reveal())) {
-        await users.record(
-          'login.failed',
-          { userId: null, requestId: req.id },
-          { method: 'demo_pin' },
-        );
-        return reply
-          .status(401)
-          .send(error('INVALID_CREDENTIALS', 'That PIN isn’t correct.', {}, req.id));
-      }
-      const auth = await startSession(req, reply, DEMO_USER.id);
-      await users.record(
-        'login.succeeded',
-        { userId: DEMO_USER.id, requestId: req.id },
-        { method: 'demo_pin' },
-      );
-      return send(ApiSessionSchema, sessionView(auth));
-    });
-  }
-
-  app.post('/api/v1/auth/logout', AUTH_SESSION, async (req, reply) => {
-    const auth = req.auth;
-    if (auth) {
-      await sessions.revokeHash(auth.tokenHash);
-      await users.record('logout', ctx(req));
-    }
-    void reply.clearCookie(cookieName, { path: '/' });
-    return { ok: true };
-  });
-
-  app.post('/api/v1/auth/password', AUTH_SESSION, async (req, reply) => {
-    const { currentPassword, newPassword } = z
-      .object({ currentPassword: z.string().max(1024), newPassword: z.string().max(1024) })
-      .parse(req.body ?? {});
-    const me = await users.get(actorOf(req));
-    if (!(await verifyPassword(me.passwordHash, currentPassword)))
-      throw new VeyraError('INVALID_INPUT', 'The current password is not correct.', {
-        field: 'currentPassword',
-      });
-    await users.setPassword(me.id, newPassword, ctx(req), 'password.changed');
-    // Every session ended with the change; this browser continues on a fresh one.
-    req.auth = null;
-    return send(ApiSessionSchema, sessionView(await startSession(req, reply, me.id)));
+  registerAuthRoutes(app, {
+    sessions,
+    users,
+    cookieName,
+    cookieSecure: options.auth.cookieSecure,
+    limiter,
+    tooMany,
+    error,
+    sessionView,
+    demo: demoPin ? { pin: demoPin, userId: DEMO_USER.id } : null,
   });
 
   // ── Users and the security audit trail (ADMIN) ───────────────────────────

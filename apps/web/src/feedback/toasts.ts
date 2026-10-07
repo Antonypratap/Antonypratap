@@ -142,6 +142,17 @@ export const notify = {
   commercialSaved: () =>
     show('commercial', 'success', 'Change saved and recorded in the commercial audit trail.'),
   opsSaved: () => show('commercial', 'success', 'Change saved and recorded in the audit log.'),
+  // The blog's publishing studio (veyrafy.com/admin/blog).
+  blogCreated: () => show('blog', 'success', 'Draft created.'),
+  blogSaved: () => show('blog', 'success', 'Saved.'),
+  blogStatus: (status: 'draft' | 'in review' | 'scheduled' | 'published' | 'archived') =>
+    show(
+      'blog',
+      'success',
+      `Article ${status === 'draft' ? 'moved back to draft' : status === 'in review' ? 'sent for review' : status}.`,
+    ),
+  blogChanged: () => show('blog', 'success', 'Change saved.'),
+  blogFailed: () => show('blog', 'error', 'That did not work. Reload the page and try again.'),
 } as const;
 
 export function useToasts(): readonly Toast[] {

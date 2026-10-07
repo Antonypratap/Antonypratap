@@ -81,6 +81,15 @@ const TABLES: PgTable[] = [
   t.commercialEvents,
   t.processingUsage,
   t.challenges,
+  t.blogAuthors,
+  t.blogCategories,
+  t.blogTags,
+  t.blogMedia,
+  t.blogArticles,
+  t.blogArticleTags,
+  t.blogRevisions,
+  t.blogRedirects,
+  t.blogEvents,
 ];
 
 describe('schema and migrations', () => {
@@ -126,8 +135,15 @@ describe('schema and migrations', () => {
           where table_schema = 'public' group by data_type order by data_type`,
     );
     expect(types.map((x) => x.data_type).sort()).toEqual(
-      ['bigint', 'boolean', 'integer', 'text', 'timestamp with time zone'].sort(),
+      ['bigint', 'boolean', 'bytea', 'integer', 'text', 'timestamp with time zone'].sort(),
     );
+    // Raw bytes only for the blog's images, never for anything else.
+    const bytes = await q<{ c: string }>(
+      c,
+      sql`select table_name || '.' || column_name as c from information_schema.columns
+          where table_schema = 'public' and data_type = 'bytea' order by 1`,
+    );
+    expect(bytes.map((x) => x.c)).toEqual(['blog_media.body', 'blog_media.small_body']);
     const precision = await q<{ p: number }>(
       c,
       sql`select distinct datetime_precision::int as p from information_schema.columns

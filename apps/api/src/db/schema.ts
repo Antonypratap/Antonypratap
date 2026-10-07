@@ -14,6 +14,10 @@ import {
 } from 'drizzle-orm/pg-core';
 import {
   AUDIT_ACTOR_TYPES,
+  BLOG_CTAS,
+  BLOG_EVENTS,
+  BLOG_STATUSES,
+  TWITTER_CARDS,
   COMMERCIAL_EVENTS,
   COMMERCIAL_STATUSES,
   CHALLENGE_EMAIL_STATUSES,
@@ -837,5 +841,219 @@ export const challenges = pgTable(
     check('challenges_interest', inList(t.interest, CHALLENGE_INTERESTS)),
     check('challenges_follow_up', inList(t.followUp, CHALLENGE_FOLLOW_UPS)),
     index('challenges_created').on(t.createdAt),
+  ],
+);
+
+// ── The veyrafy.com blog (docs/BLOG.md) ──────────────────────────────────────
+// Lives in the website's own database (VEYRA_BLOG=true on the website service). Articles are typed
+// blocks (JSON), never HTML. Nothing here is ever deleted by the application (the runtime role has
+// no DELETE): drafts, media and redirects are retired with a timestamp, except an article's tag
+// assignments (blog_article_tags), the one table the runtime role may delete from.
+
+/** Raw bytes (an image), stored and returned as a Buffer. */
+const bytea = customType<{ data: Buffer; driverData: Buffer | Uint8Array }>({
+  dataType: () => 'bytea',
+  toDriver: (value) => value,
+  fromDriver: (value) => Buffer.from(value),
+});
+
+export const blogAuthors = pgTable('blog_authors', {
+  seq: seq(),
+  id: text('id').primaryKey(),
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull(),
+  /** Their role, shown under the name ("Finance operations, Veyrafy"). */
+  roleTitle: text('role_title').notNull().default(''),
+  bio: text('bio').notNull().default(''),
+  createdAt: isoTimestamp('created_at').notNull(),
+  updatedAt: isoTimestamp('updated_at').notNull(),
+});
+
+export const blogCategories = pgTable('blog_categories', {
+  seq: seq(),
+  id: text('id').primaryKey(),
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull(),
+  description: text('description').notNull().default(''),
+  position: integer('position').notNull().default(0),
+  createdAt: isoTimestamp('created_at').notNull(),
+  updatedAt: isoTimestamp('updated_at').notNull(),
+});
+
+export const blogTags = pgTable('blog_tags', {
+  seq: seq(),
+  id: text('id').primaryKey(),
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull(),
+  description: text('description').notNull().default(''),
+  createdAt: isoTimestamp('created_at').notNull(),
+  updatedAt: isoTimestamp('updated_at').notNull(),
+});
+
+/** Images, re-encoded by the server on upload (never served as uploaded). */
+export const blogMedia = pgTable(
+  'blog_media',
+  {
+    seq: seq(),
+    id: text('id').primaryKey(),
+    mime: text('mime').notNull(),
+    body: bytea('body').notNull(),
+    width: integer('width').notNull(),
+    height: integer('height').notNull(),
+    bytes: integer('bytes').notNull(),
+    /** A copy at most 800 pixels wide, for phones (null: the image is no wider than that). */
+    smallBody: bytea('small_body'),
+    smallWidth: integer('small_width'),
+    /** SHA-256 of the stored bytes (the same image uploaded twice is stored once). */
+    sha256: text('sha256').notNull(),
+    /** The default description, offered when the image is placed. */
+    alt: text('alt').notNull().default(''),
+    createdBy: text('created_by').references(() => users.id),
+    createdAt: isoTimestamp('created_at').notNull(),
+    /** Retired: no longer served; its bytes are cleared. */
+    deletedAt: isoTimestamp('deleted_at'),
+  },
+  (t) => [
+    check('blog_media_mime', sql`${t.mime} IN ('image/webp', 'image/jpeg', 'image/png')`),
+    uniqueIndex('blog_media_sha256').on(t.sha256),
+  ],
+);
+
+export const blogArticles = pgTable(
+  'blog_articles',
+  {
+    seq: seq(),
+    id: text('id').primaryKey(),
+    slug: text('slug').notNull().unique(),
+    title: text('title').notNull(),
+    excerpt: text('excerpt').notNull().default(''),
+    /** The body: BlogBlock[] as JSON (validated with BlogBlockSchema on every write). */
+    bodyJson: text('body_json').notNull().default('[]'),
+    faqJson: text('faq_json').notNull().default('[]'),
+    status: text('status').notNull(),
+    authorId: text('author_id').references(() => blogAuthors.id),
+    categoryId: text('category_id').references(() => blogCategories.id),
+    seoTitle: text('seo_title'),
+    metaDescription: text('meta_description'),
+    canonicalUrl: text('canonical_url'),
+    noindex: boolean('noindex').notNull().default(false),
+    ogTitle: text('og_title'),
+    ogDescription: text('og_description'),
+    ogImageId: text('og_image_id').references(() => blogMedia.id),
+    twitterCard: text('twitter_card').notNull().default('summary_large_image'),
+    /** Editorial guidance only (shown in the studio, never in the page). */
+    focusKeyword: text('focus_keyword'),
+    featuredMediaId: text('featured_media_id').references(() => blogMedia.id),
+    featuredAlt: text('featured_alt'),
+    cta: text('cta').notNull().default('challenge'),
+    /** Plain text of the public content, for search. */
+    searchText: text('search_text').notNull().default(''),
+    wordCount: integer('word_count').notNull().default(0),
+    /** Bumped by every save: a save from an older version is refused (two editors, one article). */
+    version: integer('version').notNull().default(1),
+    /** SCHEDULED: when it goes live. PUBLISHED: the date shown as published. */
+    publishedAt: isoTimestamp('published_at'),
+    firstPublishedAt: isoTimestamp('first_published_at'),
+    /** The last change to what readers see, while public (shown as "Updated"). */
+    contentUpdatedAt: isoTimestamp('content_updated_at'),
+    createdBy: text('created_by').references(() => users.id),
+    updatedBy: text('updated_by').references(() => users.id),
+    createdAt: isoTimestamp('created_at').notNull(),
+    updatedAt: isoTimestamp('updated_at').notNull(),
+    /** A draft that was never published, retired by an editor (kept, never shown). */
+    deletedAt: isoTimestamp('deleted_at'),
+  },
+  (t) => [
+    check('blog_articles_status', inList(t.status, BLOG_STATUSES)),
+    check('blog_articles_cta', inList(t.cta, BLOG_CTAS)),
+    check('blog_articles_twitter_card', inList(t.twitterCard, TWITTER_CARDS)),
+    check(
+      'blog_articles_dated',
+      sql`${t.status} NOT IN ('SCHEDULED', 'PUBLISHED') OR ${t.publishedAt} IS NOT NULL`,
+    ),
+    check('blog_articles_version', sql`${t.version} >= 1`),
+    index('blog_articles_public').on(t.status, t.publishedAt),
+    index('blog_articles_category').on(t.categoryId),
+    index('blog_articles_author').on(t.authorId),
+  ],
+);
+
+export const blogArticleTags = pgTable(
+  'blog_article_tags',
+  {
+    articleId: text('article_id')
+      .notNull()
+      .references(() => blogArticles.id),
+    tagId: text('tag_id')
+      .notNull()
+      .references(() => blogTags.id),
+  },
+  (t) => [
+    primaryKey({ columns: [t.articleId, t.tagId] }),
+    index('blog_article_tags_tag').on(t.tagId),
+  ],
+);
+
+/** A snapshot of an article at each manual save, status change and restore. */
+export const blogRevisions = pgTable(
+  'blog_revisions',
+  {
+    seq: seq(),
+    id: text('id').primaryKey(),
+    articleId: text('article_id')
+      .notNull()
+      .references(() => blogArticles.id),
+    version: integer('version').notNull(),
+    status: text('status').notNull(),
+    /** The article input (BlogArticleInputSchema) as JSON. */
+    snapshotJson: text('snapshot_json').notNull(),
+    reason: text('reason').notNull(),
+    createdBy: text('created_by').references(() => users.id),
+    createdAt: isoTimestamp('created_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('blog_revisions_version').on(t.articleId, t.version),
+    check('blog_revisions_status', inList(t.status, BLOG_STATUSES)),
+  ],
+);
+
+/** Permanent (301) redirects, from an old public path to its new one. */
+export const blogRedirects = pgTable(
+  'blog_redirects',
+  {
+    seq: seq(),
+    id: text('id').primaryKey(),
+    fromPath: text('from_path').notNull(),
+    toPath: text('to_path').notNull(),
+    articleId: text('article_id').references(() => blogArticles.id),
+    hits: integer('hits').notNull().default(0),
+    createdBy: text('created_by').references(() => users.id),
+    createdAt: isoTimestamp('created_at').notNull(),
+    /** Retired: the old path no longer redirects. */
+    removedAt: isoTimestamp('removed_at'),
+  },
+  (t) => [
+    uniqueIndex('blog_redirects_active')
+      .on(t.fromPath)
+      .where(sql`${t.removedAt} IS NULL`),
+    check('blog_redirects_paths', sql`${t.fromPath} <> ${t.toPath}`),
+  ],
+);
+
+/** Publishing history (append-only for the application). */
+export const blogEvents = pgTable(
+  'blog_events',
+  {
+    seq: seq(),
+    id: text('id').primaryKey(),
+    event: text('event').notNull(),
+    articleId: text('article_id').references(() => blogArticles.id),
+    userId: text('user_id').references(() => users.id),
+    detailJson: text('detail_json').notNull(),
+    createdAt: isoTimestamp('created_at').notNull(),
+  },
+  (t) => [
+    check('blog_events_event', inList(t.event, BLOG_EVENTS)),
+    index('blog_events_article').on(t.articleId),
   ],
 );

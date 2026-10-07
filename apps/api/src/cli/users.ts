@@ -20,7 +20,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isNull } from 'drizzle-orm';
 import { ROLES, type Role } from '@veyra/shared';
-import { ConfigError, loadConfig } from '../config';
+import { ConfigError, cliDatabase } from '../config';
 import { openVeyraDb } from '../db/open';
 import * as t from '../db/schema';
 import { PLATFORM_ORGANIZATION_ID } from '../db/schema';
@@ -43,7 +43,9 @@ async function readPassword(): Promise<string> {
 }
 
 try {
-  const config = loadConfig(process.env, {
+  // The application's database, or on the website service the blog's (VEYRA_BLOG=true), where only
+  // Veyrafy's own editors (VEYRA_ADMIN) have accounts.
+  const config = cliDatabase(process.env, {
     dataDir: fileURLToPath(new URL('../../../../data/veyra', import.meta.url)),
   });
   const database = await openVeyraDb({
@@ -52,7 +54,7 @@ try {
     migrate: false,
     pool: { ...config.database.pool, max: 1 },
   });
-  const sessions = new SessionStore(database.db, config.auth.session);
+  const sessions = new SessionStore(database.db, config.session);
   const entitlements = new Entitlements(database.db);
   const customer = new Users(database.db, sessions, ORGANIZATION_ID, undefined, entitlements);
   const platform = new Users(database.db, sessions, PLATFORM_ORGANIZATION_ID);
@@ -79,6 +81,11 @@ try {
         const role = flag('role') as Role | undefined;
         if (!role || !ROLES.includes(role))
           throw new VeyraError('INVALID_INPUT', `Give --role ${ROLES.join('|')}.`);
+        if (config.site && role !== 'VEYRA_ADMIN')
+          throw new VeyraError(
+            'INVALID_INPUT',
+            'The website has only Veyrafy editors: use --role VEYRA_ADMIN.',
+          );
         const users = role === 'VEYRA_ADMIN' ? platform : customer;
         const user = await users.create(
           {

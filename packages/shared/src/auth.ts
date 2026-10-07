@@ -51,11 +51,26 @@ export const PERMISSIONS = [
   'ops.view',
   /** Veyra Operations (VEYRA_ADMIN only): assign plans, set and remove entitlement overrides. */
   'ops.manage',
+  /** The veyrafy.com blog (VEYRA_ADMIN only): read drafts, previews and the publishing history. */
+  'blog.view',
+  /** The blog: write and edit articles, media, categories, tags, authors and redirects. */
+  'blog.write',
+  /** The blog: publish, schedule, unpublish and archive articles. */
+  'blog.publish',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
-/** The control-plane permissions: only platform roles have them. */
-export const OPS_PERMISSIONS = ['ops.view', 'ops.manage'] as const satisfies readonly Permission[];
+/**
+ * The control-plane permissions: only platform roles have them (Veyrafy's own team), never a
+ * customer role. The website's blog is Veyrafy's own, so its permissions are among them.
+ */
+export const OPS_PERMISSIONS = [
+  'ops.view',
+  'ops.manage',
+  'blog.view',
+  'blog.write',
+  'blog.publish',
+] as const satisfies readonly Permission[];
 export const isOpsPermission = (p: string): boolean =>
   (OPS_PERMISSIONS as readonly string[]).includes(p);
 
