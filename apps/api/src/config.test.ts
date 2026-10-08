@@ -368,3 +368,19 @@ describe('the 5 Invoice Challenge settings', () => {
     ).toThrow(ConfigError);
   });
 });
+
+describe('configuration: Google Sheets (spreadsheet registers)', () => {
+  it('is off without a key; an unreadable key stops start-up without repeating it', () => {
+    expect(loadConfig({}, defaults).sheets).toEqual({ serviceAccount: null, refreshMinutes: 15 });
+    expect(describeConfig(loadConfig({}, defaults)).googleSheets).toBe(false);
+    const bad = '{"client_email":"me@gmail.com","private_key":"PRIVATE KEY secret-material"}';
+    const error = problems({ VEYRA_GOOGLE_SERVICE_ACCOUNT: bad.padEnd(120, ' ') });
+    expect(error?.problems.join('\n')).toMatch(
+      /VEYRA_GOOGLE_SERVICE_ACCOUNT is not a service-account JSON key/,
+    );
+    expect(error?.problems.join('\n')).not.toContain('secret-material');
+    expect(loadConfig({ VEYRA_SHEETS_REFRESH_MINUTES: '30' }, defaults).sheets.refreshMinutes).toBe(
+      30,
+    );
+  });
+});

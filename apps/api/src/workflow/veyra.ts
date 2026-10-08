@@ -217,6 +217,11 @@ export class Veyra {
 
   /** What this organization may use (Phase 8A): the one place commercial checks go through. */
   readonly entitlements: Entitlements;
+  /**
+   * Spreadsheet registers: reads connected sheets that are older than their refresh interval
+   * before an invoice is compared with the records (set by the data sources; never throws).
+   */
+  beforeReceiptCheck: (() => Promise<void>) | null = null;
 
   readonly organizationName: string;
   /** Every user and resource of this deployment belongs to this organization (Phase 6C). */
@@ -864,6 +869,7 @@ export class Veyra {
       if (inv.state === 'MATCHING' && this.#holdChecks?.()) return;
       // An invoice the ERP already holds a goods-receipt record for is compared with that record
       // (the receipt check); every other invoice goes through the full checks.
+      if (inv.state === 'MATCHING' && this.beforeReceiptCheck) await this.beforeReceiptCheck();
       if (inv.state === 'MATCHING' && (await this.receiptCheck(invoiceId))) return;
       if (inv.state === 'MATCHING') {
         await this.evaluate(invoiceId);
@@ -1758,6 +1764,8 @@ export class Veyra {
     sourceFilename: string,
     json: unknown,
     userId: string,
+    /** The connected spreadsheet the records come from, when synced from one. */
+    opts: { sourceId?: string } = {},
   ): Promise<{
     imported: number;
     /** Every record in the file (new, or the identical one already imported), for checking. */
@@ -1831,6 +1839,7 @@ export class Veyra {
           attachmentName: attachment?.file_name ?? null,
           attachmentBase64: attachment?.base64 ?? null,
           sourceFilename,
+          sourceId: opts.sourceId ?? null,
           importedByUserId: userId,
           importedAt: now,
         });
@@ -1838,6 +1847,7 @@ export class Veyra {
       await this.audit(tx, null, { type: 'user', userId }, 'receipts.imported', {
         file: sourceFilename,
         records: records.filter((r) => !r.alreadyImported).length,
+        ...(opts.sourceId ? { sourceId: opts.sourceId } : {}),
       });
     });
     const rechecked = await this.recheckWaitingFor(

@@ -26,6 +26,16 @@ import {
   ApiDemoScenarioSchema,
   ApiErpSchema,
   ApiImportSchema,
+  ApiDataSourceSchema,
+  ApiSourceInspectSchema,
+  ApiSourcePreviewSchema,
+  ApiSourcesInfoSchema,
+  SourceCreateSchema,
+  SourceInspectSchema,
+  SourcePreviewSchema,
+  SourceRelayoutSchema,
+  SourceSyncSchema,
+  SourceUpdateSchema,
   ApiInboxSchema,
   ApiInvoiceDetailSchema,
   ApiQuestionSchema,
@@ -77,6 +87,8 @@ import { registerOps } from './ops';
 import { registerSecurityHeaders } from './security-headers';
 import { registerWebApp, type WebFiles } from './web-static';
 import { registerAuthRoutes } from './auth-routes';
+import { DataSources } from '../sources/service';
+import type { SheetsReader } from '../sources/sheets';
 import {
   auditTable,
   businessRecordsXlsx,
@@ -119,6 +131,11 @@ export interface ServerOptions {
   readiness?: () => Promise<ReadinessReport>;
   /** Veyra Operations' commercial actions (Phase 8A). Absent: built on the Veyrafy's own. */
   commercial?: CommercialAdmin;
+  /**
+   * Spreadsheet registers: Google Sheets access (null: uploads only) and how old a synced sheet
+   * may be before it is read again for a check.
+   */
+  sheets?: { reader: SheetsReader | null; refreshMinutes: number };
   /** The 5 Invoice Challenge (acquisition); absent: its routes do not exist. */
   challenge?: ChallengeService | null;
   /**
@@ -227,6 +244,14 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     },
   });
   const imports = new BusinessImports(veyra);
+  const sources = new DataSources(
+    veyra,
+    options.sheets?.reader ?? null,
+    options.sheets?.refreshMinutes ?? 15,
+  );
+  // Connected Google Sheets are refreshed (when stale) before invoices are compared with them.
+  if (options.sheets?.reader)
+    veyra.beforeReceiptCheck = () => sources.refreshStale().catch(() => undefined);
   const rateLimits = options.rateLimits ?? { upload: 60, processing: 120, dev: 60, login: 10 };
   const limiter = new RateLimiter(rateLimits);
 
@@ -1015,6 +1040,48 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   app.post('/api/v1/imports/:id/confirm', IMPORTS, async (req) =>
     send(ApiImportSchema, await imports.confirm(Id.parse(req.params).id, actorOf(req))),
   );
+
+  // ── Spreadsheet registers (data sources) ────────────────────────────────
+  // Uploaded files travel as base64 in JSON (5 MB files; the body limit leaves room for that).
+  const SOURCE_BODY = { ...IMPORTS, bodyLimit: 8 * 1024 * 1024 };
+  app.get('/api/v1/sources', may('erp.view'), async () =>
+    send(ApiSourcesInfoSchema, await sources.info()),
+  );
+  app.post('/api/v1/sources/inspect', SOURCE_BODY, async (req) => {
+    const { origin } = SourceInspectSchema.parse(req.body ?? {});
+    return send(ApiSourceInspectSchema, await sources.inspect(origin, actorOf(req)));
+  });
+  app.post('/api/v1/sources/preview', SOURCE_BODY, async (req) => {
+    const { origin, layout } = SourcePreviewSchema.parse(req.body ?? {});
+    return send(ApiSourcePreviewSchema, await sources.preview(origin, layout, actorOf(req)));
+  });
+  app.post('/api/v1/sources', SOURCE_BODY, async (req, reply) => {
+    const input = SourceCreateSchema.parse(req.body ?? {});
+    return reply
+      .status(201)
+      .send(send(ApiDataSourceSchema, await sources.create(input, actorOf(req))));
+  });
+  app.patch('/api/v1/sources/:id', IMPORTS, async (req) => {
+    const patch = SourceUpdateSchema.parse(req.body ?? {});
+    return send(
+      ApiDataSourceSchema,
+      await sources.update(Id.parse(req.params).id, patch, actorOf(req)),
+    );
+  });
+  app.post('/api/v1/sources/:id/layout', SOURCE_BODY, async (req) => {
+    const { layout, origin } = SourceRelayoutSchema.parse(req.body ?? {});
+    return send(
+      ApiDataSourceSchema,
+      await sources.relayout(Id.parse(req.params).id, layout, origin ?? null, actorOf(req)),
+    );
+  });
+  app.post('/api/v1/sources/:id/sync', SOURCE_BODY, async (req) => {
+    const { origin } = SourceSyncSchema.parse(req.body ?? {});
+    return send(
+      ApiDataSourceSchema,
+      await sources.sync(Id.parse(req.params).id, actorOf(req), origin ?? null),
+    );
+  });
 
   app.get('/api/v1/exports/:name', may('exports.download'), async (req, reply) => {
     await veyra.entitlements.require(veyra.organizationId, 'reports.exports');

@@ -104,6 +104,10 @@ export const notify = {
           'success',
           `${plural(n, 'ERP receipt', 'ERP receipts')} imported. Matching invoices are checked against ${n === 1 ? 'it' : 'them'}.`,
         ),
+  sourceSaved: (verb: string, ok: boolean) =>
+    ok
+      ? show('import', 'success', `Register ${verb}. Invoices are checked against it.`)
+      : show('import', 'attention', `Register ${verb}, but the sync needs attention. See below.`),
   passwordChanged: () =>
     show('account', 'success', 'Password changed. You were signed out everywhere else.'),
   teamUpdated: () => show('team', 'success', 'Team updated.'),

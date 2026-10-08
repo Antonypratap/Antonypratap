@@ -17,6 +17,16 @@ import {
   type ApiInbox,
   type ApiInvoiceDetail,
   type ApiQuestion,
+  ApiDataSourceSchema,
+  ApiSourceInspectSchema,
+  ApiSourcePreviewSchema,
+  ApiSourcesInfoSchema,
+  type ApiDataSource,
+  type ApiSourceInspect,
+  type ApiSourcePreview,
+  type ApiSourcesInfo,
+  type SourceLayout,
+  type SourceOrigin,
 } from '@veyra/shared';
 import { accountSuspended, csrfHeaders, sessionEnded } from '../../access/session';
 import { API, API_CREDENTIALS } from '../../api-endpoint';
@@ -203,6 +213,33 @@ export const api = {
     },
     confirm: (id: string): Promise<ApiImport> =>
       request(ApiImportSchema, `/imports/${encodeURIComponent(id)}/confirm`, { method: 'POST' }),
+  },
+  /** Spreadsheet registers: a purchase or GRN register in Excel, CSV or Google Sheets. */
+  sources: {
+    info: (): Promise<ApiSourcesInfo> => request(ApiSourcesInfoSchema, '/sources'),
+    inspect: (origin: SourceOrigin): Promise<ApiSourceInspect> =>
+      request(ApiSourceInspectSchema, '/sources/inspect', json({ origin })),
+    preview: (origin: SourceOrigin, layout: SourceLayout): Promise<ApiSourcePreview> =>
+      request(ApiSourcePreviewSchema, '/sources/preview', json({ origin, layout })),
+    create: (origin: SourceOrigin, layout: SourceLayout, name: string): Promise<ApiDataSource> =>
+      request(ApiDataSourceSchema, '/sources', json({ origin, layout, name })),
+    relayout: (id: string, layout: SourceLayout, origin?: SourceOrigin): Promise<ApiDataSource> =>
+      request(
+        ApiDataSourceSchema,
+        `/sources/${encodeURIComponent(id)}/layout`,
+        json(origin ? { layout, origin } : { layout }),
+      ),
+    sync: (id: string, origin?: SourceOrigin): Promise<ApiDataSource> =>
+      request(
+        ApiDataSourceSchema,
+        `/sources/${encodeURIComponent(id)}/sync`,
+        json(origin ? { origin } : {}),
+      ),
+    setEnabled: (id: string, enabled: boolean): Promise<ApiDataSource> =>
+      request(ApiDataSourceSchema, `/sources/${encodeURIComponent(id)}`, {
+        ...json({ enabled }),
+        method: 'PATCH',
+      }),
   },
   /** Check an invoice against its ERP goods-receipt record again (after the ERP was corrected). */
   recheck: (invoiceId: string) =>

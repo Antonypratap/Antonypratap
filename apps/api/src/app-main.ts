@@ -11,6 +11,7 @@ import { createLogger } from './http/logging';
 import { createStorage } from './storage';
 import { loadWebDist } from './http/web-static';
 import { ResendEmailSender } from './challenge/email';
+import { GoogleSheets, parseServiceAccount } from './sources/google';
 
 let config: VeyraConfig;
 try {
@@ -56,6 +57,12 @@ try {
           backupModels: config.ai.backupModels,
         }
       : null,
+    sheets: {
+      reader: config.sheets.serviceAccount
+        ? new GoogleSheets(parseServiceAccount(config.sheets.serviceAccount.reveal()))
+        : null,
+      refreshMinutes: config.sheets.refreshMinutes,
+    },
     // Several invoices are read at once (the AI or OCR); checking and recording stay serial.
     readAhead: 3,
     log,

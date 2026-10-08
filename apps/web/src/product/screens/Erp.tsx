@@ -8,6 +8,7 @@ import { ERP_TABS, hrefFor, type ErpTab } from '../router';
 import { useProductData, useResource } from '../state/data';
 import { useAllowed } from '../../access/session';
 import { ErpData } from './ErpData';
+import { Spreadsheets } from './Spreadsheets';
 import { ErpReceipts } from '../components/ErpReceipts';
 import { erpStatusText } from '../state/decision';
 import {
@@ -26,6 +27,7 @@ const TAB_LABEL: Record<ErpTab, string> = {
   receipts: 'Goods receipts',
   invoices: 'Purchase invoices',
   data: 'Import and export',
+  sheets: 'Spreadsheets',
   connection: 'Business system',
 };
 
@@ -116,6 +118,7 @@ function useTab(tab: ErpTab) {
           origin(g.origin),
         ]);
       case 'data':
+      case 'sheets':
       case 'connection':
         return [];
       case 'invoices':
@@ -143,6 +146,7 @@ const HEAD: Record<ErpTab, { head: string[]; numeric?: number[] }> = {
     numeric: [5, 6],
   },
   data: { head: [] },
+  sheets: { head: [] },
   connection: { head: [] },
 };
 
@@ -251,6 +255,8 @@ export function Erp({ tab }: { tab: ErpTab }) {
   const body: ReactNode =
     tab === 'connection' ? (
       <Connection connection={connection} />
+    ) : tab === 'sheets' ? (
+      <Spreadsheets />
     ) : tab === 'data' ? (
       <>
         <ErpReceipts />
@@ -284,7 +290,7 @@ export function Erp({ tab }: { tab: ErpTab }) {
           </>
         }
         aside={
-          tab === 'data' || tab === 'connection' ? undefined : (
+          tab === 'data' || tab === 'sheets' || tab === 'connection' ? undefined : (
             <>
               {canReset && (
                 <>

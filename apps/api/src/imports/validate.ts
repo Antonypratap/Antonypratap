@@ -22,8 +22,8 @@ import type {
   PurchaseOrder,
   Vendor,
 } from '@veyra/erp-connector';
-import { readCsv } from '../spreadsheet/csv';
-import { readXlsx, SpreadsheetError, type Cell, type SheetRow } from '../spreadsheet/xlsx';
+import { readSpreadsheet } from '../spreadsheet/read';
+import { SpreadsheetError, type Cell, type SheetRow } from '../spreadsheet/xlsx';
 import {
   EXAMPLE_PREFIX,
   TABLE_ALIASES,
@@ -96,15 +96,6 @@ const headerKey = (s: string): string =>
     .trim()
     .toLowerCase()
     .replace(/[\s/-]+/g, '_');
-
-function sniff(bytes: Uint8Array): 'xlsx' | 'csv' | 'other' {
-  if (bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04)
-    return 'xlsx';
-  // Text: no NUL bytes in the first 4 KB. Legacy .xls (binary) and anything else are refused.
-  const head = bytes.subarray(0, 4096);
-  if (head.includes(0) || (bytes[0] === 0xd0 && bytes[1] === 0xcf)) return 'other';
-  return 'csv';
-}
 
 function detectTable(name: string, rows: readonly SheetRow[]): TableKey | null {
   const byName = TABLE_ALIASES[letters(name)];
@@ -295,24 +286,14 @@ export function checkImport(
       fileError(f.filename, 'The file is larger than 5 MB.');
       continue;
     }
-    const kind = sniff(f.bytes);
     const sheets: { name: string; source: string; rows: SheetRow[] }[] = [];
     try {
-      if (kind === 'xlsx') {
-        const wb = readXlsx(f.bytes);
-        for (const s of wb.sheets) {
-          sheets.push({ name: s.name, source: `${f.filename} › ${s.name}`, rows: s.rows });
-          date1904BySource.set(`${f.filename} › ${s.name}`, wb.date1904);
-        }
-      } else if (kind === 'csv') {
-        const base = f.filename.replace(/\.[^.]*$/, '');
-        sheets.push({ name: base, source: f.filename, rows: readCsv(f.bytes, f.filename) });
-      } else {
-        fileError(
-          f.filename,
-          'Upload an Excel workbook (.xlsx) or a CSV file. Older .xls files are not supported: save as .xlsx.',
-        );
-        continue;
+      const book = readSpreadsheet(f.bytes, f.filename);
+      for (const s of book.sheets) {
+        // A CSV is one sheet: it is named by the file alone.
+        const source = book.kind === 'csv' ? f.filename : `${f.filename} › ${s.name}`;
+        sheets.push({ name: s.name, source, rows: s.rows });
+        date1904BySource.set(source, book.date1904);
       }
     } catch (e) {
       fileError(

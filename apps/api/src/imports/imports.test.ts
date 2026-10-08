@@ -8,6 +8,7 @@ import type { createApp } from '../app';
 import { DEMO_NOW } from '../test/harness';
 import { readCsv } from '../spreadsheet/csv';
 import { readXlsx, writeXlsx, type OutCell } from '../spreadsheet/xlsx';
+import { compoundFile, label, workbookStream, xf } from '../test/xls-writer';
 import { dataSheet } from './templates';
 import type { TableKey } from './spec';
 import { createTestApp } from '../test/app';
@@ -92,7 +93,29 @@ const NANDI = [
 ];
 const PAPER = ['PAPER-A4', 'A4 Copier Paper 75 GSM', '4802', 'REAM', '12'];
 
+/** The same sheet as an Excel 97–2003 (.xls) file, every cell as text. */
+function legacyWorkbook(table: TableKey, rows: OutCell[][], filename: string) {
+  const sheet = dataSheet(table, rows);
+  const text = (c: OutCell): string =>
+    c === null ? '' : typeof c === 'object' ? ('money' in c ? c.money : c.text) : String(c);
+  const records = sheet.rows.flatMap((r, ri) =>
+    r.flatMap((c, ci) => (text(c) === '' ? [] : [label(ri, ci, text(c))])),
+  );
+  return {
+    filename,
+    bytes: compoundFile(workbookStream([xf(0)], [{ name: sheet.name, records }])),
+  };
+}
+
 describe('vendors', () => {
+  it('an Excel 97–2003 (.xls) file is read like an .xlsx', async () => {
+    const preview = await check(legacyWorkbook('vendors', [NANDI], 'Vendors.xls'));
+    expect(preview).toMatchObject({ status: 'ready', canConfirm: true, errorCount: 0 });
+    expect(preview.tables).toEqual([
+      expect.objectContaining({ label: 'Vendors', rows: 1, ready: 1, errors: 0 }),
+    ]);
+  });
+
   it('a valid vendor file previews, then imports through the ERP connector', async () => {
     const preview = await check(workbook({ vendors: [NANDI] }, 'Vendors.xlsx'));
     expect(preview).toMatchObject({ status: 'ready', canConfirm: true, errorCount: 0 });
@@ -404,7 +427,9 @@ describe('the whole upload is checked first, and imports are atomic and repeatab
       filename: 'x.xls',
       bytes: Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0, 0]),
     });
-    expect(junk.errors[0]?.message).toMatch(/Older .xls files are not supported/);
+    expect(junk.errors[0]?.message).toMatch(
+      /Upload an Excel workbook \(\.xlsx or \.xls\) or a CSV file/,
+    );
   });
 });
 

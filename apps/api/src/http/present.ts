@@ -987,6 +987,26 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
         s('summary'),
         d.verdict === 'cleared' ? 'handled' : 'attention',
       );
+    case 'source.saved':
+      return make(
+        d.kind === 'google_sheet' ? 'Google Sheet connected' : 'Spreadsheet register added',
+        `Columns mapped: ${String(d.fields)}.`,
+        'handled',
+      );
+    case 'source.mapping_changed':
+      return make('Register mapping changed', `Columns mapped: ${String(d.fields)}.`, 'handled');
+    case 'source.synced':
+      return make(
+        `Register synced: ${String(d.imported)} new or changed`,
+        `${String(d.invoices)} invoice${d.invoices === 1 ? '' : 's'} in the register${d.rechecked ? `; ${String(d.rechecked)} waiting invoice${d.rechecked === 1 ? '' : 's'} checked again` : ''}.`,
+        'handled',
+      );
+    case 'source.sync_failed':
+      return make(
+        d.status === 'columns_changed' ? 'Register columns changed' : 'Register sync failed',
+        s('message'),
+        'attention',
+      );
     case 'receipts.imported':
       return make(
         `${String(d.records)} ERP receipt record${d.records === 1 ? '' : 's'} imported`,

@@ -582,6 +582,48 @@ export const jobs = pgTable(
  * receipt check: an invoice whose number and supplier match one is compared with it value by
  * value. Kept as the ERP sent them (`recordJson`), with the attached invoice PDF if any.
  */
+/**
+ * A spreadsheet the business keeps its purchase or GRN register in (docs/ARCHITECTURE.md, data
+ * sources): an uploaded Excel or CSV file, or a Google Sheet shared with Veyrafy (read-only).
+ * The mapping says which column holds which register field; it is confirmed by a person and is
+ * the only way values are read. Rows become receipt records (erp_receipt_records).
+ */
+export const dataSources = pgTable(
+  'data_sources',
+  {
+    seq: seq(),
+    id: text('id').primaryKey(),
+    kind: text('kind').notNull(),
+    name: text('name').notNull(),
+    /** The Google spreadsheet id; null for an uploaded file. */
+    spreadsheetId: text('spreadsheet_id'),
+    sheetTitle: text('sheet_title').notNull(),
+    /** 1-based row number of the header row in the sheet. */
+    headerRow: integer('header_row').notNull(),
+    mappingJson: text('mapping_json').notNull(),
+    headerSignature: text('header_signature').notNull(),
+    enabled: boolean('enabled').notNull(),
+    lastSyncedAt: isoTimestamp('last_synced_at'),
+    lastSyncStatus: text('last_sync_status'),
+    lastSyncSummaryJson: text('last_sync_summary_json'),
+    createdByUserId: text('created_by_user_id')
+      .notNull()
+      .references(() => users.id),
+    createdAt: isoTimestamp('created_at').notNull(),
+  },
+  (t) => [
+    check('data_sources_kind', inList(t.kind, ['upload', 'google_sheet'])),
+    check(
+      'data_sources_google_id',
+      sql`(${t.kind} = 'google_sheet') = (${t.spreadsheetId} IS NOT NULL)`,
+    ),
+    check(
+      'data_sources_status',
+      sql`${t.lastSyncStatus} IS NULL OR ${t.lastSyncStatus} IN ('ok', 'failed', 'columns_changed')`,
+    ),
+  ],
+);
+
 export const erpReceiptRecords = pgTable(
   'erp_receipt_records',
   {
@@ -595,6 +637,8 @@ export const erpReceiptRecords = pgTable(
     attachmentName: text('attachment_name'),
     attachmentBase64: text('attachment_base64'),
     sourceFilename: text('source_filename').notNull(),
+    /** The connected spreadsheet this record was synced from (null: an uploaded export). */
+    sourceId: text('source_id').references(() => dataSources.id),
     importedByUserId: text('imported_by_user_id')
       .notNull()
       .references(() => users.id),

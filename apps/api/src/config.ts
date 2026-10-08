@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { MAX_UPLOAD_BYTES } from '@veyra/shared';
 import { DOCUMENT_LIMITS } from '@veyra/extractor';
 import { Secret } from './secret';
+import { parseServiceAccount } from './sources/google';
 
 /**
  * Deployment configuration (Phase 6). Everything environment-specific comes from environment
@@ -133,6 +134,13 @@ export interface VeyraConfig {
   } | null;
   /** Outbound e-mail (challenge follow-up); null: nothing is sent, and that is recorded. */
   email: { provider: 'resend'; apiKey: Secret; from: string } | null;
+  /**
+   * Spreadsheet registers: Google Sheets read through Veyrafy's own service account (read-only;
+   * the business shares its sheet with it). Off unless VEYRA_GOOGLE_SERVICE_ACCOUNT holds the
+   * account's JSON key. `refreshMinutes`: a connected sheet older than this is read again before
+   * an invoice is checked against it.
+   */
+  sheets: { serviceAccount: Secret | null; refreshMinutes: number };
 }
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -238,6 +246,9 @@ const VARS = {
   VEYRA_CHALLENGE_READER: z.enum(['ai', 'local']),
   VEYRA_CHALLENGE_DAILY_LIMIT: int(1, 10_000),
   VEYRA_CHALLENGE_NOTIFY_EMAIL: z.email().max(254),
+  // Spreadsheet registers: Google's service-account JSON key (or base64 of it). Never echoed.
+  VEYRA_GOOGLE_SERVICE_ACCOUNT: z.string().min(100).max(20_000),
+  VEYRA_SHEETS_REFRESH_MINUTES: int(1, 24 * 60),
   VEYRA_BOOKING_URL: z.url({ protocol: /^https$/ }).max(500),
   VEYRA_EMAIL_PROVIDER: z.enum(['off', 'resend']),
   // Never echoed.
@@ -463,6 +474,10 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
         }
       : null,
     email: emailOf(read, problems),
+    sheets: {
+      serviceAccount: googleAccountOf(read('VEYRA_GOOGLE_SERVICE_ACCOUNT'), problems),
+      refreshMinutes: read('VEYRA_SHEETS_REFRESH_MINUTES') ?? 15,
+    },
   };
   if (problems.length > 0) throw new ConfigError(problems);
   return config;
@@ -671,7 +686,21 @@ export function describeConfig(c: VeyraConfig) {
     migrateOnStart: c.migrateOnStart,
     challenge: c.challenge !== null,
     email: c.email ? c.email.provider : 'off',
+    googleSheets: c.sheets.serviceAccount !== null,
   };
+}
+
+/** The service-account key, checked at start (an unreadable key is a configuration error). */
+function googleAccountOf(raw: string | undefined, problems: string[]): Secret | null {
+  if (!raw) return null;
+  try {
+    parseServiceAccount(raw);
+  } catch (e) {
+    // The message names the variable only; the key itself is never repeated.
+    problems.push((e as Error).message);
+    return null;
+  }
+  return new Secret(raw);
 }
 
 /** The Vite dev server and preview, on both loopback names. */

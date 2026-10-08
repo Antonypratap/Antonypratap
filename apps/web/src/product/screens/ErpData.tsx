@@ -104,7 +104,8 @@ export function ErpData() {
             <li>
               <span className={styles.stepTitle}>Upload it</span>
               <span className={styles.note}>
-                Excel (.xlsx) or CSV. Veyrafy checks the whole upload before anything is imported.
+                Excel (.xlsx or .xls) or CSV. Veyrafy checks the whole upload before anything is
+                imported.
               </span>
               <span>
                 <button
@@ -119,7 +120,7 @@ export function ErpData() {
                 <input
                   ref={input}
                   type="file"
-                  accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+                  accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
                   multiple
                   hidden
                   onChange={(e) => void upload(e.target.files)}

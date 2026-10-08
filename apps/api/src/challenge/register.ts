@@ -10,7 +10,7 @@ import { VeyraError } from '../workflow/veyra';
  */
 
 /** Recognised column names (compared without case, spaces or punctuation). */
-const COLUMNS = {
+export const COLUMNS = {
   invoiceNo: [
     'invoiceno',
     'invoicenumber',
@@ -74,7 +74,22 @@ const COLUMNS = {
   reference: ['grnno', 'grnnumber', 'receiptno', 'voucherno', 'vouchernumber', 'docno', 'entryno'],
 } as const;
 type Key = keyof typeof COLUMNS;
-const norm = (s: string) =>
+/** A register field: what one column of the register holds. */
+export type RegisterField = Key;
+export const REGISTER_FIELDS = Object.keys(COLUMNS) as RegisterField[];
+/** The fields a row cannot do without. */
+export const REQUIRED_FIELDS: readonly RegisterField[] = ['invoiceNo', 'supplier', 'item'];
+/** Fields that must hold a plain amount or quantity when present. */
+export const NUMERIC_FIELDS: readonly RegisterField[] = [
+  'qty',
+  'rate',
+  'amount',
+  'cgst',
+  'sgst',
+  'igst',
+  'total',
+];
+export const norm = (s: string) =>
   s
     .normalize('NFKC')
     .toLowerCase()
@@ -85,12 +100,17 @@ const KEY_OF = new Map<string, Key>(
   ),
 );
 
-type Row = Partial<Record<Key, string>>;
+export type Row = Partial<Record<Key, string>>;
+/** The field a column name is known by, if any. */
+export const fieldOfHeader = (header: string): RegisterField | undefined =>
+  KEY_OF.get(norm(header));
 export const MAX_REGISTER_INVOICES = 500;
 
 /** "₹ 3,450.00" → "3450.00"; anything that is not a plain amount stays as it is (not used). */
 const amountText = (s: string | undefined) =>
   s === undefined ? undefined : s.replace(/[₹,\s]|Rs\.?|INR/gi, '');
+/** Whether a value, once currency marks are removed, is a plain number. */
+export const isPlainNumber = (s: string) => /^-?\d+(\.\d+)?$/.test(amountText(s) ?? '');
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 /** A date as ISO: an Excel date serial, YYYY-MM-DD, DD/MM/YYYY or DD-Mon-YYYY; else undefined. */
@@ -119,6 +139,13 @@ export function looksLikeRegister(header: readonly string[]): boolean {
   return keys.has('invoiceNo') && keys.has('supplier') && keys.has('item');
 }
 
+/** A cell's value for a field: dates as ISO, everything else trimmed; empty is undefined. */
+export function cellValue(field: RegisterField, cell: Cell | undefined): string | undefined {
+  const text = cell?.text.trim() ?? '';
+  if (text === '') return undefined;
+  return field === 'date' ? dateText(cell, text) : text;
+}
+
 /** The rows of a sheet (first row: column names), as named values. */
 export function registerRowsFromSheet(rows: readonly SheetRow[]): Row[] {
   const [head, ...body] = rows;
@@ -128,8 +155,8 @@ export function registerRowsFromSheet(rows: readonly SheetRow[]): Row[] {
     const row: Row = {};
     r.cells.forEach((c, i) => {
       const k = keys[i];
-      if (!k || row[k] !== undefined || c.text.trim() === '') return;
-      const v = k === 'date' ? dateText(c, c.text) : c.text.trim();
+      if (!k || row[k] !== undefined) return;
+      const v = cellValue(k, c);
       if (v !== undefined) row[k] = v;
     });
     return row;
@@ -181,67 +208,119 @@ export function registerRowsFromJson(json: unknown): Row[] | null {
   return rows;
 }
 
+/** A problem with one row of a register, by its row number in the sheet. */
+export interface RegisterProblem {
+  row: number;
+  field: RegisterField | null;
+  problem: 'missing' | 'not_a_number';
+}
+
+/** What a register becomes: the goods-receipt records, and what was wrong with its rows. */
+export interface RegisterResult {
+  receipts: { data: unknown[] };
+  invoices: number;
+  lines: number;
+  /** Rows refused (a required field is empty): never imported. */
+  errors: RegisterProblem[];
+  /** Values that are not plain numbers: imported as "not held", never estimated. */
+  warnings: RegisterProblem[];
+  /** The register has more invoices than one import takes. */
+  tooMany: boolean;
+}
+
+/**
+ * The register as goods-receipt records (the shape of the ERP export), one per invoice, with
+ * every row problem collected rather than stopping at the first. `rowNumbers` gives each row's
+ * number in the sheet (default: the row after a single header row).
+ */
+export function collectReceipts(
+  rows: readonly Row[],
+  rowNumbers: readonly number[] = rows.map((_, i) => i + 2),
+  /** At most this many invoices are taken (a connected register is bounded by its rows). */
+  maxInvoices: number = MAX_REGISTER_INVOICES,
+): RegisterResult {
+  const errors: RegisterProblem[] = [];
+  const warnings: RegisterProblem[] = [];
+  const groups = new Map<string, Row[]>();
+  rows.forEach((r, i) => {
+    if (Object.keys(r).length === 0) return;
+    const rowNo = rowNumbers[i] ?? i + 2;
+    const missing = REQUIRED_FIELDS.filter((f) => !r[f]);
+    if (missing.length) {
+      for (const f of missing) errors.push({ row: rowNo, field: f, problem: 'missing' });
+      return;
+    }
+    for (const f of NUMERIC_FIELDS) {
+      const v = r[f];
+      if (v !== undefined && !isPlainNumber(v))
+        warnings.push({ row: rowNo, field: f, problem: 'not_a_number' });
+    }
+    const key = `${norm(r.invoiceNo ?? '')}|${norm(r.supplier ?? '')}`;
+    groups.set(key, [...(groups.get(key) ?? []), r]);
+  });
+  let n = 0;
+  const data = [...groups.values()].slice(0, maxInvoices).map((lines) => {
+    const first = lines[0] as Row;
+    n += 1;
+    const total = lines.map((l) => amountText(l.total)).find((x) => x !== undefined);
+    const ref = lines.map((l) => l.reference).find((x) => x !== undefined);
+    return {
+      invoice_info: {
+        grn_id: `register-${n}`,
+        // Without a receipt number, the invoice's own number stands in, so syncing the same
+        // register again (even re-sorted) finds the same record instead of adding another.
+        grn_no: ref ?? `register ${first.invoiceNo ?? n}`,
+        po_id: null,
+        dc_no: first.invoiceNo,
+        grn_date: null,
+        invoice_date: first.date ?? null,
+        // A total in the register is the system's own record of the invoice amount.
+        invoice_amount: total ?? 0,
+        vendor_name: first.supplier,
+        vendor_code: null,
+      },
+      items: lines.map((l) => ({
+        item_name: l.item,
+        hsn_sac_code: l.hsn ?? null,
+        uom: l.uom ?? null,
+        quantity: amountText(l.qty) ?? null,
+        basic_rate: amountText(l.rate) ?? null,
+        basic_amount: amountText(l.amount) ?? null,
+        cgst: amountText(l.cgst) ?? null,
+        sgst: amountText(l.sgst) ?? null,
+        igst: amountText(l.igst) ?? null,
+      })),
+    };
+  });
+  return {
+    receipts: { data },
+    invoices: groups.size,
+    lines: [...groups.values()].reduce((s, g) => s + g.length, 0),
+    errors,
+    warnings,
+    tooMany: groups.size > maxInvoices,
+  };
+}
+
 /**
  * The register as goods-receipt records (the shape of the ERP export), one per invoice. Rows
  * without an invoice number, supplier or item are refused with their row numbers.
  */
 export function registerToReceipts(rows: readonly Row[], source: string): unknown {
-  const missing: number[] = [];
-  const groups = new Map<string, Row[]>();
-  rows.forEach((r, i) => {
-    if (Object.keys(r).length === 0) return;
-    if (!r.invoiceNo || !r.supplier || !r.item) {
-      missing.push(i + 2);
-      return;
-    }
-    const key = `${norm(r.invoiceNo)}|${norm(r.supplier)}`;
-    groups.set(key, [...(groups.get(key) ?? []), r]);
-  });
+  const r = collectReceipts(rows);
+  const missing = [...new Set(r.errors.map((e) => e.row))];
   if (missing.length)
     throw new VeyraError(
       'INVALID_INPUT',
       `${source}: ${missing.length === 1 ? 'row' : 'rows'} ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '…' : ''} ${missing.length === 1 ? 'has' : 'have'} no invoice number, supplier or item.`,
     );
-  if (groups.size === 0) throw new VeyraError('INVALID_INPUT', `${source} has no invoice lines.`);
-  if (groups.size > MAX_REGISTER_INVOICES)
+  if (r.invoices === 0) throw new VeyraError('INVALID_INPUT', `${source} has no invoice lines.`);
+  if (r.tooMany)
     throw new VeyraError(
       'INVALID_INPUT',
       `${source} has more than ${MAX_REGISTER_INVOICES} invoices. Export only the invoices you are checking.`,
     );
-  let n = 0;
-  return {
-    data: [...groups.values()].map((lines) => {
-      const first = lines[0] as Row;
-      n += 1;
-      const total = lines.map((l) => amountText(l.total)).find((x) => x !== undefined);
-      const ref = lines.map((l) => l.reference).find((x) => x !== undefined);
-      return {
-        invoice_info: {
-          grn_id: `register-${n}`,
-          grn_no: ref ?? `entry ${n}`,
-          po_id: null,
-          dc_no: first.invoiceNo,
-          grn_date: null,
-          invoice_date: first.date ?? null,
-          // A total in the register is the system's own record of the invoice amount.
-          invoice_amount: total ?? 0,
-          vendor_name: first.supplier,
-          vendor_code: null,
-        },
-        items: lines.map((l) => ({
-          item_name: l.item,
-          hsn_sac_code: l.hsn ?? null,
-          uom: l.uom ?? null,
-          quantity: amountText(l.qty) ?? null,
-          basic_rate: amountText(l.rate) ?? null,
-          basic_amount: amountText(l.amount) ?? null,
-          cgst: amountText(l.cgst) ?? null,
-          sgst: amountText(l.sgst) ?? null,
-          igst: amountText(l.igst) ?? null,
-        })),
-      };
-    }),
-  };
+  return r.receipts;
 }
 
 /** The register template's columns and a made-up example (never a real business). */

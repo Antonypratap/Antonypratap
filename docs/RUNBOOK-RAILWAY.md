@@ -382,3 +382,33 @@ them).
 - After a test challenge, it appears in the Control Centre under **5 Invoice Challenge**, with its
   results, report downloads and walkthrough requests. You can update the follow-up status there;
   every change is recorded in the Audit Log.
+
+## 15. Spreadsheet registers: Google Sheets (optional)
+
+A client can check invoices against a purchase register kept in Excel, CSV or Google Sheets
+(ERP › Spreadsheets). Excel and CSV work with no setup. For Google Sheets, Veyrafy needs its own
+Google service account, created once and used by every instance:
+
+1. In the Google Cloud console, create a project (for example `veyrafy-sheets`) and enable the
+   **Google Sheets API** for it.
+2. Under **IAM & Admin › Service accounts**, create a service account (for example
+   `veyrafy-sheets`). Give it **no roles**: it only reads sheets that are shared with it.
+3. On the service account, open **Keys › Add key › Create new key › JSON**. A `.json` file
+   downloads. It is a secret: do not e-mail it, commit it or paste it anywhere but Railway.
+4. In the client's service (for example **veyrafy-toit → Variables**), add:
+
+| Variable | Value |
+|---|---|
+| `VEYRA_GOOGLE_SERVICE_ACCOUNT` | the whole content of the `.json` key file (paste it as it is), or its base64 |
+| `VEYRA_SHEETS_REFRESH_MINUTES` | optional, `15` by default: a connected sheet older than this is read again before an invoice is checked |
+
+5. Redeploy. The Spreadsheets tab now shows the service address (it ends in
+   `.iam.gserviceaccount.com`). The client shares their register with that address as
+   **Viewer** and pastes the sheet's link.
+
+If the key is wrong, the instance does not start and the logs name `VEYRA_GOOGLE_SERVICE_ACCOUNT`
+(never the key itself). To stop all Google access, remove the variable, or delete the key in the
+Google Cloud console. A client stops Veyrafy reading one sheet by unsharing it.
+
+The capability is `erp.spreadsheet_sources`: on for Business and Enterprise plans, off for
+Starter unless an override is set in Veyrafy Operations.

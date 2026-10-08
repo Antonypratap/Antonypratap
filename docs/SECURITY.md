@@ -285,6 +285,7 @@ requires `https://`.
 | `VEYRA_DEMO_PIN` | Demo/staging API only | Secret store; not set in production |
 | ERP credentials (future) | ERP connector only | Secret store; see below |
 | AI provider credentials (future, if ever configured) | Extractor only | Secret store; none exist today |
+| `VEYRA_GOOGLE_SERVICE_ACCOUNT` (Google service-account key) | Spreadsheet registers only | Secret store; checked at start, held as a `Secret`, never logged or echoed |
 
 **Controls:**
 
@@ -314,6 +315,18 @@ only the fake ERP exists.
 - There is no UI for entering credentials. When the real connector arrives, its credentials are
   `Secret` fields of that object, loaded from the secret store.
 - The web app has no configuration and no secrets. Anything in a frontend build is public.
+
+**Google Sheets (spreadsheet registers).** A business can connect the Google Sheet holding its
+purchase register (ARCHITECTURE.md §21).
+
+- Veyrafy reads it as its own Google service account, with the `spreadsheets.readonly` scope
+  only: it can open what was shared with it, and can never change a sheet.
+- The business shares the sheet with the service address as Viewer, and ends the access by
+  unsharing it. No customer password or token is stored.
+- Requests go to two fixed hosts, `oauth2.googleapis.com` and `sheets.googleapis.com`, with the
+  access token in a header, never in an address. Each request has a 15-second timeout, a 40 MB
+  response cap and the 20,000-row limit.
+- The audit trail records counts and the reason for a failed sync, never a value from the sheet.
 
 ## 12. AI and Document Data Handling
 

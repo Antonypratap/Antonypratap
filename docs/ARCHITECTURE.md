@@ -685,6 +685,7 @@ POST /dev/reset  { erp: 'demo'|'empty' } (not in production) 'empty' = company o
 ### 14.4 Technical constraints
 
 - **TECHNICAL CONSTRAINT** No spreadsheet library: a small, audited reader/writer covers the XLSX subset Excel, Google Sheets and openpyxl produce (shared/inline strings, number formats for dates and percentages, 1900/1904 date systems). Generated files were verified with openpyxl; LibreOffice was not available to test.
+- **IMPLEMENTATION DECISION** Legacy Excel 97–2003 (`.xls`) is read the same way, with no library (`apps/api/src/spreadsheet/xls.ts`): the Compound File container (sector chains checked for loops and bounds) and the BIFF8 records for strings, numbers, booleans, errors, cached formula results and date/percent formats. Encrypted workbooks and pre-1997 formats are refused with what to do. Files are told apart by their first bytes (`spreadsheet/read.ts`), for both business-record imports and spreadsheet registers (§21).
 - **TECHNICAL CONSTRAINT** Imports only add records. Updating or deactivating an existing record, importing the company, scheduled imports and two-way sync are out of scope.
 - **TECHNICAL CONSTRAINT** SQLite migrations that rebuild tables run with `foreign_keys` off and a `foreign_key_check` before it is turned back on (in both databases), because SQLite ignores the pragma inside the migration transaction. The generated `0001_import_origin.sql` was corrected by hand (the copy step selected a column that does not yet exist); a test upgrades a Phase 3B database.
 
@@ -919,3 +920,27 @@ Authentication, authorization and data protection around the unchanged workflow.
   - Production requires TLS to a remote database.
 - **IMPLEMENTATION DECISION** AI boundary: Ollama must be local or private unless an operator explicitly allows otherwise; no external AI provider exists.
 - **TECHNICAL CONSTRAINT** Rate limiting stays per process (sign-in added, per address and per account). A distributed limiter, MFA, retention automation and per-row organization ownership are future work (SECURITY.md §21).
+
+## 21. Spreadsheet registers (data sources)
+
+Many businesses keep their purchase or goods-received register in a spreadsheet rather than an
+ERP. Veyrafy reads that register, once a person has confirmed which column holds which field, and
+checks each invoice against it line by line with the existing receipt check
+(`Veyra.receiptCheck`, the same comparison used for an ERP's goods-receipt export).
+
+| Part | Where |
+|---|---|
+| Mapping (propose, then a person confirms) | `apps/api/src/sources/mapping.ts`: header-row detection, `proposeMapping`, `applyMapping`, `headerSignature` |
+| Register → receipt records | `apps/api/src/challenge/register.ts` (`collectReceipts`, shared with the 5 Invoice Challenge) |
+| Service and API | `apps/api/src/sources/service.ts`; `GET/POST /api/v1/sources`, `/inspect`, `/preview`, `PATCH /:id`, `/:id/layout`, `/:id/sync` |
+| Google Sheets (read-only) | `apps/api/src/sources/google.ts`, behind the `SheetsReader` port (`sheets.ts`) |
+| Storage | `data_sources` table; `erp_receipt_records.source_id` (migration `0010_data_sources`) |
+| Screen | ERP › Spreadsheets (`apps/web/src/product/screens/Spreadsheets.tsx`) |
+
+- **IMPLEMENTATION DECISION** A mapping is only a suggestion until a person saves it; every sync reads through the saved mapping. If the header row changes (a column renamed, moved, added or removed), the sync stops with "columns changed" and reads nothing until the mapping is reviewed. Nothing is guessed.
+- **IMPLEMENTATION DECISION** A row without an invoice number, supplier or item is skipped and reported by its row number in the sheet; a value that is not a plain number is read as "not held", never estimated.
+- **IMPLEMENTATION DECISION** Syncs add or update records and never delete them. Invoices that are no longer in the register are counted in the sync summary ("kept"). A register with no receipt number gets a stand-in built from the invoice number, so re-syncing a re-sorted sheet finds the same record.
+- **IMPLEMENTATION DECISION** Sync is on demand ("Sync now", or the latest file for an uploaded register), plus a refresh before checks: when an invoice reaches the records check, connected Google Sheets older than `VEYRA_SHEETS_REFRESH_MINUTES` (15) are read again first. Concurrent checks share one read; a failure is recorded and the last synced records are used, so Google being unavailable never holds a check up. There is no background scheduler.
+- **IMPLEMENTATION DECISION** Google Sheets access is Veyrafy's own service account with the `spreadsheets.readonly` scope; the business shares its sheet with the service address as Viewer (SECURITY.md §11). No customer tokens are stored, and unsharing ends the access.
+- **IMPLEMENTATION DECISION** Commercially controlled by `erp.spreadsheet_sources` (granted like business-record imports: Business and Enterprise). Adding, mapping and syncing need `imports.manage`; viewing needs `erp.view`.
+- **TECHNICAL CONSTRAINT** Registers only, in this version: suppliers, purchase orders and agreed rates as separate sheets (the master data the full rule engine uses) are not mapped yet. A synced register is bounded by the sheet limits (20,000 rows, 60 columns).

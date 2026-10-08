@@ -20,6 +20,7 @@ import * as t from './db/schema';
 import { readinessCheck } from './http/health';
 import type { RateBucket } from './http/rate-limit';
 import { buildServer } from './http/server';
+import type { SheetsReader } from './sources/sheets';
 import { sessionCookieName } from './http/access';
 import { LocalDocumentStorage, type DocumentStorage } from './storage';
 import { SessionStore } from './auth/sessions';
@@ -110,6 +111,11 @@ export interface AppConfig {
   } | null;
   /** Outbound e-mail; absent: nothing is sent (recorded as not configured). */
   email?: EmailSender | null;
+  /**
+   * Spreadsheet registers: Google Sheets access (absent or null: uploads only) and the refresh
+   * interval before checks (default 15 minutes).
+   */
+  sheets?: { reader: SheetsReader | null; refreshMinutes?: number } | null;
 }
 
 const DEV_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173'];
@@ -269,6 +275,7 @@ export async function createApp(config: AppConfig) {
     await db.transaction(async (tx) => {
       for (const table of [
         'erp_receipt_records',
+        'data_sources',
         'imports',
         'erp_writes',
         'jobs',
@@ -337,6 +344,10 @@ export async function createApp(config: AppConfig) {
 
   const cookieSecure = config.auth?.cookieSecure ?? environment !== 'development';
   const server = await buildServer({
+    sheets: {
+      reader: config.sheets?.reader ?? null,
+      refreshMinutes: config.sheets?.refreshMinutes ?? 15,
+    },
     veyra,
     aiReader,
     environment,

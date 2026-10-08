@@ -17,6 +17,7 @@ export const ERP_TABS = [
   'receipts',
   'invoices',
   'data',
+  'sheets',
   'connection',
 ] as const;
 export type ErpTab = (typeof ERP_TABS)[number];

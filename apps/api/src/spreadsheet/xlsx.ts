@@ -89,7 +89,7 @@ function columnIndex(ref: string): number {
 const BUILTIN_DATE_FORMATS = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 47]);
 const BUILTIN_PERCENT_FORMATS = new Set([9, 10]);
 
-function classifyFormat(id: number, custom: Map<number, string>): Cell['format'] {
+export function classifyFormat(id: number, custom: Map<number, string>): Cell['format'] {
   if (BUILTIN_PERCENT_FORMATS.has(id)) return 'percent';
   if (BUILTIN_DATE_FORMATS.has(id)) return 'date';
   const code = custom.get(id);

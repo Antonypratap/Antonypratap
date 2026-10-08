@@ -49,6 +49,16 @@ export const CAPABILITIES = [
     version: 1,
   },
   {
+    key: 'erp.spreadsheet_sources',
+    name: 'Spreadsheet registers',
+    description:
+      'Check invoices against a purchase or GRN register kept in Excel, CSV or Google Sheets, read through a confirmed column mapping.',
+    category: 'erp',
+    type: 'BOOLEAN',
+    customerVisible: true,
+    version: 1,
+  },
+  {
     key: 'reports.exports',
     name: 'Exports',
     description: 'Download invoices, decisions, business records and the audit trail as Excel.',

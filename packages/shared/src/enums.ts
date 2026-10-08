@@ -163,6 +163,11 @@ export const AUDIT_EVENTS = [
   // ERP goods-receipt records (the ERP's own JSON export) and invoices checked against them.
   'receipts.imported',
   'receipt.checked',
+  // Spreadsheet registers (data sources): saved, mapping changed, synced, or a sync that failed.
+  'source.saved',
+  'source.mapping_changed',
+  'source.synced',
+  'source.sync_failed',
   // Document retention: the original file deleted (by a person, or by the retention policy).
   'document.deleted',
   // The same file uploaded again when its stored copy had gone missing: the copy is restored.

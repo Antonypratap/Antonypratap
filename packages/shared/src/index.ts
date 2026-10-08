@@ -33,3 +33,4 @@ export * from './schemas/commercial';
 export * from './schemas/challenge';
 export * from './blog';
 export * from './schemas/blog';
+export * from './schemas/sources';
