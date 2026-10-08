@@ -41,8 +41,8 @@ export function WhyNow() {
             </h2>
           </div>
           <p className={styles.lede}>
-            Every month, the same three things get past a busy accounts desk at a brewery or
-            restaurant. None of them is visible until it is too late to fix cheaply.
+            Every month, the same three things get past a busy accounts desk. None of them is
+            visible until it is too late to fix cheaply.
           </p>
         </div>
         <div className={styles.grid}>

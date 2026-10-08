@@ -9,11 +9,10 @@ const COLUMNS = [
     title: 'Product',
     links: [
       { href: '#the-problem', label: 'The problem' },
+      { href: '#why-now', label: 'Why now' },
       { href: '#how-it-works', label: 'How it works' },
       { href: '#who-its-for', label: 'Who it’s for' },
-      { href: '#why-now', label: 'Why now' },
       { href: '#built-for-india', label: 'Built for India' },
-      { href: '#whats-next', label: 'What’s next' },
       { href: '#faq', label: 'Questions' },
     ],
   },
@@ -21,8 +20,8 @@ const COLUMNS = [
     title: 'Access',
     links: [
       { href: '#/login', label: 'Client login' },
-      { href: '#/request-access', label: 'Request access' },
-      { href: CONTACT_PHONE_HREF, label: 'Book a walkthrough' },
+      { href: '#/request-access', label: 'Book a demo' },
+      { href: CONTACT_PHONE_HREF, label: 'Call us' },
     ],
   },
 ];
@@ -56,7 +55,7 @@ export function SiteFooter() {
                 ))}
                 {c.title === 'Product' && (
                   <li>
-                    <a href={demoEntryHref()}>See Veyrafy in action</a>
+                    <a href={demoEntryHref()}>Try the demo (sample invoices)</a>
                   </li>
                 )}
               </ul>

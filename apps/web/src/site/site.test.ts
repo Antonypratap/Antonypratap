@@ -157,7 +157,7 @@ describe('what each address renders', () => {
     expect(login).not.toMatch(/toit/i); // no client list is published
     const access = render(WEBSITE, '#/request-access');
     expect(access).toContain(
-      'Veyrafy is invite-only while we onboard our first clients. To get started, call',
+      'Veyrafy is invite-only while we onboard our first clients. To book a demo, call',
     );
     expect(access).toContain('+91 98800 00990');
     expect(access).toContain('href="tel:+919880000990"');

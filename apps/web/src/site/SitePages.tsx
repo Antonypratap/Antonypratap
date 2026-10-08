@@ -13,7 +13,7 @@ import {
 
 /**
  * The website's access pages (veyrafy.com): Client login (to the company's own Veyrafy address)
- * and Request access. They use the sign-in page's layout; no client list is published anywhere.
+ * and Book a demo (#/request-access). They use the sign-in page's layout; no client list is published anywhere.
  */
 function Frame({ children, home = '#top' }: { children: ReactNode; home?: string }) {
   return (
@@ -87,7 +87,7 @@ export function ClientLogin({
           Continue
         </Button>
         <p className={site.aside}>
-          No Veyrafy address yet? <a href="#/request-access">Request access</a>
+          No Veyrafy address yet? <a href="#/request-access">Book a demo</a>
         </p>
       </form>
     </Frame>
@@ -100,10 +100,10 @@ export function RequestAccess() {
     <Frame>
       <section className={styles.panel} aria-labelledby={`${id}-title`}>
         <h1 id={`${id}-title`} className={styles.title}>
-          Request access
+          Book a demo
         </h1>
         <p className={site.body}>
-          Veyrafy is invite-only while we onboard our first clients. To get started, call{' '}
+          Veyrafy is invite-only while we onboard our first clients. To book a demo, call{' '}
           <a href={CONTACT_PHONE_HREF}>{CONTACT_PHONE}</a>.
         </p>
       </section>

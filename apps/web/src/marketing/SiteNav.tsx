@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { demoEntryHref } from '../access/demoAccess';
 import { ButtonLink, Container, Icon, Logo } from '../design-system';
 import styles from './SiteNav.module.css';
 
@@ -8,11 +7,8 @@ const LINKS = [
   { href: '#how-it-works', label: 'How it works' },
   { href: '#who-its-for', label: 'Who it’s for' },
 ];
-/** The website's way in for clients (Client login) and for prospects (Request access). */
-const ACCESS_LINKS = [
-  { href: '#/login', label: 'Client login' },
-  { href: '#/request-access', label: 'Request access' },
-];
+/** The website's way in for clients; prospects use the Book a Demo button. */
+const ACCESS_LINKS = [{ href: '#/login', label: 'Client login' }];
 
 export function SiteNav() {
   const [open, setOpen] = useState(false);
@@ -61,8 +57,8 @@ export function SiteNav() {
           <ButtonLink href="#/login" size="sm" variant="secondary">
             Client login
           </ButtonLink>
-          <ButtonLink href={demoEntryHref()} size="sm">
-            See Veyrafy in action
+          <ButtonLink href="#/request-access" size="sm">
+            Book a Demo
           </ButtonLink>
         </div>
         <button
@@ -92,13 +88,13 @@ export function SiteNav() {
             </ul>
           </nav>
           <ButtonLink
-            href={demoEntryHref()}
+            href="#/request-access"
             size="lg"
             arrow
             className={styles.sheetCta}
             onClick={() => setOpen(false)}
           >
-            See Veyrafy in action
+            Book a Demo
           </ButtonLink>
         </Container>
       </div>
