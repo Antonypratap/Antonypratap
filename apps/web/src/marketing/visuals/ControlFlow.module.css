@@ -1,23 +1,35 @@
-/* The hero's control-point diagram: documents in, Veyrafy, two outcomes. */
+/* The hero's animated purchase flow: three stages, Veyrafy, two outcomes, and a caption. */
 .flow {
-  display: grid;
-  justify-items: center;
   margin: 0;
-  padding: clamp(1.25rem, 0.8rem + 1.6vw, 2rem);
+  padding: clamp(1.25rem, 0.8rem + 1.6vw, 1.75rem);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
   background: var(--color-surface-raised);
   box-shadow: var(--shadow-panel);
 }
+.stack {
+  display: grid;
+}
 
-.source {
-  width: 100%;
-  max-width: 17rem;
+.group {
+  display: grid;
+}
+.node {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--color-line-strong);
   border-radius: var(--radius-md);
   background: var(--color-surface);
-  text-align: center;
+  transition:
+    opacity var(--duration-base) var(--ease-out),
+    border-color var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out);
+}
+.nodeText {
+  min-width: 0;
 }
 .who {
   font-size: var(--text-label);
@@ -25,64 +37,75 @@
   text-transform: uppercase;
   color: var(--color-ink-3);
 }
+.what {
+  margin-top: 0.125rem;
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+.mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 999px;
+  color: var(--color-accent);
+}
+
+/* Each connector has room for the document chips that travel down it. */
+.link {
+  position: relative;
+  height: 2rem;
+  margin-inline: auto;
+  width: 1px;
+  background: var(--color-line-strong);
+}
+.docs {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  display: flex;
+  gap: var(--space-1);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  animation: travel 1.2s var(--ease-out) both;
+}
 .doc {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-1);
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--color-accent-line);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-soft);
+  font-size: 0.6875rem;
   font-weight: var(--weight-semibold);
-  color: var(--color-ink);
+  color: var(--color-accent);
 }
-.what {
-  margin-top: 0.125rem;
-  font-size: var(--text-xsmall);
-  color: var(--color-ink-2);
-}
-
-.records {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-}
-.records .source {
-  max-width: none;
-}
-.plus {
-  font-weight: var(--weight-semibold);
-  color: var(--color-ink-3);
-}
-
-/* A short vertical connector with an arrowhead. */
-.down {
-  position: relative;
-  width: 1px;
-  height: 1.5rem;
-  margin-block: 0.25rem;
-  background: var(--color-ink-4);
-}
-.down::after {
-  content: '';
-  position: absolute;
-  bottom: -1px;
-  left: 50%;
-  width: 0.4375rem;
-  height: 0.4375rem;
-  border-right: 1px solid var(--color-ink-4);
-  border-bottom: 1px solid var(--color-ink-4);
-  transform: translateX(-50%) rotate(45deg);
+@keyframes travel {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -0.5rem);
+  }
+  20% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0.6rem);
+  }
 }
 
 .veyrafy {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  width: 100%;
   padding: var(--space-4) var(--space-5);
   border-radius: var(--radius-md);
   background: var(--color-inverse);
   color: var(--color-inverse-ink);
+  transition: opacity var(--duration-base) var(--ease-out);
 }
 .veyrafy strong {
   display: block;
@@ -94,19 +117,26 @@
   font-size: var(--text-xsmall);
   color: var(--color-inverse-ink-2);
 }
-.mark {
+.pulse {
   flex: none;
   width: 0.625rem;
   height: 0.625rem;
   border-radius: 999px;
   background: var(--color-inverse-accent);
 }
+.veyrafy[data-state='active'] .pulse {
+  animation: pulse 0.9s ease-in-out infinite alternate;
+}
+@keyframes pulse {
+  to {
+    box-shadow: 0 0 0 0.4rem rgb(95 211 166 / 0.25);
+  }
+}
 
 .outcomes {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
-  width: 100%;
   margin-top: var(--space-3);
 }
 .outcome {
@@ -114,6 +144,9 @@
   border-radius: var(--radius-md);
   border: 1px solid var(--color-accent-line);
   background: var(--color-accent-soft);
+  transition:
+    opacity var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out);
 }
 .outcome[data-tone='difference'] {
   border-color: var(--color-attention-line);
@@ -133,26 +166,92 @@
   color: var(--color-attention);
 }
 .path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.125rem var(--space-1);
   margin-top: var(--space-1);
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--color-ink);
 }
-.step {
-  white-space: nowrap;
+.arrow {
+  color: var(--color-ink-3);
 }
-.note {
-  margin-top: 0.125rem;
-  font-size: var(--text-xsmall);
-  line-height: 1.45;
+.correction {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: var(--space-2);
+  padding: 0;
+  list-style: none;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+}
+.correction li {
+  padding: 0.125rem 0.4375rem;
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 0 0 1px var(--color-attention-line);
   color: var(--color-ink-2);
+  transition:
+    background var(--duration-base) var(--ease-out),
+    color var(--duration-base) var(--ease-out);
+}
+.correction li[data-on='true'] {
+  background: var(--color-attention);
+  color: var(--color-surface);
+}
+.path [data-on='true'] {
+  color: var(--color-accent);
+}
+
+.caption {
+  min-height: 2.6em;
+  margin-top: var(--space-4);
+  font-size: var(--text-xsmall);
+  line-height: 1.3;
+  color: var(--color-ink-2);
+  text-align: center;
+}
+
+/* States while the flow plays (at rest, everything is shown plainly). */
+[data-state='upcoming'] {
+  opacity: 0.45;
+}
+[data-state='off'] {
+  opacity: 0.35;
+}
+.node[data-state='active'] {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+.node[data-revisit='true'] {
+  border-color: var(--color-attention-strong);
+  box-shadow: 0 0 0 3px var(--color-attention-soft);
+}
+.veyrafy[data-state='active'] {
+  box-shadow: 0 0 0 3px var(--color-accent-line);
+}
+.outcome[data-state='active'] {
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+.outcome[data-tone='difference'][data-state='active'] {
+  box-shadow: 0 0 0 3px var(--color-attention-soft);
 }
 
 @media (max-width: 420px) {
-  .records,
   .outcomes {
     grid-template-columns: 1fr;
   }
-  .plus {
-    justify-self: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .docs,
+  .veyrafy[data-state='active'] .pulse {
+    animation: none;
+  }
+  .node,
+  .outcome,
+  .veyrafy,
+  .correction li {
+    transition: none;
   }
 }
