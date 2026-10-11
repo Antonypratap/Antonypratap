@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Icon, StatusPill } from '../../design-system';
 import { ExportLink, PageHeader } from '../components/PageHeader';
 import { exportUrl } from '../api/client';
-import { formatDate, inr } from '../format';
+import { formatDate, formatDateTime, formatRelative, inr } from '../format';
 import { INVOICE_FILTERS, hrefFor, type InvoiceFilter } from '../router';
 import { useProductData } from '../state/data';
 import { STATUS_LABEL, STATUS_TONE } from '../state/status';
@@ -16,9 +16,20 @@ const FILTER_LABEL: Record<InvoiceFilter, string> = {
   handled: 'Handled',
 };
 
+/** The current time, refreshed every minute so "12 min ago" stays true while the page is open. */
+function useNow(): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
+}
+
 export function Invoices({ filter }: { filter: InvoiceFilter }) {
   const { inbox } = useProductData();
   const [query, setQuery] = useState('');
+  const now = useNow();
   const q = query.trim().toLowerCase();
   const rows = (inbox?.invoices ?? [])
     .map((inv) => ({ inv, status: inv.status }))
@@ -78,6 +89,7 @@ export function Invoices({ filter }: { filter: InvoiceFilter }) {
           <span role="columnheader">Invoice</span>
           <span role="columnheader">Supplier</span>
           <span role="columnheader">Date</span>
+          <span role="columnheader">Received</span>
           <span role="columnheader" className={styles.right}>
             Amount
           </span>
@@ -99,6 +111,12 @@ export function Invoices({ filter }: { filter: InvoiceFilter }) {
             </span>
             <span role="cell" className={styles.date}>
               {inv.invoiceDate ? formatDate(inv.invoiceDate) : '—'}
+            </span>
+            <span role="cell" className={styles.received}>
+              <time dateTime={inv.receivedAt} title={`Received ${formatDateTime(inv.receivedAt)}`}>
+                <span className={styles.receivedLabel}>Received </span>
+                {formatRelative(inv.receivedAt, now)}
+              </time>
             </span>
             <span role="cell" className={`${styles.right} ${styles.amount}`}>
               {inv.totalPaise === null ? '—' : inr(inv.totalPaise)}

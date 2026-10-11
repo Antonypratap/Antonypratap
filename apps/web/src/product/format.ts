@@ -14,6 +14,44 @@ export function formatDate(iso: string): string {
   return `${d} ${MONTHS[m - 1] ?? ''} ${y}`;
 }
 
+/** Calendar parts of an instant in India Standard Time, the time every screen and export uses. */
+function istParts(iso: string): { y: number; m: number; d: number; hh: number; mm: number } {
+  const ist = new Date(new Date(iso).getTime() + 330 * 60_000);
+  return {
+    y: ist.getUTCFullYear(),
+    m: ist.getUTCMonth() + 1,
+    d: ist.getUTCDate(),
+    hh: ist.getUTCHours(),
+    mm: ist.getUTCMinutes(),
+  };
+}
+
+function clock(hh: number, mm: number): string {
+  const h12 = hh % 12 === 0 ? 12 : hh % 12;
+  return `${h12}:${String(mm).padStart(2, '0')} ${hh < 12 ? 'am' : 'pm'}`;
+}
+
+/** "2026-10-09T08:44:00Z" → "9 Oct 2026, 2:14 pm" (IST) */
+export function formatDateTime(iso: string): string {
+  const p = istParts(iso);
+  return `${p.d} ${MONTHS[p.m - 1] ?? ''} ${p.y}, ${clock(p.hh, p.mm)}`;
+}
+
+/** How long ago, for lists: "just now", "12 min ago", "3 h ago", "yesterday", then the date (IST). */
+export function formatRelative(iso: string, now: Date): string {
+  const seconds = Math.floor((now.getTime() - new Date(iso).getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${String(Math.floor(seconds / 60))} min ago`;
+  const then = istParts(iso);
+  const today = istParts(now.toISOString());
+  const dayNo = (p: { y: number; m: number; d: number }) =>
+    Date.UTC(p.y, p.m - 1, p.d) / 86_400_000;
+  const days = dayNo(today) - dayNo(then);
+  if (days === 0) return `${String(Math.floor(seconds / 3600))} h ago`;
+  if (days === 1) return 'yesterday';
+  return `${then.d} ${MONTHS[then.m - 1] ?? ''} ${then.y}`;
+}
+
 export const inr = (p: Paise | number): string => formatInr(paise(p));
 
 const ONES = [

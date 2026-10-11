@@ -61,7 +61,7 @@
 .headRow,
 .row {
   display: grid;
-  grid-template-columns: 11rem minmax(0, 1fr) 7.5rem 9rem 11.5rem;
+  grid-template-columns: 11rem minmax(0, 1fr) 7.5rem 7.5rem 9rem 11.5rem;
   align-items: center;
   gap: var(--space-4);
   padding: 0 var(--space-5);
@@ -101,6 +101,13 @@
 .date {
   color: var(--color-ink-3);
 }
+.received {
+  color: var(--color-ink-3);
+  white-space: nowrap;
+}
+.receivedLabel {
+  display: none;
+}
 .right {
   text-align: right;
 }
@@ -124,7 +131,8 @@
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
       'number amount'
-      'supplier status';
+      'supplier status'
+      'received received';
     height: auto;
     padding: var(--space-3) var(--space-4);
     row-gap: var(--space-1);
@@ -138,6 +146,14 @@
   }
   .date {
     display: none;
+  }
+  .received {
+    grid-area: received;
+    font-size: 0.6875rem;
+    color: var(--color-ink-4);
+  }
+  .receivedLabel {
+    display: inline;
   }
   .amount {
     grid-area: amount;

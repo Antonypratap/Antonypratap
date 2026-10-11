@@ -15,7 +15,7 @@ import { Icon, StatusPill } from '../../design-system';
 import { useAllowed } from '../../access/session';
 import { notify } from '../../feedback/toasts';
 import { api, ApiError } from '../api/client';
-import { formatDate } from '../format';
+import { formatDateTime } from '../format';
 import { hasCapability, useCapabilities } from '../state/capabilities';
 import { useProductData, useResource } from '../state/data';
 import base from './ErpData.module.css';
@@ -335,7 +335,8 @@ export function Spreadsheets() {
                           : 'Sync failed'}
                     </StatusPill>
                     <span>
-                      {formatDate(s.lastSync.at.slice(0, 10))}: {s.lastSync.message}
+                      <time dateTime={s.lastSync.at}>{formatDateTime(s.lastSync.at)}</time>:{' '}
+                      {s.lastSync.message}
                     </span>
                   </p>
                 )}

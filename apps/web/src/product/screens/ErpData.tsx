@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import type { ApiImport } from '@veyra/shared';
 import { Icon } from '../../design-system';
 import { api, ApiError, exportUrl, TEMPLATES, templateUrl } from '../api/client';
-import { formatDate } from '../format';
+import { formatDateTime } from '../format';
 import { hrefFor } from '../router';
 import { useProductData, useResource } from '../state/data';
 import { hasCapability, useCapabilities } from '../state/capabilities';
@@ -196,7 +196,7 @@ export function ErpData() {
                 <tr>
                   <th>File</th>
                   <th>Type</th>
-                  <th>Date</th>
+                  <th>Imported</th>
                   <th className={styles.num}>Records</th>
                   <th>Result</th>
                 </tr>
@@ -206,7 +206,9 @@ export function ErpData() {
                   <tr key={h.id}>
                     <td>{h.files.join(', ')}</td>
                     <td>{h.kinds}</td>
-                    <td>{formatDate(h.createdAt.slice(0, 10))}</td>
+                    <td>
+                      <time dateTime={h.createdAt}>{formatDateTime(h.createdAt)}</time>
+                    </td>
                     <td className={styles.num}>{h.tables.reduce((n, t) => n + t.rows, 0)}</td>
                     <td data-result={h.status}>{resultText(h)}</td>
                   </tr>

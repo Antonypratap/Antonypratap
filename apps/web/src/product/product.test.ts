@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ApiInbox, ApiInvoiceSummary } from '@veyra/shared';
 import { api, ApiError } from './api/client';
-import { formatDate, greetingFor } from './format';
+import { formatDate, formatDateTime, formatRelative, greetingFor } from './format';
 import { hrefFor, parseHash } from './router';
 import { attentionQueue, nextInQueue } from './state/data';
 import { STATUS_LABEL, STATUS_TONE } from './state/status';
@@ -177,6 +177,25 @@ describe('formatting', () => {
 
   it('formats dates the Indian business way', () => {
     expect(formatDate('2026-09-22')).toBe('22 Sep 2026');
+  });
+
+  it('shows times in India Standard Time, including across the UTC date line', () => {
+    expect(formatDateTime('2026-10-09T08:44:00.000Z')).toBe('9 Oct 2026, 2:14 pm');
+    expect(formatDateTime('2026-10-09T18:30:00.000Z')).toBe('10 Oct 2026, 12:00 am');
+    expect(formatDateTime('2026-10-09T06:30:00.000Z')).toBe('9 Oct 2026, 12:00 pm');
+  });
+
+  it('says how long ago, by IST calendar day', () => {
+    const now = new Date('2026-10-09T08:44:00.000Z'); // 2:14 pm IST
+    expect(formatRelative('2026-10-09T08:43:01.000Z', now)).toBe('just now');
+    expect(formatRelative('2026-10-09T08:43:00.000Z', now)).toBe('1 min ago');
+    expect(formatRelative('2026-10-09T07:45:00.000Z', now)).toBe('59 min ago');
+    expect(formatRelative('2026-10-09T05:44:00.000Z', now)).toBe('3 h ago');
+    // 12:00 am IST today, though the UTC date is yesterday.
+    expect(formatRelative('2026-10-08T18:30:00.000Z', now)).toBe('14 h ago');
+    // 11:59 pm IST yesterday.
+    expect(formatRelative('2026-10-08T18:29:00.000Z', now)).toBe('yesterday');
+    expect(formatRelative('2026-10-07T08:44:00.000Z', now)).toBe('7 Oct 2026');
   });
 });
 

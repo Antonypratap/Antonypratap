@@ -13,7 +13,7 @@ import { AnswerForm } from '../components/AnswerForm';
 import { ErpComparison } from '../components/ErpComparison';
 import { EvidenceList, Finding } from '../components/Finding';
 import { InvoiceDocument } from '../components/InvoiceDocument';
-import { formatDate, inr } from '../format';
+import { formatDate, formatDateTime, inr } from '../format';
 import { hrefFor, navigate } from '../router';
 import { attentionQueue, nextInvoice, useProductData, useResource } from '../state/data';
 import { AFTER_DECISION, ASK_LABEL, completionEvidence, erpStatusText } from '../state/decision';
@@ -21,6 +21,15 @@ import { STATUS_LABEL, STATUS_TONE } from '../state/status';
 import styles from './InvoiceReview.module.css';
 import { allowed } from '../../access/session';
 import { notify } from '../../feedback/toasts';
+
+/** One point in the invoice's life, with its exact time (IST). */
+function Moment({ label, at }: { label: string; at: string }) {
+  return (
+    <span>
+      {label} <time dateTime={at}>{formatDateTime(at)}</time>
+    </span>
+  );
+}
 
 export function InvoiceReview({ id }: { id: string }) {
   const { data, error } = useResource(() => api.invoice(id), `invoice:${id}`);
@@ -297,6 +306,11 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
           <div>
             <h1 className={styles.title}>Invoice {title}</h1>
             <p className={styles.subtitle}>{invoice.supplier.name ?? 'Supplier not read yet'}</p>
+            <p className={styles.times}>
+              <Moment label="Received" at={invoice.receivedAt} />
+              {invoice.checkedAt && <Moment label="Checked" at={invoice.checkedAt} />}
+              {invoice.decision && <Moment label="Decided" at={invoice.decision.at} />}
+            </p>
           </div>
           <div className={styles.headMeta}>
             <StatusPill status={STATUS_TONE[status]}>{STATUS_LABEL[status]}</StatusPill>

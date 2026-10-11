@@ -558,18 +558,18 @@ export class Presenter {
       })
       .map((x) => x.path);
     const latestRun = inv.runNo;
-    const checks = (
-      await this.v.db
-        .select()
-        .from(t.validationResults)
-        .where(
-          and(
-            eq(t.validationResults.invoiceId, invoiceId),
-            eq(t.validationResults.runNo, latestRun),
-          ),
-        )
-        .orderBy(asc(t.validationResults.seq))
-    ).map((r) => ({
+    const checkRows = await this.v.db
+      .select()
+      .from(t.validationResults)
+      .where(
+        and(eq(t.validationResults.invoiceId, invoiceId), eq(t.validationResults.runNo, latestRun)),
+      )
+      .orderBy(asc(t.validationResults.seq));
+    const checkedAt = checkRows.reduce<string | null>(
+      (latest, r) => (latest === null || r.createdAt > latest ? r.createdAt : latest),
+      null,
+    );
+    const checks = checkRows.map((r) => ({
       rule: r.ruleCode,
       name: RULES[r.ruleCode as RuleCode].name,
       lineNo: r.lineNo,
@@ -650,6 +650,7 @@ export class Presenter {
         .filter((q) => q.status !== 'superseded')
         .map((q) => questionDto(q, invoiceBrief)),
       checks,
+      checkedAt,
       comparison: await this.receiptOrErpComparison(inv, f, checks, lineNos, company.gstin),
       erp: {
         vendor: vendor ? `${vendor.name} (${vendor.code})` : null,

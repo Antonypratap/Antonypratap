@@ -121,6 +121,11 @@ describe('the vertical slice over HTTP', () => {
     expect(detail.checks.every((c) => c.outcome === 'pass' || c.outcome === 'not_applicable')).toBe(
       true,
     );
+    // When it arrived and when the latest checks ran, both shown on the invoice page.
+    expect(detail.checkedAt).not.toBeNull();
+    expect(Date.parse(detail.checkedAt ?? '')).toBeGreaterThanOrEqual(
+      Date.parse(detail.receivedAt),
+    );
     expect(detail.erp.records).toEqual([
       expect.stringMatching(/^Goods receipt GRN\/2026-27\/\d+ recorded$/),
     ]);

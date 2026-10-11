@@ -264,6 +264,8 @@ export const ApiInvoiceDetailSchema = ApiInvoiceSummarySchema.extend({
   unclearPaths: z.array(z.string()),
   questions: z.array(ApiQuestionSchema),
   checks: z.array(ApiCheckSchema),
+  /** When the latest checks ran; null before the invoice has been checked. */
+  checkedAt: z.string().nullable(),
   comparison: ApiComparisonSchema.nullable(),
   erp: z.object({
     vendor: z.string().nullable(),
