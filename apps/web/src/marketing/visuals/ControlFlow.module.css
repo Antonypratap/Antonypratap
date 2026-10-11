@@ -203,6 +203,9 @@
 .path [data-on='true'] {
   color: var(--color-accent);
 }
+.path span {
+  transition: color var(--duration-base) var(--ease-out);
+}
 
 .caption {
   min-height: 2.6em;
@@ -243,15 +246,18 @@
     grid-template-columns: 1fr;
   }
 }
+/*
+ * Reduced motion: nothing moves (no travelling documents, no pulse), but the stages still light in
+ * turn by fading. These fades outrank the site-wide rule that cuts every transition short.
+ */
 @media (prefers-reduced-motion: reduce) {
   .docs,
   .veyrafy[data-state='active'] .pulse {
     animation: none;
   }
-  .node,
-  .outcome,
-  .veyrafy,
-  .correction li {
-    transition: none;
+  .flow[data-motion='reduced'] :is(.node, .outcome, .veyrafy, .correction li, .path span) {
+    transition-property: opacity, color, background-color, border-color, box-shadow !important;
+    transition-duration: 600ms !important;
+    transition-timing-function: ease-in-out !important;
   }
 }

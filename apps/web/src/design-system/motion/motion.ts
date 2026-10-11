@@ -47,7 +47,8 @@ export function useInView<T extends Element>(
  * Advances a step counter from 0 to `steps` once `active` is true, one step per `intervalMs`.
  * With `loopHoldMs`, the finished state is held that long, then the sequence plays again from the
  * start, for as long as it is shown. With reduced motion it jumps straight to the final step and
- * stays there (never loops).
+ * stays there (never loops), unless `playWhenReduced` is set: for a sequence whose caller shows each
+ * step without movement (fades only), so the story still plays for those visitors.
  */
 export function useSequence(
   steps: number,
@@ -55,8 +56,9 @@ export function useSequence(
   active: boolean,
   startDelayMs = 0,
   loopHoldMs?: number,
+  playWhenReduced = false,
 ): number {
-  const reduced = usePrefersReducedMotion();
+  const reduced = usePrefersReducedMotion() && !playWhenReduced;
   const [step, setStep] = useState(0);
   useEffect(() => {
     if (!active || reduced) return;

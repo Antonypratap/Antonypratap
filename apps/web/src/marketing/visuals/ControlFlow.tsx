@@ -8,7 +8,8 @@ import styles from './ControlFlow.module.css';
  * procurement orders, the supplier delivers with an invoice and delivery challan, the warehouse
  * confirms what arrived, Veyrafy checks the invoice against the PO and GRN, and the team approves
  * and pays, or the difference is put right first. Every stage is always on screen (complete at
- * rest); the animation only lights them in turn. With reduced motion it stays still.
+ * rest); the animation only lights them in turn. With reduced motion nothing moves: the stages
+ * still light in turn, more slowly, by fading only (no travelling documents, no pulse).
  */
 
 const NODES: {
@@ -31,7 +32,7 @@ function useVisible<T extends Element>() {
     const el = ref.current;
     if (!el || typeof IntersectionObserver === 'undefined') return;
     const io = new IntersectionObserver((e) => setVisible(e.some((x) => x.isIntersecting)), {
-      threshold: 0.3,
+      threshold: 0.15,
     });
     io.observe(el);
     return () => io.disconnect();
@@ -59,13 +60,26 @@ export function ControlFlow() {
   const reduced = usePrefersReducedMotion();
   const [ref, visible] = useVisible<HTMLElement>();
   // Step 0 is the still frame; 1..n play the script, then it holds and starts again.
-  const at = useSequence(SCRIPT.length, 1400, visible && !reduced, 900, 2600);
-  const index = reduced || at === 0 ? -1 : at - 1;
+  const at = useSequence(
+    SCRIPT.length,
+    reduced ? 2200 : 1400,
+    visible,
+    900,
+    reduced ? 4000 : 2600,
+    true,
+  );
+  const index = at === 0 ? -1 : at - 1;
   const step = index >= 0 ? (SCRIPT[index] ?? null) : null;
-  const sendingFrom = step?.sends ? step.stage : null;
+  // The documents travelling down a connector are movement: left out with reduced motion.
+  const sendingFrom = step?.sends && !reduced ? step.stage : null;
 
   return (
-    <figure ref={ref} className={styles.flow} aria-labelledby="control-flow-caption">
+    <figure
+      ref={ref}
+      className={styles.flow}
+      data-motion={reduced ? 'reduced' : 'full'}
+      aria-labelledby="control-flow-caption"
+    >
       <figcaption id="control-flow-caption" className="visually-hidden">
         Procurement raises a purchase order. The supplier delivers the goods with an invoice and a
         delivery challan. The warehouse confirms what arrived. Veyrafy checks the invoice against
