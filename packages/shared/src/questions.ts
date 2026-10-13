@@ -78,6 +78,8 @@ export type AnswerEffectType = AnswerEffect['type'];
  */
 export function effectViolation(code: QuestionCode, effect: AnswerEffect): string | null {
   if (effect.type === 'REJECT_INVOICE') return null;
+  // Checking again (after the ERP was put right) is always allowed except for a misread field.
+  if (effect.type === 'RECHECK' && code !== 'MD_FIELD') return null;
   const is = (ok: boolean): string | null =>
     ok ? null : `${effect.type} is not allowed for ${code}`;
   if (code.startsWith('VF_')) {

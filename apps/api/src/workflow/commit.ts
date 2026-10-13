@@ -562,7 +562,8 @@ export async function executeCommit(
         purchaseInvoiceId: recorded.id,
         vendorErpId: vendorId,
         poErpId: poId,
-        status: recorded.status,
+        // Veyrafy's own purchase invoices have one status (an existing one here is Veyrafy's own).
+        status: 'verified_pending_payment',
       });
       await v.transition(tx, invoiceId, 'COMMITTING', 'VERIFIED_PENDING_PAYMENT', sys, {
         erpPurchaseInvoiceId: recorded.id,

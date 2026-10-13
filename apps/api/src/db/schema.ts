@@ -1101,3 +1101,153 @@ export const blogEvents = pgTable(
     index('blog_events_article').on(t.articleId),
   ],
 );
+
+/**
+ * A connection to the business's own ERP over its REST/JSON API (docs/ERP-API.md). One per
+ * deployment. The profile (address, login method, paths, field mapping) is not secret; the
+ * secrets are in erp_credentials, encrypted. `active` says whether invoice checks use the
+ * records synced through it (otherwise the built-in records are used).
+ */
+export const erpConnections = pgTable('erp_connections', {
+  id: text('id').primaryKey(),
+  profileJson: text('profile_json').notNull(),
+  active: boolean('active').notNull().default(false),
+  version: integer('version').notNull(),
+  updatedByUserId: text('updated_by_user_id').references(() => users.id),
+  updatedAt: isoTimestamp('updated_at').notNull(),
+});
+
+/** Connection secrets, AES-256-GCM encrypted (erp-api/secrets.ts). Never returned by the API. */
+export const erpCredentials = pgTable(
+  'erp_credentials',
+  {
+    connectionId: text('connection_id')
+      .notNull()
+      .references(() => erpConnections.id),
+    name: text('name').notNull(),
+    keyId: text('key_id').notNull(),
+    iv: text('iv').notNull(),
+    tag: text('tag').notNull(),
+    ciphertext: text('ciphertext').notNull(),
+    updatedByUserId: text('updated_by_user_id').references(() => users.id),
+    updatedAt: isoTimestamp('updated_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.connectionId, t.name] })],
+);
+
+/**
+ * The records read from the ERP, in Veyrafy's form (a mirror). Keyed by the ERP's own id within
+ * the record type and company/outlet scope; a repeated sync of an unchanged record changes
+ * nothing (raw_hash). A record the ERP no longer returns in a full pass is marked missing, never
+ * deleted, so findings keep pointing at what they were checked against.
+ */
+export const erpSyncRecords = pgTable(
+  'erp_sync_records',
+  {
+    seq: seq(),
+    connectionId: text('connection_id')
+      .notNull()
+      .references(() => erpConnections.id),
+    entity: text('entity').notNull(),
+    erpId: text('erp_id').notNull(),
+    company: text('company').notNull().default(''),
+    outlet: text('outlet').notNull().default(''),
+    docJson: text('doc_json').notNull(),
+    rawHash: text('raw_hash').notNull(),
+    sourceUpdatedAt: isoTimestamp('source_updated_at'),
+    firstSeenAt: isoTimestamp('first_seen_at').notNull(),
+    lastSeenAt: isoTimestamp('last_seen_at').notNull(),
+    lastChangedRunId: text('last_changed_run_id').notNull(),
+    lastSeenRunId: text('last_seen_run_id').notNull(),
+    missingSince: isoTimestamp('missing_since'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.connectionId, t.entity, t.company, t.outlet, t.erpId] }),
+    check(
+      'erp_sync_records_entity',
+      inList(t.entity, ['vendors', 'items', 'purchase_orders', 'grns', 'bills']),
+    ),
+  ],
+);
+
+/** One sync of the ERP's records: manual, scheduled or before a check. */
+export const erpSyncRuns = pgTable(
+  'erp_sync_runs',
+  {
+    seq: seq(),
+    id: text('id').primaryKey(),
+    connectionId: text('connection_id')
+      .notNull()
+      .references(() => erpConnections.id),
+    trigger: text('trigger').notNull(),
+    status: text('status').notNull(),
+    startedAt: isoTimestamp('started_at').notNull(),
+    heartbeatAt: isoTimestamp('heartbeat_at').notNull(),
+    finishedAt: isoTimestamp('finished_at'),
+    startedByUserId: text('started_by_user_id').references(() => users.id),
+    /** Per record type: received, mapped, changed, unchanged, invalid, missing, status. */
+    countsJson: text('counts_json').notNull(),
+    /** Where each record type continues after an interruption. */
+    checkpointJson: text('checkpoint_json').notNull(),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+  },
+  (t) => [
+    check('erp_sync_runs_trigger', inList(t.trigger, ['manual', 'scheduled', 'before_check'])),
+    check(
+      'erp_sync_runs_status',
+      inList(t.status, ['running', 'succeeded', 'partial', 'failed', 'interrupted']),
+    ),
+    // At most one sync at a time per connection (the lease).
+    uniqueIndex('erp_sync_runs_one_running')
+      .on(t.connectionId)
+      .where(sql`${t.status} = 'running'`),
+  ],
+);
+
+/** Per record type: the last complete pass, and where an incremental sync continues from. */
+export const erpSyncState = pgTable(
+  'erp_sync_state',
+  {
+    connectionId: text('connection_id')
+      .notNull()
+      .references(() => erpConnections.id),
+    entity: text('entity').notNull(),
+    /** Start time of the last pass that read every page (the next "changed since"). */
+    watermark: isoTimestamp('watermark'),
+    lastCompleteAt: isoTimestamp('last_complete_at'),
+    lastCompleteRunId: text('last_complete_run_id'),
+  },
+  (t) => [primaryKey({ columns: [t.connectionId, t.entity] })],
+);
+
+/**
+ * What a sync found that Veyrafy will not rely on: records kept out (fields missing or
+ * unreadable), links to records that do not exist, two records claiming the same number or
+ * GSTIN, or a whole answer whose shape changed. Field names only, never values.
+ */
+export const erpSyncIssues = pgTable(
+  'erp_sync_issues',
+  {
+    seq: seq(),
+    id: text('id').primaryKey(),
+    connectionId: text('connection_id')
+      .notNull()
+      .references(() => erpConnections.id),
+    runId: text('run_id')
+      .notNull()
+      .references(() => erpSyncRuns.id),
+    entity: text('entity').notNull(),
+    erpId: text('erp_id'),
+    kind: text('kind').notNull(),
+    detailJson: text('detail_json').notNull(),
+    createdAt: isoTimestamp('created_at').notNull(),
+  },
+  (t) => [
+    check(
+      'erp_sync_issues_kind',
+      inList(t.kind, ['invalid', 'incomplete', 'orphan', 'conflict', 'shape_changed']),
+    ),
+    index('erp_sync_issues_run').on(t.runId),
+  ],
+);

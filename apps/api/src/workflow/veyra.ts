@@ -43,6 +43,7 @@ import type {
   QuestionDraft,
 } from '../engine/types';
 import { assertTransition } from './state-machine';
+import { canRecordInvoices, readOnlyQuestions } from './read-only';
 import { parseAnswerInput } from './answers';
 import { executeCommit, type CommitHooks } from './commit';
 import {
@@ -222,6 +223,13 @@ export class Veyra {
    * before an invoice is compared with the records (set by the data sources; never throws).
    */
   beforeReceiptCheck: (() => Promise<void>) | null = null;
+  /**
+   * The business's own ERP over its API (docs/ERP-API.md): why checks must wait (its records are
+   * out of date or incomplete), or null when they may run. Set by the ERP connection.
+   */
+  erpHold: (() => Promise<string | null>) | null = null;
+  /** Where ERP records came from and when they were synced (traceability), by ERP id. */
+  erpProvenance: ((erpIds: string[]) => Promise<JsonValue[]>) | null = null;
 
   readonly organizationName: string;
   /** Every user and resource of this deployment belongs to this organization (Phase 6C). */
@@ -871,6 +879,14 @@ export class Veyra {
       // (the receipt check); every other invoice goes through the full checks.
       if (inv.state === 'MATCHING' && this.beforeReceiptCheck) await this.beforeReceiptCheck();
       if (inv.state === 'MATCHING' && (await this.receiptCheck(invoiceId))) return;
+      // Checked only against up-to-date ERP records: otherwise held (re-queued after a sync).
+      if (inv.state === 'MATCHING' && this.erpHold) {
+        const reason = await this.erpHold();
+        if (reason) {
+          await this.noteErpHold(invoiceId, reason);
+          return;
+        }
+      }
       if (inv.state === 'MATCHING') {
         await this.evaluate(invoiceId);
         this.#log?.info(
@@ -1178,7 +1194,10 @@ export class Veyra {
 
   /** One deterministic engine run over the invoice's current data. Reads only. */
   async engine(invoiceId: string): Promise<EngineOutput> {
-    const settings = await this.settings();
+    let settings = await this.settings();
+    // An ERP Veyrafy cannot create orders in: never plan an automatic order, ask instead.
+    if (!this.erp.capabilities().includes('purchase_order.create'))
+      settings = { ...settings, poAutoCreateEnabled: false };
     const lineCount = (
       await this.db.select().from(t.invoiceLines).where(eq(t.invoiceLines.invoiceId, invoiceId))
     ).length;
@@ -1186,6 +1205,7 @@ export class Veyra {
       invoiceId,
       today: this.today(),
       settings,
+      readOnlyErp: !canRecordInvoices(this.erp.capabilities()),
       fields: await this.loadFields(this.db, invoiceId),
       lineCount,
       answers: await this.answers(this.db, invoiceId),
@@ -1402,7 +1422,10 @@ export class Veyra {
           .map((r) => `${r.ruleCode}:${r.naReason}`),
         notEvaluated: out.validations.filter((r) => r.outcome === 'not_evaluated').length,
       });
-      await this.syncQuestions(tx, invoiceId, out.questions);
+      const caps = this.erp.capabilities();
+      const readOnly = !canRecordInvoices(caps);
+      const questions = readOnly ? readOnlyQuestions(out.questions, caps) : out.questions;
+      await this.syncQuestions(tx, invoiceId, questions);
       const dup = out.duplicateKey;
       const patch = {
         dupVendorGstin: dup?.vendorGstin ?? null,
@@ -1411,8 +1434,36 @@ export class Veyra {
       };
 
       // ASK, or COMMIT automatically (there is no human "verify" step)
-      if (out.questions.length > 0) {
+      if (questions.length > 0) {
         await this.transition(tx, invoiceId, 'VALIDATING', 'NEEDS_INPUT', sys, patch);
+      } else if (out.plan && readOnly) {
+        // Read-only ERP: every check passed against the ERP's own records; nothing is written to
+        // it. Anything that would need a record created there was asked about above, so a plan
+        // that still stages a creation is a bug, never silently passed.
+        const plan = out.plan;
+        if (plan.actionIds.length > 0 || plan.vendor.kind !== 'erp' || plan.po.kind !== 'erp') {
+          await this.transition(tx, invoiceId, 'VALIDATING', 'FAILED', sys, {
+            ...patch,
+            failedStage: 'VALIDATING',
+            failureReason:
+              'INVARIANT_VIOLATION: the invoice needs a record created in a read-only ERP.',
+          });
+        } else {
+          await this.transition(tx, invoiceId, 'VALIDATING', 'COMMITTING', sys, patch);
+          // Which ERP records the invoice was checked against (traceability), and when synced.
+          await this.audit(tx, invoiceId, sys, 'erp.read_only_verified', {
+            vendorErpId: plan.vendor.id,
+            poErpId: plan.po.id,
+            poLineErpIds: plan.invoice.lines.flatMap((l) =>
+              l.poLine.kind === 'erp' ? [l.poLine.id] : [],
+            ),
+            records: (await this.erpProvenance?.([plan.vendor.id, plan.po.id])) ?? [],
+          });
+          await this.transition(tx, invoiceId, 'COMMITTING', 'VERIFIED_PENDING_PAYMENT', sys, {
+            vendorErpId: plan.vendor.id,
+            poErpId: plan.po.id,
+          });
+        }
       } else if (out.plan) {
         await this.transition(tx, invoiceId, 'VALIDATING', 'COMMITTING', sys, {
           ...patch,
@@ -2119,6 +2170,47 @@ export class Veyra {
       }
     });
     return true;
+  }
+
+  /** Records once (per hold) that an invoice waits for up-to-date ERP records. */
+  private async noteErpHold(invoiceId: string, reason: string): Promise<void> {
+    const [last] = await this.db
+      .select({ event: t.auditEvents.event })
+      .from(t.auditEvents)
+      .where(eq(t.auditEvents.invoiceId, invoiceId))
+      .orderBy(desc(t.auditEvents.seq))
+      .limit(1);
+    if (last?.event === 'erp.check_held') return;
+    await this.audit(this.db, invoiceId, { type: 'system' }, 'erp.check_held', { reason });
+  }
+
+  /**
+   * After a sync of the ERP's records: invoices held for up-to-date records are checked, and so
+   * are invoices waiting for something to be recorded in a read-only ERP (a supplier, item, order
+   * or receipt the person was asked to add there), but only when the sync changed records:
+   * otherwise nothing they wait for can have appeared. Returns how many were queued.
+   */
+  async recheckAfterErpSync(changed: boolean): Promise<number> {
+    let n = await this.releaseHeld();
+    if (!changed || canRecordInvoices(this.erp.capabilities())) return n;
+    const waiting = await this.db
+      .select({ id: t.invoices.id })
+      .from(t.invoices)
+      .where(eq(t.invoices.state, 'NEEDS_INPUT'));
+    for (const { id } of waiting) {
+      const open = await this.db
+        .select({ code: t.questions.code })
+        .from(t.questions)
+        .where(and(eq(t.questions.invoiceId, id), eq(t.questions.status, 'open')));
+      if (!open.some((q) => q.code.startsWith('CA_') || q.code === 'BD_VENDOR_INACTIVE')) continue;
+      await this.db.transaction(async (tx) => {
+        await this.transition(tx, id, 'NEEDS_INPUT', 'MATCHING', { type: 'system' });
+        await this.enqueue(tx, id, 'pipeline');
+      });
+      n++;
+    }
+    if (n) this.onEnqueue();
+    return n;
   }
 
   /**

@@ -91,6 +91,12 @@ const TABLES: PgTable[] = [
   t.blogRevisions,
   t.blogRedirects,
   t.blogEvents,
+  t.erpConnections,
+  t.erpCredentials,
+  t.erpSyncRecords,
+  t.erpSyncRuns,
+  t.erpSyncState,
+  t.erpSyncIssues,
 ];
 
 describe('schema and migrations', () => {

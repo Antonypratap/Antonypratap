@@ -35,6 +35,8 @@ export const PERMISSIONS = [
   'audit.view',
   /** Import business records into the ERP (an ERP write) and download templates. */
   'imports.manage',
+  /** Set up the connection to the business's own ERP (address, login, field mapping, use). */
+  'erp.manage',
   /** Download exports of invoices, decisions and the audit trail. */
   'exports.download',
   /** Create, disable and reset users. */

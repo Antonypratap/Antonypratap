@@ -975,7 +975,7 @@ class Run {
       ? {
           at: `your ERP as ${inErp.id}`,
           date: inErp.invoiceDate as string,
-          total: inErp.totalPaise as number,
+          total: inErp.totalPaise as number | null,
           created: inErp.createdAt.slice(0, 10),
         }
       : {
@@ -1074,8 +1074,9 @@ class Run {
             chosenErpId: null,
           });
           const payload = { name, gstin: g.value.gstin, address: address.value ?? '' };
-          if (candidates.length > 0) {
-            // The user said it is new despite similar suppliers: creation needs their approval.
+          if (candidates.length > 0 || this.input.readOnlyErp) {
+            // The user said it is new despite similar suppliers (or the ERP is read-only):
+            // creation needs their approval.
             const approval = this.latest(['CA_VENDOR'], 'vendor');
             if (approval?.effect.type === 'APPROVE_CREATION') {
               const a = this.stage('vendor', 'CP_VENDOR_APPROVED', payload, approval);
@@ -1280,6 +1281,7 @@ class Run {
           if (
             !alias &&
             !picked &&
+            !this.input.readOnlyErp &&
             l.vendorItemCode &&
             vendorRef.kind === 'erp' &&
             chosen.item.ref.kind === 'erp'

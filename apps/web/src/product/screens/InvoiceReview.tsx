@@ -16,7 +16,13 @@ import { InvoiceDocument } from '../components/InvoiceDocument';
 import { formatDate, formatDateTime, inr } from '../format';
 import { hrefFor, navigate } from '../router';
 import { attentionQueue, nextInvoice, useProductData, useResource } from '../state/data';
-import { AFTER_DECISION, ASK_LABEL, completionEvidence, erpStatusText } from '../state/decision';
+import {
+  AFTER_DECISION,
+  AFTER_DECISION_READ_ONLY,
+  ASK_LABEL,
+  completionEvidence,
+  erpStatusText,
+} from '../state/decision';
 import { STATUS_LABEL, STATUS_TONE } from '../state/status';
 import styles from './InvoiceReview.module.css';
 import { allowed } from '../../access/session';
@@ -221,7 +227,10 @@ function Review({ invoice }: { invoice: ApiInvoiceDetail }) {
         </p>
       )}
       <p className={styles.decideNote}>
-        Nothing moves until you decide. {AFTER_DECISION[question.kind]}
+        Nothing moves until you decide.{' '}
+        {invoice.erp.readOnly && question.kind !== 'VALIDATION_FAILURE'
+          ? AFTER_DECISION_READ_ONLY
+          : AFTER_DECISION[question.kind]}
       </p>
     </section>
   );
@@ -776,9 +785,13 @@ function Ready({ invoice }: { invoice: ApiInvoiceDetail }) {
         Invoice ready
       </p>
       <p className={styles.readyText}>
-        {invoice.status === 'handled'
-          ? 'Veyrafy resolved this invoice and recorded the transaction. No action required.'
-          : 'Veyrafy checked the invoice again after your decision and recorded the transaction.'}
+        {!recorded
+          ? invoice.erp.readOnly
+            ? "Veyrafy checked this invoice against your ERP's records. Nothing was written to your ERP. No action required."
+            : 'Veyrafy checked this invoice against your records. No action required.'
+          : invoice.status === 'handled'
+            ? 'Veyrafy resolved this invoice and recorded the transaction. No action required.'
+            : 'Veyrafy checked the invoice again after your decision and recorded the transaction.'}
       </p>
       {evidence.length > 0 && (
         <dl className={styles.evidence}>
@@ -807,7 +820,7 @@ function Ready({ invoice }: { invoice: ApiInvoiceDetail }) {
         </p>
       )}
       <div className={styles.readyLinks}>
-        <a href={hrefFor({ name: 'erp', tab: 'invoices' })}>Open the ERP record</a>
+        {recorded && <a href={hrefFor({ name: 'erp', tab: 'invoices' })}>Open the ERP record</a>}
         <a href={hrefFor({ name: 'audit', id: invoice.id })}>See what happened</a>
       </div>
     </section>

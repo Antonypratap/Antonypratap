@@ -254,3 +254,18 @@ export const PurchaseInvoiceSchema = z
     checkInvoiceArithmetic(inv, ctx);
   });
 export type PurchaseInvoice = z.infer<typeof PurchaseInvoiceSchema>;
+
+/**
+ * What the duplicate check and the commit need from an invoice already recorded in the ERP. A
+ * PurchaseInvoice is one; so is a bill another ERP booked itself (read through an API connection),
+ * which has no Veyrafy invoice behind it (`veyraInvoiceId` null), may carry no lines and may not
+ * give its total.
+ */
+export type RecordedPurchaseInvoice = Pick<
+  PurchaseInvoice,
+  'id' | 'vendorId' | 'vendorInvoiceNo' | 'invoiceDate' | 'fy' | 'createdAt'
+> & {
+  veyraInvoiceId: PurchaseInvoice['veyraInvoiceId'] | null;
+  /** Null when the ERP does not give the bill's total. */
+  totalPaise: PurchaseInvoice['totalPaise'] | null;
+};

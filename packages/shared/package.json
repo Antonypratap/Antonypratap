@@ -5,7 +5,8 @@
   "description": "Shared domain types, Zod schemas, enums and money/qty/rate helpers.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./erp-profile": "./src/erp-profile.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

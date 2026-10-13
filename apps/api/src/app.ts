@@ -34,6 +34,13 @@ import { ChallengeWorkspaces } from './challenge/workspaces';
 import { noEmail, type EmailSender } from './challenge/email';
 import type { WebFiles } from './http/web-static';
 import { DEFAULT_SETTINGS, DEMO_SETTINGS, Veyra } from './workflow/veyra';
+import { ErpApi } from './erp-api/service';
+import { switchableErp } from './erp-api/switchable';
+import { ErpConfigurationError } from '@veyra/erp-connector';
+import { networkTransport, type HttpPolicy, type Transport } from './erp-api/http';
+import { SAMPLE_BASE_URL, sampleErpTransport } from './erp-api/sample/api';
+import { sampleErp } from './erp-api/sample/data';
+import type { Profile } from './erp-api/profile';
 
 export interface AppConfig {
   dataDir: string;
@@ -116,6 +123,20 @@ export interface AppConfig {
    * interval before checks (default 15 minutes).
    */
   sheets?: { reader: SheetsReader | null; refreshMinutes?: number } | null;
+  /**
+   * The business's own ERP over its API (docs/ERP-API.md). Absent: defaults (no secrets key, so
+   * no credentials can be saved). Never used in demo mode, which always uses the built-in records.
+   */
+  erpApi?: {
+    secretsKey: Secret | null;
+    syncMinutes?: number;
+    maxAgeMinutes?: number;
+    /** The built-in Sample ERP (for showing prospects); off unless set. */
+    sampleErp?: boolean;
+    http?: Partial<HttpPolicy>;
+    /** Tests only: the transport for a profile (e.g. an in-memory ERP). */
+    transportFor?: (profile: Profile, policy: HttpPolicy) => Transport;
+  } | null;
 }
 
 const DEV_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173'];
@@ -222,7 +243,57 @@ export async function createApp(config: AppConfig) {
   // The workflow sees only the ErpConnector port, behind the capability guard: an operation the
   // connector does not declare is UNSUPPORTED, never a silent fallback (ARCHITECTURE §17).
   // Every connector call is timed (ERP_LOOKUP / ERP_WRITE) without changing the contract.
-  const connector = guardCapabilities(timedErp(config.wrapErp ? config.wrapErp(erp) : erp));
+  // The business's own ERP over its API, when the admin connects it and chooses to use it for
+  // checks (never in demo mode). Until then, and after "switch back", the built-in records serve.
+  const sampleOn = config.erpApi?.sampleErp === true;
+  // The Sample ERP's records come from the demo seed of the built-in records (made up).
+  const sample = () =>
+    sampleErp(() => {
+      const seed = FakeErpConnector.open({
+        filename: ':memory:',
+        reset: 'demo',
+        business: 'manufacturing',
+        clock: () => new Date('2026-09-01T04:30:00.000Z'),
+      });
+      return { connector: seed, close: () => seed.close() };
+    });
+  const isSample = (baseUrl: string | undefined) => baseUrl === SAMPLE_BASE_URL;
+  let erpApiRef: ErpApi | null = null;
+  const erpApi = demoMode
+    ? null
+    : (erpApiRef = new ErpApi({
+        db,
+        now: () => (config.clock ? config.clock() : new Date()).toISOString(),
+        secretsKey: config.erpApi?.secretsKey ?? null,
+        // The business the invoices are addressed to: the Sample ERP's own made-up company while
+        // that is the connection, otherwise this Veyrafy's company.
+        company: async () =>
+          sampleOn && isSample((await erpApiRef?.profile())?.profile.baseUrl)
+            ? (await sample()).company
+            : erp.getCompany(),
+        ...(config.erpApi?.maxAgeMinutes ? { maxAgeMinutes: config.erpApi.maxAgeMinutes } : {}),
+        // Plain http and local addresses only in development; never in production.
+        http: {
+          allowHttp: environment === 'development',
+          allowPrivate: environment === 'development',
+          ...config.erpApi?.http,
+        },
+        transportFor:
+          config.erpApi?.transportFor ??
+          ((profile, policy) => {
+            if (!isSample(profile.baseUrl)) return networkTransport(policy);
+            // The built-in Sample ERP answers inside Veyrafy (no network), only where it is on.
+            if (!sampleOn) return () => Promise.reject(new ErpConfigurationError());
+            const data = sample();
+            return async (req, signal) => {
+              const { dataset } = await data;
+              return sampleErpTransport(() => dataset)(req, signal);
+            };
+          }),
+      }));
+  await erpApi?.init();
+  const chosen = erpApi ? switchableErp(erp, erpApi.connector, () => erpApi.isActive()) : erp;
+  const connector = guardCapabilities(timedErp(config.wrapErp ? config.wrapErp(chosen) : chosen));
   const veyra = new Veyra({
     db,
     erp: connector,
@@ -236,6 +307,37 @@ export async function createApp(config: AppConfig) {
     ...(config.readAhead ? { readAhead: config.readAhead } : {}),
   });
   await veyra.init();
+  if (erpApi) {
+    erpApi.attach(
+      async (tx, event, detail, userId) =>
+        await veyra.audit(
+          tx,
+          null,
+          userId ? { type: 'user', userId } : { type: 'system' },
+          event,
+          detail as never,
+        ),
+      // After a sync: held invoices, and (when records changed) those waiting for a record to be
+      // added in the ERP.
+      async (changed) => {
+        await veyra.recheckAfterErpSync(changed);
+      },
+    );
+    // Checks against the ERP connection run only on up-to-date records.
+    veyra.erpHold = async () => {
+      if (!erpApi.isActive()) return null;
+      await erpApi.refreshIfStale();
+      const f = await erpApi.freshness();
+      if (f.fresh) return null;
+      return f.syncedAt
+        ? `ERP records out of date (last complete sync ${f.syncedAt}; not current: ${f.stale.join(', ')})`
+        : 'ERP records not synced yet';
+    };
+    veyra.erpProvenance = async (ids) => {
+      if (!erpApi.isActive()) return [];
+      return (await erpApi.provenance(ids)) as never;
+    };
+  }
   const sessions = new SessionStore(
     db,
     config.auth?.session ?? { idleMs: 30 * 60_000, absoluteMs: 12 * 3_600_000 },
@@ -342,8 +444,21 @@ export async function createApp(config: AppConfig) {
       })
     : null;
 
+  // The ERP connection in use is synced on a schedule (single-flight; another process holding the
+  // sync is simply skipped). Before a check, records older than the limit are synced first.
+  const erpSyncTimer =
+    erpApi && config.erpApi?.syncMinutes !== 0
+      ? setInterval(
+          () => {
+            if (erpApi.isActive()) void erpApi.sync('scheduled', null).catch(() => undefined);
+          },
+          (config.erpApi?.syncMinutes ?? 30) * 60_000,
+        ).unref()
+      : null;
+
   const cookieSecure = config.auth?.cookieSecure ?? environment !== 'development';
   const server = await buildServer({
+    erpApi: erpApi ? { api: erpApi, sampleErp: sampleOn } : null,
     sheets: {
       reader: config.sheets?.reader ?? null,
       refreshMinutes: config.sheets?.refreshMinutes ?? 15,
@@ -385,6 +500,7 @@ export async function createApp(config: AppConfig) {
     runner,
     server,
     storage,
+    erpApi,
     sessions,
     users,
     commercial,
@@ -404,6 +520,7 @@ export async function createApp(config: AppConfig) {
      */
     close: (graceMs = config.jobs?.shutdownGraceMs ?? 25_000) =>
       (closed ??= (async () => {
+        if (erpSyncTimer) clearInterval(erpSyncTimer);
         await server.close();
         await challenge?.shutdown(graceMs);
         await runner.shutdown(graceMs);

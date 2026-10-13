@@ -9,6 +9,7 @@ import { useProductData, useResource } from '../state/data';
 import { useAllowed } from '../../access/session';
 import { ErpData } from './ErpData';
 import { Spreadsheets } from './Spreadsheets';
+import { ErpConnection } from './ErpConnection';
 import { ErpReceipts } from '../components/ErpReceipts';
 import { erpStatusText } from '../state/decision';
 import {
@@ -254,7 +255,10 @@ export function Erp({ tab }: { tab: ErpTab }) {
   const spec = HEAD[tab];
   const body: ReactNode =
     tab === 'connection' ? (
-      <Connection connection={connection} />
+      <>
+        <ErpConnection />
+        <Connection connection={connection} />
+      </>
     ) : tab === 'sheets' ? (
       <Spreadsheets />
     ) : tab === 'data' ? (

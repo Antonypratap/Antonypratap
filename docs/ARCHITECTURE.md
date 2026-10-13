@@ -944,3 +944,17 @@ checks each invoice against it line by line with the existing receipt check
 - **IMPLEMENTATION DECISION** Google Sheets access is Veyrafy's own service account with the `spreadsheets.readonly` scope; the business shares its sheet with the service address as Viewer (SECURITY.md §11). No customer tokens are stored, and unsharing ends the access.
 - **IMPLEMENTATION DECISION** Commercially controlled by `erp.spreadsheet_sources` (granted like business-record imports: Business and Enterprise). Adding, mapping and syncing need `imports.manage`; viewing needs `erp.view`.
 - **TECHNICAL CONSTRAINT** Registers only, in this version: suppliers, purchase orders and agreed rates as separate sheets (the master data the full rule engine uses) are not mapped yet. A synced register is bounded by the sheet limits (20,000 rows, 60 columns).
+
+## 22. ERP connections over an API (read-only)
+
+A business's own ERP, connected over its REST/JSON API by its admin, feeds the existing matching
+engine through the `ErpConnector` port: a sync reads the ERP into a mirror (`erp_sync_records`),
+and `MirroredErpConnector` answers the engine's reads from it. Details, rules, configuration,
+security, migration, rollback and limitations: **docs/ERP-API.md**.
+
+- **IMPLEMENTATION DECISION** A local mirror, not live lookups: one paced sync instead of many calls per invoice, idempotent upserts keyed by the ERP's own id, incremental where the ERP allows, and a clear answer to "how old are these records".
+- **IMPLEMENTATION DECISION** Read-only in this phase: the connector declares read capabilities only. A clean invoice goes VALIDATING → COMMITTING → VERIFIED_PENDING_PAYMENT with no ERP write (as the receipt check already did). Creation questions offer "record it in your ERP, then check again" instead of creating; nothing is created automatically.
+- **IMPLEMENTATION DECISION** Checks wait for up-to-date records: an invoice is held in MATCHING (audited `erp.check_held`, shown as waiting) when the mirror is older than the limit or a needed record type is not trusted, and is checked after the next good sync. This reuses the existing hold (`releaseHeld`) instead of a new question kind.
+- **IMPLEMENTATION DECISION** The built-in records and the API connection are switched explicitly by the admin (`switchableErp`); switching changes no record on either side. Demo mode always uses the built-in records.
+- **TECHNICAL CONSTRAINT** `findPurchaseInvoice` returns a `RecordedPurchaseInvoice` (identity, date, total possibly unknown): a bill the ERP booked itself has no Veyrafy invoice and may carry no lines.
+

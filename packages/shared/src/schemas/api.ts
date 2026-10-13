@@ -277,6 +277,15 @@ export const ApiInvoiceDetailSchema = ApiInvoiceSummarySchema.extend({
      * Never shown as recorded until confirmed.
      */
     reconciling: z.boolean(),
+    /**
+     * With a connection to the business's own ERP (docs/ERP-API.md): the ERP records this invoice
+     * was checked against, by the ERP's own id, and when each was last synced.
+     */
+    sources: z
+      .array(z.object({ entity: z.string(), erpId: z.string(), syncedAt: z.string() }))
+      .optional(),
+    /** Veyrafy only reads this ERP (an API connection): nothing is ever written to it. */
+    readOnly: z.boolean().optional(),
     /** Goods receipts on the order (Phase 3E evidence), with who recorded them. */
     receipts: z.array(z.object({ number: z.string(), date: z.string(), byYou: z.boolean() })),
     /** The purchase invoice Veyra recorded in the ERP, once committed. */

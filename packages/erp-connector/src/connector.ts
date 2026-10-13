@@ -5,6 +5,7 @@ import type {
   Grn,
   Item,
   PurchaseInvoice,
+  RecordedPurchaseInvoice,
   PurchaseOrder,
   Vendor,
   VendorItemAlias,
@@ -107,12 +108,15 @@ export interface ErpConnector {
   getInvoicedQtyByPoLine(poLineId: ErpId): Promise<MilliQty>;
 
   // ── Purchase invoices ────────────────────────────────────────────────────
-  /** `normalizedInvoiceNo` must be `normalizeInvoiceNumber(...)` output. */
+  /**
+   * `normalizedInvoiceNo` must be `normalizeInvoiceNumber(...)` output. Returns at least the
+   * recorded invoice's identity and amounts; a bill the ERP booked itself has no Veyrafy invoice.
+   */
   findPurchaseInvoice(
     vendorId: ErpId,
     normalizedInvoiceNo: string,
     fy: FinancialYear,
-  ): Promise<PurchaseInvoice | null>;
+  ): Promise<RecordedPurchaseInvoice | null>;
 
   // ── Browsing (read-only lists for the ERP screen; never used to match) ─────
   /** All vendors, ordered by code. */

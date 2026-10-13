@@ -77,6 +77,11 @@ export interface EngineInput {
   invoiceId: string;
   today: string;
   settings: EngineSettings;
+  /**
+   * The ERP is read-only for Veyrafy (an API connection, docs/ERP-API.md): nothing is created
+   * automatically (a new supplier is asked about; no item-code alias is added).
+   */
+  readOnlyErp?: boolean;
   fields: ReadonlyMap<string, StoredField>;
   lineCount: number;
   answers: readonly AnsweredDecision[];

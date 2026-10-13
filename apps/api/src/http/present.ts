@@ -123,8 +123,20 @@ function needsPoNumber(inv: InvoiceRow, committed: string[]): boolean {
   return inv.state === 'VERIFIED_PENDING_PAYMENT' && !committed.includes('po');
 }
 
-/** The inbox note: what Veyra did for a verified invoice, or why it was rejected. */
-function note(inv: InvoiceRow, committed: string[], poNumber: string | null): string | null {
+/** The note shown while an invoice waits for up-to-date records from the business's ERP. */
+export const ERP_HELD_NOTE = 'Waiting for up-to-date records from your ERP';
+
+/**
+ * The inbox note: what Veyra did for a verified invoice, why it was rejected, or that its checks
+ * wait for up-to-date ERP records.
+ */
+function note(
+  inv: InvoiceRow,
+  committed: string[],
+  poNumber: string | null,
+  held = false,
+): string | null {
+  if (inv.state === 'MATCHING' && held) return ERP_HELD_NOTE;
   if (inv.state === 'REJECTED')
     return inv.rejectedReason ? `Rejected: ${inv.rejectedReason}` : 'Rejected';
   if (inv.state !== 'VERIFIED_PENDING_PAYMENT') return null;
@@ -287,6 +299,7 @@ export class Presenter {
       )
       .orderBy(asc(t.creationActions.seq));
     const summary = this.buildSummary(inv, doc, {
+      held: (await this.heldForErp([inv])).has(inv.id),
       fields: await this.fields(inv.id),
       questions: await this.questionsOf(inv.id),
       minConfidenceBp: (await this.v.settings()).confidenceMinBp,
@@ -341,8 +354,10 @@ export class Presenter {
     const poNumbers = new Map<string, string | null>();
     for (const id of poIds)
       poNumbers.set(id, (await this.v.erp.getPurchaseOrder(id as never))?.poNumber ?? null);
+    const held = await this.heldForErp(rows.map((r) => r.invoices));
     return rows.map(({ invoices: inv, documents: doc }) =>
       this.buildSummary(inv, doc, {
+        held: held.has(inv.id),
         fields: fields.get(inv.id) ?? new Map(),
         questions: questionsBy.get(inv.id) ?? [],
         minConfidenceBp: settings.confidenceMinBp,
@@ -353,6 +368,21 @@ export class Presenter {
             : null,
       }),
     );
+  }
+
+  /** Of these invoices, those whose checks wait for up-to-date ERP records (one query). */
+  private async heldForErp(invoices: InvoiceRow[]): Promise<Set<string>> {
+    const matching = invoices.filter((i) => i.state === 'MATCHING').map((i) => i.id);
+    if (matching.length === 0) return new Set();
+    const events = await this.v.db
+      .select({ invoiceId: t.auditEvents.invoiceId, event: t.auditEvents.event })
+      .from(t.auditEvents)
+      .where(inArray(t.auditEvents.invoiceId, matching))
+      .orderBy(desc(t.auditEvents.seq));
+    const latest = new Map<string, string>();
+    for (const e of events)
+      if (e.invoiceId && !latest.has(e.invoiceId)) latest.set(e.invoiceId, e.event);
+    return new Set([...latest].filter(([, ev]) => ev === 'erp.check_held').map(([id]) => id));
   }
 
   /** The fields list views show, for many invoices in one query. */
@@ -384,6 +414,8 @@ export class Presenter {
       minConfidenceBp: number;
       committed: string[];
       poNumber: string | null;
+      /** Its checks wait for up-to-date ERP records (erp.check_held is its latest event). */
+      held?: boolean;
     },
   ): ApiInvoiceSummary {
     const f = x.fields;
@@ -434,7 +466,7 @@ export class Presenter {
             }
           : null,
       decision,
-      note: note(inv, x.committed, x.poNumber),
+      note: note(inv, x.committed, x.poNumber, x.held ?? false),
       failure:
         state === 'FAILED'
           ? { stage: inv.failedStage ?? '', reason: plainFailure(inv.failureReason ?? '') }
@@ -658,9 +690,35 @@ export class Presenter {
         purchaseInvoiceId: inv.erpPurchaseInvoiceId,
         records,
         reconciling: inv.state === 'COMMITTING' && (await this.v.hasUnresolvedErpWrite(inv.id)),
+        ...(await this.erpSources(inv)),
+        readOnly: !this.v.erp.capabilities().includes('purchase_invoice.create'),
         ...(await this.erpEvidence(inv)),
       },
     };
+  }
+
+  /** The synced ERP records the latest check used (supplier, order, items, receipts), when any. */
+  private async erpSources(
+    inv: InvoiceRow,
+  ): Promise<{ sources?: ApiInvoiceDetail['erp']['sources'] }> {
+    if (!this.v.erpProvenance) return {};
+    const chosen = await this.v.db
+      .select({ id: t.matchResults.chosenErpId, entity: t.matchResults.entity })
+      .from(t.matchResults)
+      .where(and(eq(t.matchResults.invoiceId, inv.id), eq(t.matchResults.runNo, inv.runNo)));
+    const ids = new Set(chosen.flatMap((c) => (c.id ? [c.id] : [])));
+    const po = chosen.find((c) => c.entity === 'po' && c.id)?.id ?? inv.poErpId;
+    if (po) {
+      ids.add(po);
+      for (const g of await this.v.erp.listGrnsForPo(po as never).catch(() => [])) ids.add(g.id);
+    }
+    if (inv.vendorErpId) ids.add(inv.vendorErpId);
+    const sources = (await this.v.erpProvenance([...ids])) as {
+      entity: string;
+      erpId: string;
+      syncedAt: string;
+    }[];
+    return sources.length ? { sources } : {};
   }
 
   async questions(status: 'open' | 'answered'): Promise<ApiQuestion[]> {
@@ -702,7 +760,9 @@ export class Presenter {
       await this.v.db
         .select()
         .from(t.auditEvents)
-        .where(sql`${t.auditEvents.invoiceId} IS NULL AND ${t.auditEvents.event} LIKE 'records.%'`)
+        .where(
+          sql`${t.auditEvents.invoiceId} IS NULL AND (${t.auditEvents.event} LIKE 'records.%' OR (${t.auditEvents.event} LIKE 'erp.%' AND ${t.auditEvents.event} <> 'erp.sync_started'))`,
+        )
         .orderBy(asc(t.auditEvents.seq))
     ).flatMap((e) => auditEntry(e));
   }
@@ -1006,6 +1066,58 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
       return make(
         d.status === 'columns_changed' ? 'Register columns changed' : 'Register sync failed',
         s('message'),
+        'attention',
+      );
+    // The business's own ERP over its API (docs/ERP-API.md).
+    case 'erp.read_only_verified':
+      return [
+        ...make(
+          'Checked against your ERP',
+          'Every check passed against the records synced from your ERP. Nothing was written to it.',
+          'handled',
+        ),
+        {
+          id: `${e.id}-ready`,
+          invoiceId: e.invoiceId,
+          at: e.createdAt,
+          title: 'Ready for payment',
+          detail: 'Verified. Paying stays with your team.',
+          by: 'Veyrafy',
+          tone: 'handled',
+        },
+      ];
+    case 'erp.check_held':
+      return make(
+        'Waiting for up-to-date ERP records',
+        'Not checked against old records. It is checked as soon as your ERP is synced.',
+        'attention',
+      );
+    case 'erp.connection_saved':
+      return make('ERP connection saved', s('name'), 'neutral');
+    case 'erp.credentials_updated':
+      return make('ERP login updated', 'The new credentials were saved encrypted.', 'neutral');
+    case 'erp.connection_activated':
+      return make(
+        'Invoices checked against your ERP',
+        'Using the records synced from your ERP.',
+        'handled',
+      );
+    case 'erp.connection_deactivated':
+      return make(
+        'Built-in records used again',
+        'Invoices are no longer checked against the ERP connection.',
+        'neutral',
+      );
+    case 'erp.sync_finished':
+      return make(
+        d.status === 'succeeded' ? 'ERP records synced' : 'ERP records partly synced',
+        d.status === 'succeeded' ? '' : 'Some record types could not be read completely.',
+        d.status === 'succeeded' ? 'handled' : 'attention',
+      );
+    case 'erp.sync_failed':
+      return make(
+        'ERP sync failed',
+        'What was synced before is kept; the next sync continues.',
         'attention',
       );
     case 'receipts.imported':

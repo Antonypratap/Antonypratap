@@ -141,6 +141,18 @@ export interface VeyraConfig {
    * an invoice is checked against it.
    */
   sheets: { serviceAccount: Secret | null; refreshMinutes: number };
+  /**
+   * The business's own ERP over its API (docs/ERP-API.md). `secretsKey` encrypts the connection's
+   * credentials at rest (without it none can be saved); the connection is synced every
+   * `syncMinutes` and checks wait when its records are older than `maxAgeMinutes`. `sampleErp`
+   * offers the built-in Sample ERP (for showing prospects, e.g. dev.veyrafy.com).
+   */
+  erpApi: {
+    secretsKey: Secret | null;
+    syncMinutes: number;
+    maxAgeMinutes: number;
+    sampleErp: boolean;
+  };
 }
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -249,6 +261,14 @@ const VARS = {
   // Spreadsheet registers: Google's service-account JSON key (or base64 of it). Never echoed.
   VEYRA_GOOGLE_SERVICE_ACCOUNT: z.string().min(100).max(20_000),
   VEYRA_SHEETS_REFRESH_MINUTES: int(1, 24 * 60),
+  // ERP API connections: 32 random bytes, base64 (openssl rand -base64 32). Never echoed.
+  VEYRA_SECRETS_KEY: z
+    .string()
+    .trim()
+    .refine((v) => Buffer.from(v, 'base64').length === 32, '32 random bytes, base64'),
+  VEYRA_ERP_SYNC_MINUTES: int(5, 24 * 60),
+  VEYRA_ERP_SYNC_MAX_AGE_MINUTES: int(5, 7 * 24 * 60),
+  VEYRA_SAMPLE_ERP: bool,
   VEYRA_BOOKING_URL: z.url({ protocol: /^https$/ }).max(500),
   VEYRA_EMAIL_PROVIDER: z.enum(['off', 'resend']),
   // Never echoed.
@@ -478,6 +498,12 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
       serviceAccount: googleAccountOf(read('VEYRA_GOOGLE_SERVICE_ACCOUNT'), problems),
       refreshMinutes: read('VEYRA_SHEETS_REFRESH_MINUTES') ?? 15,
     },
+    erpApi: {
+      secretsKey: secretsKeyOf(read('VEYRA_SECRETS_KEY')),
+      syncMinutes: read('VEYRA_ERP_SYNC_MINUTES') ?? 30,
+      maxAgeMinutes: read('VEYRA_ERP_SYNC_MAX_AGE_MINUTES') ?? 60,
+      sampleErp: read('VEYRA_SAMPLE_ERP') ?? false,
+    },
   };
   if (problems.length > 0) throw new ConfigError(problems);
   return config;
@@ -666,6 +692,7 @@ function describe(name: VarName): string {
   if (name.endsWith('_ORIGIN') || name.endsWith('_ORIGINS'))
     return 'comma-separated origins such as https://veyra.example.com, never *';
   if (name === 'VEYRA_DEMO_PIN') return '4 to 12 digits';
+  if (name === 'VEYRA_SECRETS_KEY') return '32 random bytes, base64 (openssl rand -base64 32)';
   if (name.endsWith('_URL')) return 'an http(s) URL';
   if (/(^|_)(PORT|BYTES|PAGES|SIDE|PIXELS|MINUTE|MINUTES|HOURS|MS|PROXY)$/.test(name))
     return 'a whole number in range';
@@ -687,7 +714,12 @@ export function describeConfig(c: VeyraConfig) {
     challenge: c.challenge !== null,
     email: c.email ? c.email.provider : 'off',
     googleSheets: c.sheets.serviceAccount !== null,
+    erpApi: { secretsKey: c.erpApi.secretsKey !== null, sampleErp: c.erpApi.sampleErp },
   };
+}
+
+function secretsKeyOf(raw: string | undefined): Secret | null {
+  return raw ? new Secret(raw) : null;
 }
 
 /** The service-account key, checked at start (an unreadable key is a configuration error). */

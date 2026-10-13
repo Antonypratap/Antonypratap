@@ -63,6 +63,12 @@ try {
         : null,
       refreshMinutes: config.sheets.refreshMinutes,
     },
+    erpApi: {
+      secretsKey: config.erpApi.secretsKey,
+      syncMinutes: config.erpApi.syncMinutes,
+      maxAgeMinutes: config.erpApi.maxAgeMinutes,
+      sampleErp: config.erpApi.sampleErp,
+    },
     // Several invoices are read at once (the AI or OCR); checking and recording stay serial.
     readAhead: 3,
     log,

@@ -88,6 +88,8 @@ import { registerSecurityHeaders } from './security-headers';
 import { registerWebApp, type WebFiles } from './web-static';
 import { registerAuthRoutes } from './auth-routes';
 import { DataSources } from '../sources/service';
+import type { ErpApi } from '../erp-api/service';
+import { registerErpApiRoutes } from '../erp-api/routes';
 import type { SheetsReader } from '../sources/sheets';
 import {
   auditTable,
@@ -138,6 +140,8 @@ export interface ServerOptions {
   sheets?: { reader: SheetsReader | null; refreshMinutes: number };
   /** The 5 Invoice Challenge (acquisition); absent: its routes do not exist. */
   challenge?: ChallengeService | null;
+  /** The business's own ERP over its API (docs/ERP-API.md); absent (demo): its routes do not exist. */
+  erpApi?: { api: ErpApi; sampleErp: boolean } | null;
   /**
    * The built web app, served from this same origin (production client instances). Absent: the
    * API serves /api only (development uses the Vite dev server).
@@ -1040,6 +1044,16 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   app.post('/api/v1/imports/:id/confirm', IMPORTS, async (req) =>
     send(ApiImportSchema, await imports.confirm(Id.parse(req.params).id, actorOf(req))),
   );
+
+  // ── The business's own ERP over its API (docs/ERP-API.md) ───────────────
+  if (options.erpApi)
+    registerErpApiRoutes(app, {
+      veyra,
+      api: options.erpApi.api,
+      sampleErp: options.erpApi.sampleErp,
+      may,
+      actorOf,
+    });
 
   // ── Spreadsheet registers (data sources) ────────────────────────────────
   // Uploaded files travel as base64 in JSON (5 MB files; the body limit leaves room for that).

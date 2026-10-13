@@ -59,6 +59,16 @@ export const CAPABILITIES = [
     version: 1,
   },
   {
+    key: 'erp.api_connection',
+    name: 'ERP connection',
+    description:
+      "Connect the business's own ERP over its API (read-only): suppliers, items, orders, receipts and bills are synced and every invoice is checked against them.",
+    category: 'erp',
+    type: 'BOOLEAN',
+    customerVisible: true,
+    version: 1,
+  },
+  {
     key: 'reports.exports',
     name: 'Exports',
     description: 'Download invoices, decisions, business records and the audit trail as Excel.',

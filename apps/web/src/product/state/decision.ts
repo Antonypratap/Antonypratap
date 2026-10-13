@@ -17,6 +17,10 @@ export const ASK_LABEL: Record<Kind, string> = {
   VALIDATION_FAILURE: 'Check needed',
 };
 
+/** After a decision, when the ERP is read-only for Veyrafy (an API connection). */
+export const AFTER_DECISION_READ_ONLY =
+  "Veyrafy then checks the invoice again with your ERP's latest records. Nothing is written to your ERP.";
+
 /** What happens after the decision, in one sentence. */
 export const AFTER_DECISION: Record<Kind, string> = {
   MISSING_DATA:

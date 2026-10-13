@@ -1,6 +1,13 @@
 import { z } from 'zod';
 import {
   ApiCapabilitiesSchema,
+  ApiErpConnectionStateSchema,
+  ApiErpInspectSchema,
+  ApiErpTestSchema,
+  ApiSampleInvoiceSchema,
+  type ApiErpConnectionState,
+  type ApiErpInspect,
+  type ApiErpTest,
   type ApiCapabilities,
   ApiUserSchema,
   type ApiUser,
@@ -267,6 +274,40 @@ export const api = {
       ),
     checkAttached: (id: string) =>
       request(Created, `/erp/receipt-records/${encodeURIComponent(id)}/check`, { method: 'POST' }),
+  },
+  /** The business's own ERP over its API (docs/ERP-API.md). Credentials go in, never out. */
+  erpApi: {
+    state: (): Promise<ApiErpConnectionState> =>
+      request(ApiErpConnectionStateSchema, '/erp/api-connection'),
+    preset: (id: string): Promise<unknown> =>
+      request(z.unknown(), `/erp/api-connection/presets/${encodeURIComponent(id)}`),
+    saveProfile: (profile: unknown): Promise<ApiErpConnectionState> =>
+      request(ApiErpConnectionStateSchema, '/erp/api-connection', {
+        ...json(profile),
+        method: 'PUT',
+      }),
+    saveSecret: (value: string): Promise<ApiErpConnectionState> =>
+      request(ApiErpConnectionStateSchema, '/erp/api-connection/secret', {
+        ...json({ value }),
+        method: 'PUT',
+      }),
+    inspect: (entity: string, config: unknown): Promise<ApiErpInspect> =>
+      request(ApiErpInspectSchema, '/erp/api-connection/inspect', json({ entity, config })),
+    check: (): Promise<ApiErpTest> =>
+      request(ApiErpTestSchema, '/erp/api-connection/check', { method: 'POST' }),
+    sync: (): Promise<ApiErpConnectionState> =>
+      request(ApiErpConnectionStateSchema, '/erp/sync', { method: 'POST' }),
+    activate: (): Promise<ApiErpConnectionState> =>
+      request(ApiErpConnectionStateSchema, '/erp/api-connection/activate', { method: 'POST' }),
+    deactivate: (): Promise<ApiErpConnectionState> =>
+      request(ApiErpConnectionStateSchema, '/erp/api-connection/deactivate', { method: 'POST' }),
+    sampleInvoices: () => request(z.array(ApiSampleInvoiceSchema), '/erp/sample-invoices'),
+    trySample: (key: string) =>
+      request(
+        z.object({ invoiceId: z.string(), existing: z.boolean() }),
+        `/erp/sample-invoices/${encodeURIComponent(key)}`,
+        { method: 'POST' },
+      ),
   },
   erp: {
     connection: () => request(ApiErpSchema.connection, '/erp/connection'),

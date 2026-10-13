@@ -57,6 +57,10 @@ export function bucketOf(method: string, route: string | undefined): RateBucket 
     route === '/api/v1/invoices/:id/reject' ||
     route === '/api/v1/questions/:id/answer' ||
     route === '/api/v1/imports/:id/confirm' ||
+    // Calls to the business's ERP (a sync, a test, a look at an answer).
+    route === '/api/v1/erp/sync' ||
+    route === '/api/v1/erp/api-connection/check' ||
+    route === '/api/v1/erp/api-connection/inspect' ||
     route.startsWith('/api/v1/challenge/me/')
   )
     return 'processing';

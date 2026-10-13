@@ -139,7 +139,7 @@ export const notify = {
     return show(
       'background',
       'success',
-      `${plural(ready, 'An invoice was', 'invoices were')} verified and recorded in your ERP.`,
+      `${plural(ready, 'An invoice was', 'invoices were')} verified against your ERP.`,
     );
   },
   demoReset: () => show('demo', 'info', 'Demo reset. The sample business is back to the start.'),

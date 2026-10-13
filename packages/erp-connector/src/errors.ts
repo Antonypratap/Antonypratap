@@ -137,12 +137,12 @@ export class ErpIdempotencyConflictError extends ErpConnectorError {
 export class ErpUnavailableError extends ErpConnectorError {
   readonly code = 'UNAVAILABLE';
   readonly retryable = true;
-  readonly reason: 'unavailable' | 'network' | 'timeout';
+  readonly reason: 'unavailable' | 'network' | 'timeout' | 'rate_limited';
   readonly writeOutcome: 'not_sent' | 'unknown';
   readonly userMessage: string;
   constructor(
     options: {
-      reason?: 'unavailable' | 'network' | 'timeout';
+      reason?: 'unavailable' | 'network' | 'timeout' | 'rate_limited';
       writeOutcome?: 'not_sent' | 'unknown';
       externalReference?: string;
       /** The underlying failure. Kept for debugging only; never shown or copied into messages. */
@@ -153,7 +153,9 @@ export class ErpUnavailableError extends ErpConnectorError {
     super(
       reason === 'timeout'
         ? 'The business system did not answer in time'
-        : "The business system couldn't be reached",
+        : reason === 'rate_limited'
+          ? 'The business system asked Veyrafy to slow down'
+          : "The business system couldn't be reached",
       options.cause === undefined ? undefined : { cause: options.cause },
     );
     this.name = 'ErpUnavailableError';

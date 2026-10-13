@@ -283,7 +283,8 @@ requires `https://`.
 | `DATABASE_URL` (runtime role) | API process | Platform secret store / root-only env file, never Git |
 | `DATABASE_MIGRATION_URL` (schema owner) | `db:migrate` only | Secret store; not given to the running API where practical |
 | `VEYRA_DEMO_PIN` | Demo/staging API only | Secret store; not set in production |
-| ERP credentials (future) | ERP connector only | Secret store; see below |
+| `VEYRA_SECRETS_KEY` (encrypts ERP API credentials) | ERP API connection only | Secret store; never logged or echoed |
+| ERP API credentials (key, password, token, client secret) | ERP API connection only | Database, AES-256-GCM encrypted with `VEYRA_SECRETS_KEY`; never returned by the API |
 | AI provider credentials (future, if ever configured) | Extractor only | Secret store; none exist today |
 | `VEYRA_GOOGLE_SERVICE_ACCOUNT` (Google service-account key) | Spreadsheet registers only | Secret store; checked at start, held as a `Secret`, never logged or echoed |
 
@@ -315,6 +316,25 @@ only the fake ERP exists.
 - There is no UI for entering credentials. When the real connector arrives, its credentials are
   `Secret` fields of that object, loaded from the secret store.
 - The web app has no configuration and no secrets. Anything in a frontend build is public.
+
+**ERP API connections** (docs/ERP-API.md). A business's admin can connect its own ERP over its
+API, read-only.
+
+- The admin types the secret (API key, password, token or client secret) once. It is stored
+  AES-256-GCM encrypted with `VEYRA_SECRETS_KEY` (fresh IV, purpose bound in), never returned by
+  the API, never logged, and audited by field name only. Changing the ERP's address or login
+  method forgets it.
+- Outbound address safety: private, loopback, link-local and metadata addresses are refused,
+  in the socket's own DNS lookup (no rebinding gap) and on every redirect hop (including the
+  IPv4-mapped, IPv4-compatible, NAT64, 6to4 and site-local IPv6 forms); credentials and request
+  bodies (the OAuth client secret) never follow a redirect to another origin; https only outside
+  development.
+- Pointing the connection at another ERP address or company/outlet forgets every synced record
+  and stops using it for checks until a new complete sync.
+- Each request has a 20-second timeout and a 20 MB cap; requests are paced one at a time;
+  401/403 are never retried. Errors and logs carry codes only, never the ERP's address, query,
+  headers or bodies.
+- Veyrafy never writes to an ERP connected this way and never approves payment.
 
 **Google Sheets (spreadsheet registers).** A business can connect the Google Sheet holding its
 purchase register (ARCHITECTURE.md §21).
