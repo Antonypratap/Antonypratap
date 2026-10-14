@@ -253,6 +253,9 @@ describe('configuration', () => {
     VEYRA_ERP: 'fake',
     VEYRA_ORGANIZATION_NAME: 'Northwind Traders',
     VEYRA_PUBLIC_ORIGIN: 'https://northwind.veyrafy.com',
+    // Made-up data key (production requires encryption at rest), built at run time.
+    VEYRA_DATA_KEYS: `k1:${Buffer.alloc(32, 9).toString('base64')}`,
+    VEYRA_DATA_KEY_ACTIVE: 'k1',
   };
   const problems = (env: Record<string, string>, load = loadConfig): string[] => {
     try {
