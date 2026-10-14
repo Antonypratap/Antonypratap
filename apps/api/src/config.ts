@@ -158,6 +158,8 @@ export interface VeyraConfig {
    */
   erpApi: {
     secretsKey: Secret | null;
+    /** VEYRA_SECRETS_KEYS_PREVIOUS: earlier keys, still read during a rotation. Never logged. */
+    previousSecretsKeys: Secret | null;
     syncMinutes: number;
     maxAgeMinutes: number;
     sampleErp: boolean;
@@ -275,6 +277,19 @@ const VARS = {
     .string()
     .trim()
     .refine((v) => Buffer.from(v, 'base64').length === 32, '32 random bytes, base64'),
+  // Earlier VEYRA_SECRETS_KEY values during a rotation (comma-separated). Never echoed.
+  VEYRA_SECRETS_KEYS_PREVIOUS: z
+    .string()
+    .trim()
+    .refine(
+      (v) =>
+        v
+          .split(',')
+          .map((p) => p.trim())
+          .filter(Boolean)
+          .every((p) => Buffer.from(p, 'base64').length === 32),
+      'comma-separated keys, each 32 random bytes base64',
+    ),
   // Encryption at rest for documents: `id:key` pairs, each key 32 random bytes base64. Never echoed.
   VEYRA_DATA_KEYS: z.string().trim().min(10).max(4000),
   VEYRA_DATA_KEY_ACTIVE: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,15}$/),
@@ -542,6 +557,7 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
     },
     erpApi: {
       secretsKey: secretsKeyOf(read('VEYRA_SECRETS_KEY')),
+      previousSecretsKeys: secretsKeyOf(read('VEYRA_SECRETS_KEYS_PREVIOUS')),
       syncMinutes: read('VEYRA_ERP_SYNC_MINUTES') ?? 30,
       maxAgeMinutes: read('VEYRA_ERP_SYNC_MAX_AGE_MINUTES') ?? 60,
       sampleErp: read('VEYRA_SAMPLE_ERP') ?? false,
@@ -735,6 +751,8 @@ function describe(name: VarName): string {
     return 'comma-separated origins such as https://veyra.example.com, never *';
   if (name === 'VEYRA_DEMO_PIN') return '4 to 12 digits';
   if (name === 'VEYRA_SECRETS_KEY') return '32 random bytes, base64 (openssl rand -base64 32)';
+  if (name === 'VEYRA_SECRETS_KEYS_PREVIOUS')
+    return 'comma-separated earlier VEYRA_SECRETS_KEY values (each 32 random bytes, base64)';
   if (name === 'VEYRA_DATA_KEYS')
     return 'comma-separated id:key pairs, each key 32 random bytes base64 (openssl rand -base64 32)';
   if (name === 'VEYRA_DATA_KEY_ACTIVE') return 'one of the ids in VEYRA_DATA_KEYS';

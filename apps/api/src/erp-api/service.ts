@@ -39,6 +39,8 @@ export interface ErpApiOptions {
   now: () => string;
   /** VEYRA_SECRETS_KEY; without it credentials cannot be saved (and no connection can log in). */
   secretsKey: Secret | null;
+  /** VEYRA_SECRETS_KEYS_PREVIOUS: earlier keys, read (never written) during a rotation. */
+  previousSecretsKeys?: Secret | null;
   http?: Partial<HttpPolicy>;
   /** The transport for a profile: the network, or an in-process one (the built-in Sample ERP). */
   transportFor?: (profile: Profile, policy: HttpPolicy) => Transport;
@@ -67,7 +69,9 @@ export interface Freshness {
 }
 
 export class ErpApi {
-  readonly #o: Required<Omit<ErpApiOptions, 'http' | 'secretsKey'>> & { policy: HttpPolicy };
+  readonly #o: Required<Omit<ErpApiOptions, 'http' | 'secretsKey' | 'previousSecretsKeys'>> & {
+    policy: HttpPolicy;
+  };
   readonly #box: SecretBox | null;
   #audit: AuditFn = () => Promise.resolve();
   #afterSync: (changed: boolean) => Promise<void> = () => Promise.resolve();
@@ -86,7 +90,9 @@ export class ErpApi {
       ...options,
       policy: { ...DEFAULT_HTTP_POLICY, ...options.http },
     };
-    this.#box = options.secretsKey ? SecretBox.fromBase64(options.secretsKey) : null;
+    this.#box = options.secretsKey
+      ? SecretBox.fromBase64(options.secretsKey, options.previousSecretsKeys ?? null)
+      : null;
     this.connector = new MirroredErpConnector({
       index: () => this.index(),
       company: () => this.#o.company(),
@@ -294,6 +300,39 @@ export class ErpApi {
       await this.#audit(tx, 'erp.credentials_updated', { name: spec.key }, userId);
     });
     this.#source = null;
+  }
+
+  /**
+   * Key rotation: re-encrypts every saved credential still sealed with an earlier key, with the
+   * current VEYRA_SECRETS_KEY. Audited by count only. Returns how many were re-encrypted.
+   */
+  async resealSecrets(): Promise<number> {
+    if (!this.#box) return 0;
+    const box = this.#box;
+    const rows = await this.#o.db
+      .select()
+      .from(t.erpCredentials)
+      .where(eq(t.erpCredentials.connectionId, CONNECTION_ID));
+    const stale = rows.filter((r) => box.isStale(r));
+    if (stale.length === 0) return 0;
+    await this.#o.db.transaction(async (tx) => {
+      for (const r of stale) {
+        const purpose = `erp:${CONNECTION_ID}:${r.name}`;
+        const sealed = box.seal(box.open(r, purpose).reveal(), purpose);
+        await tx
+          .update(t.erpCredentials)
+          .set(sealed)
+          .where(
+            and(
+              eq(t.erpCredentials.connectionId, CONNECTION_ID),
+              eq(t.erpCredentials.name, r.name),
+            ),
+          );
+      }
+      await this.#audit(tx, 'erp.credentials_rekeyed', { count: stale.length }, null);
+    });
+    this.#source = null;
+    return stale.length;
   }
 
   /** Which secrets are saved, and when (never the values). */

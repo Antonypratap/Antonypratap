@@ -389,6 +389,48 @@ describe('ERP API sync', () => {
     expect(api.isActive()).toBe(false);
   });
 
+  it('key rotation: saved credentials are re-encrypted with the new key and still log in', async () => {
+    const newKey = new Secret(randomBytes(32).toString('base64'));
+    const rotated = new ErpApi({
+      db: opened.db,
+      now: () => clock.toISOString(),
+      secretsKey: newKey,
+      previousSecretsKeys: secretsKey,
+      company: () => Promise.resolve(COMPANY),
+      http: { minIntervalMs: 0, baseDelayMs: 1, maxDelayMs: 5, maxAttempts: 2, timeoutMs: 200 },
+      transportFor: () => sampleErpTransport(() => data, { pageSize: 2 }),
+    });
+    const events: string[] = [];
+    rotated.attach(
+      (_tx, event, detail) => {
+        events.push(`${event}:${JSON.stringify(detail)}`);
+        return Promise.resolve();
+      },
+      () => Promise.resolve(),
+    );
+    const [before] = await opened.db.select().from(t.erpCredentials);
+    expect(await rotated.resealSecrets()).toBe(1);
+    expect(await rotated.resealSecrets()).toBe(0);
+    const [after] = await opened.db.select().from(t.erpCredentials);
+    expect(after?.keyId).not.toBe(before?.keyId);
+    expect(JSON.stringify(after)).not.toContain(SAMPLE_API_KEY);
+    expect(events).toEqual(['erp.credentials_rekeyed:{"count":1}']);
+    // The new key alone (old one removed) still logs in to the ERP.
+    const onlyNew = new ErpApi({
+      db: opened.db,
+      now: () => clock.toISOString(),
+      secretsKey: newKey,
+      company: () => Promise.resolve(COMPANY),
+      http: { minIntervalMs: 0, baseDelayMs: 1, maxDelayMs: 5, maxAttempts: 2, timeoutMs: 200 },
+      transportFor: () => sampleErpTransport(() => data, { pageSize: 2 }),
+    });
+    onlyNew.attach(
+      () => Promise.resolve(),
+      () => Promise.resolve(),
+    );
+    expect((await onlyNew.sync('manual', null)).status).toBe('succeeded');
+  });
+
   it('stores the secret encrypted, and forgets it when the address changes', async () => {
     const [row] = await opened.db.select().from(t.erpCredentials);
     expect(row?.ciphertext).not.toContain(SAMPLE_API_KEY);

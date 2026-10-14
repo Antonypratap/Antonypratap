@@ -66,6 +66,7 @@ try {
     },
     erpApi: {
       secretsKey: config.erpApi.secretsKey,
+      previousSecretsKeys: config.erpApi.previousSecretsKeys,
       syncMinutes: config.erpApi.syncMinutes,
       maxAgeMinutes: config.erpApi.maxAgeMinutes,
       sampleErp: config.erpApi.sampleErp,

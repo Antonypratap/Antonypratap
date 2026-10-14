@@ -134,6 +134,8 @@ export interface AppConfig {
    */
   erpApi?: {
     secretsKey: Secret | null;
+    /** Earlier credential keys, still read during a rotation. */
+    previousSecretsKeys?: Secret | null;
     syncMinutes?: number;
     maxAgeMinutes?: number;
     /** The built-in Sample ERP (for showing prospects); off unless set. */
@@ -270,6 +272,7 @@ export async function createApp(config: AppConfig) {
         db,
         now: () => (config.clock ? config.clock() : new Date()).toISOString(),
         secretsKey: config.erpApi?.secretsKey ?? null,
+        previousSecretsKeys: config.erpApi?.previousSecretsKeys ?? null,
         // The business the invoices are addressed to: the Sample ERP's own made-up company while
         // that is the connection, otherwise this Veyrafy's company.
         company: async () =>
