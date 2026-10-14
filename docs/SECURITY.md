@@ -237,7 +237,8 @@ requires `https://`.
 - **Limits.** Size (20 MB), PDF pages (20) and image dimensions (12,000 px a side, 40 MP) are
   enforced before processing.
 - **Storage.** Files are stored under keys made from internal ids (`<documentId>.pdf`), outside
-  any web root.
+  any web root, **encrypted at rest** (section 23; required in production).
+  - Readers get the bytes in memory: no decrypted copy is ever written to disk.
   - The user's filename is sanitized and kept only as metadata; it never becomes a path.
   - Storage keys are validated (no `..`, no separators), and every read is checked against the
     SHA-256 recorded at upload.
@@ -419,9 +420,13 @@ Veyrafy does not create, encrypt or store backups. The operator does (DEPLOYMENT
 
 - **Encrypted at rest.**
   - Managed PostgreSQL snapshots are encrypted by most providers; confirm it is on.
-  - `pg_dump` files and document copies must be written to encrypted storage, or encrypted before
-    copying (for example `age` or `gpg`).
-  - Veyrafy itself encrypts nothing at rest.
+  - `pg_dump` files must be written to encrypted storage, or encrypted before copying (for example
+    `age` or `gpg`): the database holds the extracted invoice values, line items, supplier and ERP
+    master data and the audit trail in plain form (only ERP credentials are encrypted in it).
+  - Copies of the document volume hold only ciphertext (section 23), but are still to be
+    access-restricted.
+  - **The data keys are never backed up with the data.** A backup of the volume plus the keys is a
+    backup of the plaintext. Keys are kept as section 23 describes.
 - **Access-restricted.** Backups should be readable by a separate backup role or account, not the
   application's credentials. Backups contain every invoice, answer and account.
 - **Restore-tested.** A weekly automated restore check and a monthly restore into staging.
@@ -484,19 +489,35 @@ The limiter is in-process and in-memory, per client address per minute:
   Also turn on the hosting provider's secret scanning (for example GitHub secret scanning and
   push protection).
 
-## 18. Data retention
+## 18. Data retention and deletion
 
-Veyrafy keeps everything it stores until an operator removes it:
+**Original documents** follow the retention policy set in Settings (implemented,
+`workflow/retention.test.ts`):
+- *Keep* (the default): kept until a person deletes them;
+- *Delete after successful processing*, or *delete N days after upload*: only once the invoice
+  is verified and no ERP write is of unknown outcome.
 
-- documents, invoice data, answers, the workflow audit trail;
-- ended sessions (revoked or expired rows);
-- security events.
+**Deleting an original** (by a person with `documents.delete`, or by the policy) removes, in one
+step (`storage/encrypted-workflow.test.ts`):
+- the stored file;
+- every copy of the same file attached to an ERP goods-receipt record;
+- the text read from it: the other printed values (IRN, bank details, addresses; freight stays,
+  because the comparison reads it) and the quoted evidence text.
 
-It deletes nothing automatically. **No retention period is set in Veyrafy.** The customer decides
-it: accounting-record retention rules (for example under Indian GST and Companies Act
-requirements) and privacy obligations apply, and should be confirmed with the customer's advisers.
-Automatic deletion, purging old sessions and exporting or erasing one person's data are future
-work (section 21).
+It keeps the values compared, the decision and the audit trail, which records what went as counts
+only. A removal that fails part-way is finished by a retried job.
+
+**What deletion does not do** (be precise with customers):
+- **It does not erase the invoice record.** Extracted values, line items, questions and answers
+  stay; erasing a whole invoice record or one person's data is not implemented.
+- **It does not touch backups.** Database snapshots and volume copies keep deleted data until
+  they expire under the provider's or operator's retention. Deletion is complete only after the
+  last backup holding it has expired.
+- **Sessions and security events are never purged automatically.**
+
+**No retention period is set by default.** The customer decides it: accounting-record retention
+rules (for example under Indian GST and Companies Act requirements) and privacy obligations apply,
+and should be confirmed with the customer's advisers.
 
 ## 19. Incident response
 
@@ -548,7 +569,12 @@ Each item must be done and checked before a real customer's data goes in:
 - [ ] Log shipping destination reviewed (logs are redacted but contain ids and routes).
 - [ ] Ollama, if used, is local (no `VEYRA_OLLAMA_ALLOW_REMOTE`), unless the customer agreed in
       writing.
-- [ ] Retention period agreed with the customer (section 18).
+- [ ] Retention period agreed with the customer (section 18), and backup retention known.
+- [ ] Data keys generated, set (`VEYRA_DATA_KEYS`, `VEYRA_DATA_KEY_ACTIVE`) and backed up offline
+      apart from data backups; existing files encrypted with `security:encrypt-existing`; then
+      `VEYRA_ENCRYPT_REQUIRE=true` (section 23).
+- [ ] `VEYRA_SECRETS_KEY` set and backed up the same way, if the ERP API connection is used.
+- [ ] `VEYRA_AI_READER` is off, unless the customer agreed in writing to documents going to Google.
 - [ ] `npm run audit:deps` passes on the release commit.
 - [ ] Incident contacts and the procedures in section 19 are known to whoever operates the service.
 - [ ] Remaining risks (section 21) reviewed and accepted by the customer where they apply.
@@ -564,13 +590,20 @@ These are known and **not** addressed by Phase 6C:
 - **Rate limiting is per process and in memory.** It is not distributed, and a restart resets it.
 - **Single organization per deployment.** There is no per-row organization ownership, so a second
   organization in the same database would need schema and authorization changes first.
-- **Documents on local disk,** unencrypted by Veyrafy. Encryption at rest depends on the disk or
-  volume.
+- **Database rows are not encrypted by Veyrafy.** Extracted invoice values, line items, supplier
+  and ERP master data, questions, answers and the audit trail are plain columns. Their protection
+  at rest is the database provider's storage and snapshot encryption, which must be confirmed with
+  the provider. Document files and ERP credentials are encrypted by Veyrafy (section 23).
+- **Data keys live in the host's secret variables.** Anyone who can read the service's variables
+  (the hosting project's members) can decrypt the documents. There is no external key-management
+  service yet; the design allows one to replace the keyring by re-wrapping keys only.
 - **PDFs are served inline from the app origin.** Types are verified and the response is inert,
   but a flaw in a browser's PDF viewer is outside Veyrafy's control. Serving documents from a
   separate origin would be stronger.
-- **Security events are append-only only when the least-privilege role is used.** A superuser or
-  owner role can still change them.
+- **Security events and the audit trail are append-only only when the least-privilege role is
+  used** (`sql/runtime-role.sql`). A superuser or owner role, which a managed database's default
+  URL usually is, can still change them. The deployment must use the runtime role for this
+  control to hold.
 - **Sessions and security events are never purged,** and there is no retention automation.
 - **No malware scanning** of uploads beyond type and structure checks.
 - **The secret scan is pattern-based**, and git history is not scanned.
@@ -598,6 +631,94 @@ These are known and **not** addressed by Phase 6C:
 | Document access control, audit, inert headers, opaque ids, traversal, disguised files | `apps/api/src/http/security.test.ts` |
 | No secrets in responses or logs, the redaction helper, safe database error logging | `apps/api/src/http/security.test.ts`, `src/production.test.ts` |
 | Production lock-down (no dev/demo/test routes) | `apps/api/src/http/security.test.ts`, `src/production.test.ts` |
+| Documents encrypted at rest: round trip, fresh keys and IVs, tampering and wrong or unknown keys refused, a file moved to another key refused, legacy plaintext until required, rotation (re-wrap only), no plaintext on disk, production refuses to start without keys, no key in messages or logs | `apps/api/src/storage/encrypted.test.ts` |
+| The whole workflow with encryption required: upload, reading, verification and download unchanged; only ciphertext on disk; an altered file gives a safe error and no content; ERP-attached invoices stored encrypted, never in the database; deletion removes every copy and the text read, with the checks unchanged | `apps/api/src/storage/encrypted-workflow.test.ts` |
+| Encrypting existing data: dry run changes nothing, verified encryption, database-held invoices moved out, idempotent re-run, key rotation of files and credentials, checksum mismatch left untouched, counts-only report and audit | `apps/api/src/security/encrypt-existing.test.ts` |
+| ERP credentials: encryption, tampering, rotation with previous keys, re-encryption | `apps/api/src/erp-api/secrets.test.ts`, `src/erp-api/sync.test.ts` |
+| What deletion removes from a reading | `apps/api/src/workflow/redact.test.ts` |
 | Configuration: secrets wrapped, cookie/origin/session rules, DB TLS, Ollama locality | `apps/api/src/config.test.ts` |
 | Least-privilege database role | `apps/api/src/db/least-privilege.test.ts` |
 | Browser: PIN checked by the server, CSRF token in memory only, no web storage or URL tokens | `apps/web/src/access/session.test.ts` |
+
+## 23. Encryption at rest and key management
+
+**What is encrypted by Veyrafy (verified in code and by tests):**
+
+| Data | Where | Protection |
+|---|---|---|
+| Invoice documents, imported files, ERP-attached invoices, challenge uploads | Document storage (the volume) | Envelope AES-256-GCM (below) |
+| ERP API credentials | `erp_credentials` | AES-256-GCM, `VEYRA_SECRETS_KEY` (section 11) |
+| User passwords | `users` | Argon2id hashes (not encryption) |
+| Session tokens | `sessions` | SHA-256 hashes only |
+
+Everything else in the database (extracted values, lines, suppliers, ERP master data, questions,
+answers, audit) is **not** encrypted by Veyrafy (section 21).
+
+**Design (`apps/api/src/storage/encrypted.ts`).**
+- Each stored object gets its own random 256-bit data key and is encrypted with AES-256-GCM using
+  Node's OpenSSL, with a fresh random 96-bit IV.
+- The data key is wrapped (AES-256-GCM, its own random IV) by the active key-encryption key
+  (KEK) from the keyring.
+- The storage key is bound in as additional data, so a file moved or copied to another key does
+  not decrypt.
+- Layout: `VYE1`, KEK id, wrapped data key with its IV and tag, then IV, tag and ciphertext.
+- Reads fail closed: tampering, an unknown KEK id, a malformed file, or (once
+  `VEYRA_ENCRYPT_REQUIRE=true`) an unencrypted file is `STORAGE_DECRYPT`. Nothing is returned,
+  and only the code is logged.
+- Readers receive the decrypted bytes in memory. No plaintext copy is ever written to disk, and
+  there are no temporary files.
+
+**Keys.**
+
+| Variable | What | Who holds it |
+|---|---|---|
+| `VEYRA_DATA_KEYS` | `id:key` pairs, each 32 random bytes base64 (`openssl rand -base64 32`) | The service's secret variables; an offline copy (below) |
+| `VEYRA_DATA_KEY_ACTIVE` | The id new data is encrypted with | Service variables |
+| `VEYRA_ENCRYPT_REQUIRE` | `true` once existing files are encrypted | Service variables |
+| `VEYRA_SECRETS_KEY`, `VEYRA_SECRETS_KEYS_PREVIOUS` | ERP credentials key, and earlier ones during a rotation | Same as data keys |
+
+- **Separate per client.** Each client deployment has its own keys, never shared with another
+  client, the demo or staging.
+- **Production refuses to start without data keys.**
+- **Never exposed.** No API, log, error or audit event carries a key, only its id.
+
+**Generate (once per client deployment).**
+1. On a trusted machine, run `openssl rand -base64 32`.
+2. Set the service variables:
+   - `VEYRA_DATA_KEYS=k1:<that value>`;
+   - `VEYRA_DATA_KEY_ACTIVE=k1`.
+3. Store the value in the operator's password manager, as a second person-independent copy (for
+   example a sealed printed copy kept by the company). **Never** store it with backups of the data
+   or in the repository.
+
+**Encrypt existing data (once, after the first deployment with keys).**
+1. From the service's shell, with its environment, run a dry run:
+   `npm run security:encrypt-existing -w @veyra/api -- --dry-run`. It reports counts only.
+2. Run it without `--dry-run`. It is resumable: run it again until every count shows nothing left
+   to change and no mismatch.
+3. Set `VEYRA_ENCRYPT_REQUIRE=true` and redeploy.
+
+**Rotate (routine or after suspected exposure).**
+1. Add a new key: `VEYRA_DATA_KEYS=k1:<old>,k2:<new>`, `VEYRA_DATA_KEY_ACTIVE=k2`. For credentials,
+   set `VEYRA_SECRETS_KEY=<new>` and `VEYRA_SECRETS_KEYS_PREVIOUS=<old>`. Redeploy: new data uses
+   the new keys and old data stays readable.
+2. Run `npm run security:encrypt-existing -w @veyra/api -- --rewrap`. It re-wraps every file's
+   data key and re-encrypts every credential; the document ciphertext is not rewritten.
+3. Run it again until it reports 0 rewrapped. Then remove the old key from both variables,
+   redeploy, and destroy the old key's copies.
+4. Old backups still need the old key. Keep it (offline) until the last backup encrypted under it
+   has expired.
+
+**Recovery.**
+- A lost data key means the documents encrypted under it cannot be read by anyone, including
+  Veyrafy. The offline copy is the only recovery.
+- A wrong or missing key never yields plaintext or a partial read: the service refuses the
+  document.
+
+**Limits (honest):**
+- Keys live in the hosting platform's secret variables. People with access to the hosting
+  project can read them.
+- A managed key-management service would keep the key-encryption key out of the platform. The
+  format allows adding one later by re-wrapping only.
+- No independent cryptographic review has been done.
+

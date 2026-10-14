@@ -277,6 +277,7 @@ you whether the new version is actually deployed. After a deploy, reload with Ct
 | **Sign someone out everywhere** | Same shell: `npm run users -w @veyra/api -- revoke-sessions --email name@toit.example` |
 | **Someone leaves** | Same shell: `npm run users -w @veyra/api -- disable --email name@toit.example` (their sessions end; their history stays in the audit trail) |
 | **Database password** | Railway → postgres-toit → rotate credentials. `DATABASE_URL` follows automatically (it is a reference); redeploy veyrafy-toit. |
+| **Data or credentials key** | Section 16.4. Never just replace a key: add the new one beside the old one first, or stored documents become unreadable. |
 
 Do these at once if a password or PIN may have been seen by someone else.
 
@@ -412,3 +413,79 @@ Google Cloud console. A client stops Veyrafy reading one sheet by unsharing it.
 
 The capability is `erp.spreadsheet_sources`: on for Business and Enterprise plans, off for
 Starter unless an override is set in Veyrafy Operations.
+
+---
+
+## 16. Encryption at rest and data protection (docs/SECURITY.md §23)
+
+Invoice files are encrypted by Veyrafy before they are stored. Each client's service has its own
+keys. **veyrafy-toit refuses to start without them**, so set the variables (16.1) **before** this
+version is deployed there.
+
+### 16.1 Keys (once per service: veyrafy-toit, and veyrafy-demo)
+
+1. On your own computer: `openssl rand -base64 32`. Copy the output.
+2. In the service → **Variables**:
+   - `VEYRA_DATA_KEYS` = `k1:` followed by the value (for example `k1:AbC…=`);
+   - `VEYRA_DATA_KEY_ACTIVE` = `k1`.
+3. If the ERP API connection will be used, and `VEYRA_SECRETS_KEY` is not set yet, create a second
+   value the same way for it.
+4. Save both in your password manager under "Veyrafy <service> data key k1". Make one more copy
+   that does not depend on you (for example printed, sealed, kept by the company). **Never** put a
+   key in Git, a chat, an e-mail, or the same place as database backups.
+5. Use a different key for every service. Never share one between Toit, the demo and the next
+   client.
+
+**You should see:** the deployment starts. The log line `config` shows
+`storage: local+encrypted:k1`, never the key.
+
+### 16.2 Encrypt what was stored before
+
+1. Open a shell: `railway ssh --service veyrafy-toit`.
+2. Preview: `npm run security:encrypt-existing -w @veyra/api -- --dry-run`. It prints counts only.
+3. Run it: `npm run security:encrypt-existing -w @veyra/api`.
+4. Run it again. **You should see** `"changed": 0` everywhere and `"mismatched": 0`.
+   - A mismatch means a stored file no longer matches what was uploaded. Do not continue; it is a
+     data-integrity incident (SECURITY.md §19).
+5. Set `VEYRA_ENCRYPT_REQUIRE=true` → **Deploy**. From now on an unencrypted file is refused.
+
+### 16.3 Database connection and least privilege (veyrafy-toit)
+
+- **TLS.** Today's `DATABASE_PUBLIC_URL?sslmode=require` is encrypted but does not verify the
+  server's certificate, and goes through Railway's public proxy. Choose one of these and record
+  the choice:
+  - **(a)** Railway's private network: `DATABASE_URL=${{postgres-toit.DATABASE_URL}}` (the
+    `.railway.internal` address) with `VEYRA_DB_REQUIRE_TLS=false`. The traffic stays on Railway's
+    private network, which Railway documents as encrypted. Confirm that in Railway's current
+    documentation before relying on it.
+  - **(b)** Keep the public address with `sslmode=verify-full`, which requires Railway's
+    certificate authority to be available to the service. Confirm with Railway that this is
+    supported.
+- **Least privilege.** Create the runtime role once (DEPLOYMENT.md §4, `sql/runtime-role.sql`).
+  - `DATABASE_MIGRATION_URL` is the owner URL; it is used by the pre-deploy migration only.
+  - `DATABASE_URL` is the runtime role's URL.
+  - Until this is done, the audit trail is **not** append-only in practice (SECURITY.md §21).
+
+### 16.4 Rotating a key
+
+1. Create the new key (16.1).
+2. Set `VEYRA_DATA_KEYS=k1:<old>,k2:<new>` and `VEYRA_DATA_KEY_ACTIVE=k2`.
+   - For ERP credentials: `VEYRA_SECRETS_KEY=<new>` and `VEYRA_SECRETS_KEYS_PREVIOUS=<old>`.
+3. **Deploy.**
+4. In the shell, run `npm run security:encrypt-existing -w @veyra/api -- --rewrap` until it reports
+   `"rewrapped": 0` and `"credentialsResealed": 0`.
+5. Remove the old key from both variables → **Deploy**.
+6. Keep the old key offline until every backup made before step 4 has expired, then destroy it.
+
+### 16.5 Backups and the AI reader (check, then write down the answer)
+
+- **Postgres backups** (postgres-toit → Backups): on? How often? How long are they kept? Who can
+  restore them? Is the storage encrypted (check Railway's documentation)?
+  - Database backups contain invoice values in plain form (only files are encrypted by
+    Veyrafy).
+- **Volume backups**: they contain only ciphertext, which is useless without the keys. Keep the
+  keys out of them.
+- **`VEYRA_AI_READER`** must be absent (or `off`) on veyrafy-toit unless Toit agreed in writing.
+  - On veyrafy-demo: if it was ever `gemini`, every invoice uploaded there was sent to Google.
+  - Real client invoices must never go to the demo (SECURITY.md §21).
+
