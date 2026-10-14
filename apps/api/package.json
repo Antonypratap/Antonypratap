@@ -14,6 +14,7 @@
     "db:generate": "drizzle-kit generate",
     "db:verify": "drizzle-kit generate --name drift | tee /dev/stderr | grep -q 'No schema changes'",
     "db:migrate": "tsx src/cli/migrate.ts",
+    "security:encrypt-existing": "tsx src/cli/encrypt-existing.ts",
     "fixtures": "tsx src/cli/generate-import-fixtures.ts",
     "db:migrate-from-sqlite": "tsx src/cli/migrate-from-sqlite.ts",
     "users": "tsx src/cli/users.ts",
