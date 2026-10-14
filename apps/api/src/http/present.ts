@@ -985,7 +985,7 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
         e.actorType === 'user'
           ? 'You deleted the original invoice document'
           : 'Original invoice document deleted',
-        `${s('reason')}. The processing record and this history remain.`,
+        `${s('reason')}. The stored file, any copy attached to an ERP record and the text read from it were removed; the values checked, the decision and this history remain.`,
       );
     case 'document.restored':
       return make(
@@ -1096,6 +1096,18 @@ function auditEntry(e: typeof t.auditEvents.$inferSelect): ApiAuditEntry[] {
       return make('ERP connection saved', s('name'), 'neutral');
     case 'erp.credentials_updated':
       return make('ERP login updated', 'The new credentials were saved encrypted.', 'neutral');
+    case 'erp.credentials_rekeyed':
+      return make(
+        'ERP login re-encrypted',
+        'Saved credentials were re-encrypted with the current key (key rotation).',
+        'neutral',
+      );
+    case 'security.data_encrypted':
+      return make(
+        'Stored data encrypted',
+        'Files stored before encryption at rest were encrypted, or re-encrypted with the current key.',
+        'neutral',
+      );
     case 'erp.connection_activated':
       return make(
         'Invoices checked against your ERP',

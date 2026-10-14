@@ -1,6 +1,20 @@
 import { createHash } from 'node:crypto';
 import { basename, isAbsolute } from 'node:path';
-import { and, asc, desc, eq, inArray, lte, max, ne, notInArray, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  max,
+  ne,
+  notInArray,
+  or,
+  sql,
+} from 'drizzle-orm';
 import {
   ExtractionResultSchema,
   LINE_FIELD_KEYS,
@@ -44,6 +58,7 @@ import type {
 } from '../engine/types';
 import { assertTransition } from './state-machine';
 import { canRecordInvoices, readOnlyQuestions } from './read-only';
+import { redactEvidence, redactReading } from './redact';
 import { parseAnswerInput } from './answers';
 import { executeCommit, type CommitHooks } from './commit';
 import {
@@ -748,6 +763,7 @@ export class Veyra {
     // Already deleted (a retry after the file could not be removed): finish removing the file.
     if (doc.status === 'DELETED') {
       await this.storage.delete(this.documentKey(doc));
+      await this.removeAttachmentCopies(doc.sha256);
       return;
     }
     const mode = doc.retentionMode;
@@ -809,11 +825,38 @@ export class Veyra {
         .update(t.documents)
         .set({ status: 'DELETED', deletedAt: now })
         .where(and(eq(t.documents.id, doc.id), eq(t.documents.status, 'AVAILABLE')));
+      // The text read from the document goes with it: the other printed values and the quoted
+      // evidence. The values compared and every decision stay (docs/SECURITY.md, "Deletion").
+      let printedRemoved = 0;
+      for (const x of await tx
+        .select({ id: t.extractions.id, rawJson: t.extractions.rawJson })
+        .from(t.extractions)
+        .where(eq(t.extractions.invoiceId, invoiceId))) {
+        const r = redactReading(x.rawJson);
+        printedRemoved += r.removed;
+        await tx.update(t.extractions).set({ rawJson: r.json }).where(eq(t.extractions.id, x.id));
+      }
+      for (const f of await tx
+        .select({ id: t.extractedFields.id, evidenceJson: t.extractedFields.evidenceJson })
+        .from(t.extractedFields)
+        .where(eq(t.extractedFields.invoiceId, invoiceId)))
+        if (f.evidenceJson)
+          await tx
+            .update(t.extractedFields)
+            .set({ evidenceJson: redactEvidence(f.evidenceJson) })
+            .where(eq(t.extractedFields.id, f.id));
+      const copies = await this.attachmentCopies(tx, doc.sha256);
       await this.audit(tx, invoiceId, actor, 'document.deleted', {
         documentId: doc.id,
         reason: why.reason,
         policy: why.policy,
         invoiceState: inv.state,
+        // What went, as counts: never the content.
+        removed: {
+          original: 1,
+          printedText: printedRemoved,
+          erpAttachmentCopies: copies.length,
+        },
         delivery: inv.erpPurchaseInvoiceId
           ? `recorded in the ERP (${inv.erpPurchaseInvoiceId})`
           : inv.state === 'VERIFIED_PENDING_PAYMENT'
@@ -824,12 +867,58 @@ export class Veyra {
     });
     try {
       await this.storage.delete(this.documentKey(result.doc));
+      await this.removeAttachmentCopies(result.doc.sha256);
     } catch (error) {
       if (actor.type === 'system') throw error; // the retention job retries
       await this.enqueue(this.db, invoiceId, 'retention');
       this.onEnqueue();
     }
     return result.deleted;
+  }
+
+  /**
+   * ERP goods-receipt records holding a copy of this document as their attached invoice (same
+   * SHA-256): in storage, or (imported by an older version) in the database.
+   */
+  private async attachmentCopies(db: Db, sha256: string) {
+    const rows = await db
+      .select({
+        id: t.erpReceiptRecords.id,
+        key: t.erpReceiptRecords.attachmentKey,
+        sha256: t.erpReceiptRecords.attachmentSha256,
+        base64: t.erpReceiptRecords.attachmentBase64,
+      })
+      .from(t.erpReceiptRecords)
+      .where(
+        or(
+          eq(t.erpReceiptRecords.attachmentSha256, sha256),
+          and(
+            isNull(t.erpReceiptRecords.attachmentKey),
+            isNotNull(t.erpReceiptRecords.attachmentBase64),
+          ),
+        ),
+      );
+    return rows.filter(
+      (r) =>
+        r.sha256 === sha256 ||
+        (r.base64 !== null && sha256Hex(Buffer.from(r.base64, 'base64')) === sha256),
+    );
+  }
+
+  /**
+   * Removes every ERP-attached copy of a deleted document: the stored file first, then the
+   * record's reference to it (so a failure part-way is finished by the retention job's retry).
+   */
+  private async removeAttachmentCopies(sha256: string): Promise<number> {
+    const copies = await this.attachmentCopies(this.db, sha256);
+    for (const c of copies) {
+      if (c.key) await this.storage.delete(c.key);
+      await this.db
+        .update(t.erpReceiptRecords)
+        .set({ attachmentKey: null, attachmentSha256: null, attachmentBase64: null })
+        .where(eq(t.erpReceiptRecords.id, c.id));
+    }
+    return copies.length;
   }
 
   /** Whether the stored copy of an available original is really there. */

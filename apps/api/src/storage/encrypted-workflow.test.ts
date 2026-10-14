@@ -23,6 +23,7 @@ const doc = (file: string) => new Uint8Array(readFileSync(new URL(file, DOCS)));
 let app: Awaited<ReturnType<typeof createTestApp>>;
 let dir: string;
 let local: LocalDocumentStorage;
+let attached = { invoiceId: '', recordId: '', key: '' };
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'veyra-encwf-'));
@@ -161,6 +162,75 @@ describe('the invoice workflow with documents encrypted at rest', () => {
       .from(t.documents)
       .where(eq(t.documents.id, d?.documentId ?? ''));
     expect(document?.sha256).toBe(row?.attachmentSha256);
+    attached = { invoiceId, recordId: row?.id ?? '', key: row?.attachmentKey ?? '' };
+  });
+
+  it('deleting the original removes every copy and the text read from it; the checks stay as they were', async () => {
+    await app.runner.drain();
+    const view = async () => {
+      const d = (
+        await app.server.inject({ method: 'GET', url: `/api/v1/invoices/${attached.invoiceId}` })
+      ).json<ApiInvoiceDetail>();
+      return {
+        state: d.state,
+        verdict: d.comparison?.verdict ?? null,
+        rows: (d.comparison?.rows ?? []).map((r) => [r.label, r.invoice, r.erp, r.result]),
+      };
+    };
+    const before = await view();
+    const [inv] = await app.veyra.db
+      .select()
+      .from(t.invoices)
+      .where(eq(t.invoices.id, attached.invoiceId));
+    const [document] = await app.veyra.db
+      .select()
+      .from(t.documents)
+      .where(eq(t.documents.id, inv?.documentId ?? ''));
+
+    expect(await app.veyra.deleteDocument(attached.invoiceId, app.session.userId)).toBe(true);
+
+    // Both stored files are gone: the uploaded original and the ERP record's attached copy.
+    expect(await local.exists(document?.storagePath ?? '')).toBe(false);
+    expect(await local.exists(attached.key)).toBe(false);
+    const [record] = await app.veyra.db
+      .select()
+      .from(t.erpReceiptRecords)
+      .where(eq(t.erpReceiptRecords.id, attached.recordId));
+    expect(record).toMatchObject({
+      attachmentKey: null,
+      attachmentSha256: null,
+      attachmentBase64: null,
+    });
+    // The text read from it: no other printed values (beyond freight) and no quoted evidence.
+    for (const x of await app.veyra.db
+      .select()
+      .from(t.extractions)
+      .where(eq(t.extractions.invoiceId, attached.invoiceId))) {
+      const raw = JSON.parse(x.rawJson) as {
+        contentsRemoved?: boolean;
+        otherFields?: { label: string }[];
+      };
+      expect(raw.contentsRemoved).toBe(true);
+      expect(
+        (raw.otherFields ?? []).every((o) => /freight|cartage|carriage|transport/i.test(o.label)),
+      ).toBe(true);
+      expect(x.rawJson).not.toMatch(/"text":"[^"]/);
+    }
+    for (const f of await app.veyra.db
+      .select()
+      .from(t.extractedFields)
+      .where(eq(t.extractedFields.invoiceId, attached.invoiceId)))
+      expect(f.evidenceJson ?? '').not.toMatch(/"text":"[^"]/);
+    // The invoice, its checks and its decision are exactly as before.
+    expect(await view()).toEqual(before);
+    // The audit says what went, as counts only.
+    const [audit] = await app.veyra.db
+      .select()
+      .from(t.auditEvents)
+      .where(eq(t.auditEvents.event, 'document.deleted'));
+    expect(JSON.parse(audit?.detailJson ?? '{}')).toMatchObject({
+      removed: { original: 1, erpAttachmentCopies: 1 },
+    });
   });
 
   it('a stored file that was altered is never served or read: a safe error, no content', async () => {
