@@ -27,7 +27,7 @@ import type { VeyraDb, VeyraTx } from '../db/open';
 import * as t from '../db/schema';
 import { leaf, stage } from '../perf/timing';
 import { ulid } from '../ids';
-import type { DocumentStorage } from '../storage';
+import { sha256Hex, type DocumentStorage } from '../storage';
 import { Entitlements, INITIAL_PLAN, LimitReachedError } from '../commercial/entitlements';
 import { monthOf } from '../commercial/usage';
 import { INTERNAL_FAILURE_REASON, isInternalError, isRetryable } from './retry';
@@ -1843,64 +1843,83 @@ export class Veyra {
       hasAttachment: boolean;
       alreadyImported: boolean;
     }[] = [];
-    await this.db.transaction(async (tx) => {
-      for (const raw of parsed.data.data) {
-        const record = normalizeReceipt(raw);
-        const attachment = (raw.images ?? []).find((i) =>
-          ['application/pdf', 'image/png', 'image/jpeg'].includes(i.mime_type),
-        );
-        const recordJson = JSON.stringify(record);
-        // The same record imported again (the same file twice) is not stored twice; a corrected
-        // record from the ERP (different content) is stored, and the newest one is used.
-        const same = (
-          await tx
-            .select({ id: t.erpReceiptRecords.id, recordJson: t.erpReceiptRecords.recordJson })
-            .from(t.erpReceiptRecords)
-            .where(
-              and(
-                eq(t.erpReceiptRecords.grnNo, record.grnNo),
-                eq(t.erpReceiptRecords.invoiceNoKey, invoiceNoKey(record.invoiceNo)),
-              ),
-            )
-            .orderBy(desc(t.erpReceiptRecords.seq))
-            .limit(1)
-        )[0];
-        if (same && same.recordJson === recordJson) {
+    // Attached invoices go to document storage (encrypted at rest), never into the database.
+    // Files written for an import that then fails are removed again.
+    const written: string[] = [];
+    try {
+      await this.db.transaction(async (tx) => {
+        for (const raw of parsed.data.data) {
+          const record = normalizeReceipt(raw);
+          const attachment = (raw.images ?? []).find((i) =>
+            ['application/pdf', 'image/png', 'image/jpeg'].includes(i.mime_type),
+          );
+          const recordJson = JSON.stringify(record);
+          // The same record imported again (the same file twice) is not stored twice; a corrected
+          // record from the ERP (different content) is stored, and the newest one is used.
+          const same = (
+            await tx
+              .select({ id: t.erpReceiptRecords.id, recordJson: t.erpReceiptRecords.recordJson })
+              .from(t.erpReceiptRecords)
+              .where(
+                and(
+                  eq(t.erpReceiptRecords.grnNo, record.grnNo),
+                  eq(t.erpReceiptRecords.invoiceNoKey, invoiceNoKey(record.invoiceNo)),
+                ),
+              )
+              .orderBy(desc(t.erpReceiptRecords.seq))
+              .limit(1)
+          )[0];
+          if (same && same.recordJson === recordJson) {
+            records.push({
+              id: same.id,
+              grnNo: record.grnNo,
+              hasAttachment: Boolean(attachment),
+              alreadyImported: true,
+            });
+            continue;
+          }
+          const id = ulid();
           records.push({
-            id: same.id,
+            id,
             grnNo: record.grnNo,
             hasAttachment: Boolean(attachment),
-            alreadyImported: true,
+            alreadyImported: false,
           });
-          continue;
+          let stored: { key: string; sha256: string } | null = null;
+          if (attachment) {
+            const bytes = new Uint8Array(Buffer.from(attachment.base64, 'base64'));
+            stored = { key: `erp-attachments/${id}`, sha256: sha256Hex(bytes) };
+            await this.storage.put(stored.key, bytes, {
+              mime: attachment.mime_type,
+              sha256: stored.sha256,
+            });
+            written.push(stored.key);
+          }
+          await tx.insert(t.erpReceiptRecords).values({
+            id,
+            invoiceNoKey: invoiceNoKey(record.invoiceNo),
+            vendorName: record.vendorName,
+            grnNo: record.grnNo,
+            recordJson,
+            attachmentName: attachment?.file_name ?? null,
+            attachmentKey: stored?.key ?? null,
+            attachmentSha256: stored?.sha256 ?? null,
+            sourceFilename,
+            sourceId: opts.sourceId ?? null,
+            importedByUserId: userId,
+            importedAt: now,
+          });
         }
-        const id = ulid();
-        records.push({
-          id,
-          grnNo: record.grnNo,
-          hasAttachment: Boolean(attachment),
-          alreadyImported: false,
+        await this.audit(tx, null, { type: 'user', userId }, 'receipts.imported', {
+          file: sourceFilename,
+          records: records.filter((r) => !r.alreadyImported).length,
+          ...(opts.sourceId ? { sourceId: opts.sourceId } : {}),
         });
-        await tx.insert(t.erpReceiptRecords).values({
-          id,
-          invoiceNoKey: invoiceNoKey(record.invoiceNo),
-          vendorName: record.vendorName,
-          grnNo: record.grnNo,
-          recordJson,
-          attachmentName: attachment?.file_name ?? null,
-          attachmentBase64: attachment?.base64 ?? null,
-          sourceFilename,
-          sourceId: opts.sourceId ?? null,
-          importedByUserId: userId,
-          importedAt: now,
-        });
-      }
-      await this.audit(tx, null, { type: 'user', userId }, 'receipts.imported', {
-        file: sourceFilename,
-        records: records.filter((r) => !r.alreadyImported).length,
-        ...(opts.sourceId ? { sourceId: opts.sourceId } : {}),
       });
-    });
+    } catch (error) {
+      for (const key of written) await this.storage.delete(key).catch(() => undefined);
+      throw error;
+    }
     const rechecked = await this.recheckWaitingFor(
       records.filter((r) => !r.alreadyImported).map((r) => r.id),
     );
@@ -1974,15 +1993,17 @@ export class Veyra {
         .limit(1)
     )[0];
     if (!row) throw new VeyraError('NOT_FOUND', 'ERP receipt record not found.');
-    if (!row.attachmentBase64 || !row.attachmentName)
+    if (!row.attachmentName || (!row.attachmentKey && !row.attachmentBase64))
       throw new VeyraError('INVALID_INPUT', 'This ERP record has no invoice attached.');
-    return this.upload(
-      {
-        filename: row.attachmentName,
-        bytes: new Uint8Array(Buffer.from(row.attachmentBase64, 'base64')),
-      },
-      userId,
-    );
+    // From (encrypted) document storage; a record imported before attachments moved there still
+    // carries it in the database until `npm run security:encrypt-existing` moves it.
+    const bytes = row.attachmentKey
+      ? await this.storage.get(
+          row.attachmentKey,
+          row.attachmentSha256 ? { sha256: row.attachmentSha256 } : undefined,
+        )
+      : new Uint8Array(Buffer.from(row.attachmentBase64 ?? '', 'base64'));
+    return this.upload({ filename: row.attachmentName, bytes }, userId);
   }
 
   /** What the invoice says, from usable readings only (an unclear value counts as not read). */

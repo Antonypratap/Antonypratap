@@ -98,6 +98,71 @@ describe('the invoice workflow with documents encrypted at rest', () => {
     expect(Buffer.compare(file.rawPayload, Buffer.from(original))).toBe(0);
   });
 
+  it('an invoice attached to an ERP export is stored encrypted, never in the database, and still checks', async () => {
+    const pdf = doc('D12-missing-receipt.pdf');
+    const exported = {
+      data: [
+        {
+          success: true,
+          invoice_info: {
+            grn_id: '9101',
+            grn_no: '501',
+            po_id: '7701',
+            dc_no: 'MU/26-27/0042',
+            grn_date: '28/09/2026',
+            invoice_date: '2026-09-30',
+            invoice_amount: 0,
+            branch_id: 'BRN0000001',
+            vendor_name: 'Made-up Supplies Pvt. Ltd.',
+            vendor_code: 'SCM0000001',
+          },
+          items: [
+            {
+              item_name: 'Made-up item',
+              hsn_sac_code: null,
+              uom: 'NOS',
+              quantity: '10',
+              basic_rate: '10.00',
+              basic_amount: 100,
+              discount: 0,
+              cgst: 0,
+              sgst: 0,
+              igst: 0,
+              freight: 0,
+              other_charges: [],
+            },
+          ],
+          images: [
+            {
+              file_name: 'MU-0042.pdf',
+              mime_type: 'application/pdf',
+              base64: Buffer.from(pdf).toString('base64'),
+            },
+          ],
+        },
+      ],
+    };
+    const r = await app.veyra.importReceipts('made-up-export.json', exported, app.session.userId);
+    expect(r.imported).toBe(1);
+    const [row] = await app.veyra.db
+      .select()
+      .from(t.erpReceiptRecords)
+      .where(eq(t.erpReceiptRecords.id, r.records[0]?.id ?? ''));
+    expect(row?.attachmentBase64).toBeNull();
+    expect(row?.attachmentKey).toBe(`erp-attachments/${row?.id ?? ''}`);
+    const stored = readFileSync(local.pathOf(row?.attachmentKey ?? ''));
+    expect(isSealed(stored)).toBe(true);
+    expect(stored.includes(Buffer.from('%PDF'))).toBe(false);
+    // Checking it reads it back from encrypted storage, exactly as attached.
+    const { invoiceId } = await app.veyra.checkReceiptAttachment(row?.id ?? '', app.session.userId);
+    const [d] = await app.veyra.db.select().from(t.invoices).where(eq(t.invoices.id, invoiceId));
+    const [document] = await app.veyra.db
+      .select()
+      .from(t.documents)
+      .where(eq(t.documents.id, d?.documentId ?? ''));
+    expect(document?.sha256).toBe(row?.attachmentSha256);
+  });
+
   it('a stored file that was altered is never served or read: a safe error, no content', async () => {
     const original = doc('D07-quantity-mismatch.pdf');
     const res = await app.server.inject({

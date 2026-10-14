@@ -635,7 +635,14 @@ export const erpReceiptRecords = pgTable(
     grnNo: text('grn_no').notNull(),
     recordJson: text('record_json').notNull(),
     attachmentName: text('attachment_name'),
+    /**
+     * Legacy: the attached invoice as base64, from before attachments moved to (encrypted)
+     * document storage. Emptied by `npm run security:encrypt-existing`; never written now.
+     */
     attachmentBase64: text('attachment_base64'),
+    /** The attached invoice in document storage (encrypted at rest), and its SHA-256. */
+    attachmentKey: text('attachment_key'),
+    attachmentSha256: text('attachment_sha256'),
     sourceFilename: text('source_filename').notNull(),
     /** The connected spreadsheet this record was synced from (null: an uploaded export). */
     sourceId: text('source_id').references(() => dataSources.id),

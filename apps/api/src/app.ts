@@ -377,6 +377,9 @@ export async function createApp(config: AppConfig) {
           (f) => f.key ?? `imports/${i.id}/${(f.path ?? '').split(/[\\/]/).pop() ?? ''}`,
         ),
       ),
+      ...(
+        await db.select({ key: t.erpReceiptRecords.attachmentKey }).from(t.erpReceiptRecords)
+      ).flatMap((r) => (r.key ? [r.key] : [])),
     ];
     for (const key of keys) await storage.delete(key).catch(() => undefined);
     await db.transaction(async (tx) => {
