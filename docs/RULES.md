@@ -38,7 +38,7 @@ Per line: `description`, `hsnSac`, `qtyMilli`, `uom`, `unitPricePaise`, `taxable
 
 | Field | Rule |
 |---|---|
-| Dates | Accept `DD/MM/YYYY`, `DD-MM-YYYY`, `DD.MM.YYYY`, `DD-Mon-YYYY`, `YYYY-MM-DD`. Day-first is the India locale rule, applied uniformly. **Two-digit years are unparseable.** |
+| Dates | Accept `DD/MM/YYYY`, `DD-MM-YYYY`, `DD.MM.YYYY`, `DD-Mon-YYYY`, `DD-Mon-YY`, `YYYY-MM-DD`. Day-first is the India locale rule, applied uniformly. `DD-Mon-YY` is Tally's own date form (e.g. `7-Jun-24`) and is read as 20YY: the month name leaves nothing to misread. **A two-digit year in an all-number date (`07/06/24`) is unparseable.** |
 | GSTIN | 15 chars `^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$`, valid state code, valid mod-36 checksum. |
 | PAN | GSTIN characters 3–12. |
 | Place of supply | State name or 2-digit code, mapped through the GST state table. Unknown → unparseable. Resolved by the hierarchy in §1.6. |

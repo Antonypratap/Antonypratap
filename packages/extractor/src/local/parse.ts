@@ -86,16 +86,21 @@ const GSTIN = /[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]/;
 const PAN = /\b[A-Z]{5}[0-9]{4}[A-Z]\b/;
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
-/** RULES §1.4 dates: DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY, DD-Mon-YYYY, YYYY-MM-DD. Day first. */
+/**
+ * RULES §1.4 dates: DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY, DD-Mon-YYYY, DD-Mon-YY (Tally's own form,
+ * read as 20YY: the month name leaves nothing to misread), YYYY-MM-DD. Day first. A two-digit year
+ * in an all-number date ("07/06/24") is never read.
+ */
 export function parseDate(text: string): string | null {
   const t = text.trim();
   let y: number, m: number, d: number;
   let r = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(t);
   if (r) [d, m, y] = [Number(r[1]), Number(r[2]), Number(r[3])];
-  else if ((r = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/.exec(t))) {
+  else if ((r = /^(\d{1,2})-([A-Za-z]{3})-(\d{4}|\d{2})$/.exec(t))) {
     const mi = MONTHS.indexOf((r[2] ?? '').toUpperCase());
     if (mi < 0) return null;
-    [d, m, y] = [Number(r[1]), mi + 1, Number(r[3])];
+    const year = r[3] ?? '';
+    [d, m, y] = [Number(r[1]), mi + 1, year.length === 2 ? 2000 + Number(year) : Number(year)];
   } else if ((r = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t)))
     [y, m, d] = [Number(r[1]), Number(r[2]), Number(r[3])];
   else return null;

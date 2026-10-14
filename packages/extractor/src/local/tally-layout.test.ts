@@ -82,6 +82,44 @@ describe('Tally-style invoice, local reader', () => {
     expect(r.header.totalPaise.value).toBe(564_000);
   });
 
+  it('Tally e-invoice dates ("7-Jun-24"): the invoice date is the one beside the invoice number', () => {
+    // Made-up supplier and values; the layout of a Tally e-invoice: an acknowledgement date above,
+    // "Invoice No." beside "Dated" with the values below, and the order's own "Dated" further down.
+    const seg = (text: string, x0: number, y0: number) => ({
+      page: 1,
+      text,
+      x0,
+      y0,
+      x1: x0 + text.length * 6,
+      y1: y0 + 10,
+      conf: 100,
+      source: 'pdf_text' as const,
+    });
+    const page: PageText = {
+      page: 1,
+      segments: [
+        seg('Tax Invoice', 250, 20),
+        seg('Ack Date : 8-Jun-24', 20, 40),
+        seg('Made-up Networks Pvt Ltd', 20, 60),
+        seg('Invoice No.', 300, 60),
+        seg('Dated', 420, 60),
+        seg('MUN/K/2425/0042', 300, 72),
+        seg('7-Jun-24', 420, 72),
+        seg("Buyer's Order No.", 300, 100),
+        seg('Dated', 420, 100),
+        seg('121', 300, 112),
+        seg('3-May-24', 420, 112),
+        seg('Total', 300, 300),
+        seg('95,875.00', 450, 300),
+      ],
+    };
+    const { header } = parseInvoice([page]);
+    expect(header.invoiceNumber.value).toBe('MUN/K/2425/0042');
+    expect(header.invoiceDate.value).toBe('2024-06-07');
+    expect(header.invoiceDate.confidenceBp).toBeGreaterThanOrEqual(9000);
+    expect(header.poNumber.value).toBe('121');
+  });
+
   it('a value beside its label that starts like a label ("PO-2026-1103") is never cut short', () => {
     const seg = (text: string, x0: number, y0: number) => ({
       page: 1,

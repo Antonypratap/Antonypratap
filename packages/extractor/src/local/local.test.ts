@@ -47,13 +47,25 @@ const minimalPage = (extra: Segment[] = [], page = 1): PageText => ({
 });
 
 describe('deterministic parsers (RULES §1.1, §1.4)', () => {
-  it('dates: only the listed day-first formats, real calendar dates, no two-digit years', () => {
+  it('dates: only the listed day-first formats, real calendar dates, two-digit years only with a month name', () => {
     expect(parseDate('27/09/2026')).toBe('2026-09-27');
     expect(parseDate('27-09-2026')).toBe('2026-09-27');
     expect(parseDate('27.09.2026')).toBe('2026-09-27');
     expect(parseDate('27-Sep-2026')).toBe('2026-09-27');
     expect(parseDate('2026-09-27')).toBe('2026-09-27');
-    for (const bad of ['27/09/26', '31/02/2026', '09/27/2026', 'Sep 27, 2026', ''])
+    // Tally's own form: the month name makes a two-digit year safe to read (as 20YY).
+    expect(parseDate('7-Jun-24')).toBe('2024-06-07');
+    expect(parseDate('27-Sep-26')).toBe('2026-09-27');
+    for (const bad of [
+      '27/09/26',
+      '27-09-26',
+      '27.09.26',
+      '31-Feb-26',
+      '31/02/2026',
+      '09/27/2026',
+      'Sep 27, 2026',
+      '',
+    ])
       expect(parseDate(bad), bad).toBeNull();
   });
 

@@ -23,7 +23,7 @@ import { rotationNote, uprightImage, type Rotation } from '../local/orientation'
  * - Every value is re-parsed from that printed text by Veyrafy's own deterministic parsers (money
  *   to the paisa, RULES §1.4 dates, GSTIN checksum, quantities, rates). The model's own
  *   normalisation is never used, so it cannot invent a value that is not printed.
- * - A value that parses gets AI_CONFIDENCE_BP; one that does not (a two-digit year, an invalid
+ * - A value that parses gets AI_CONFIDENCE_BP; one that does not ("07/06/24", an invalid
  *   GSTIN, an unreadable amount) is kept as evidence below the threshold, so a person is asked.
  * - The deterministic core then checks everything as for any reading (line arithmetic, totals,
  *   tax rates, supplier, order, goods receipt). Disagreement is a question, never a guess.

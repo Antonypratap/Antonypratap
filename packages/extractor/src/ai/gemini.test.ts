@@ -46,7 +46,7 @@ const READING: AiReading = {
     vendorGstin: p('29AABCM2468K1Z4'),
     buyerGstin: p('29AAICH4826L1Z2'),
     invoiceNumber: p('MMH/26-27/0412'),
-    invoiceDate: p('27-Sep-26'),
+    invoiceDate: p('27/09/26'),
     poNumber: p('PO-2026-1103'),
     taxable: p('58,000.00'),
     cgst: p('5,220.00'),
@@ -162,11 +162,11 @@ describe('AI vision reader (Gemini)', () => {
     });
     expect(r.header.totalPaise).toMatchObject({ value: 6_844_000, confidenceBp: AI_CONFIDENCE_BP });
     expect(r.header.roundOffPaise.value).toBe(-29);
-    // A two-digit year is never turned into a date (RULES §1.4): kept as evidence, asked.
+    // A two-digit year in an all-number date is never turned into a date (RULES §1.4): kept as evidence, asked.
     expect(r.header.invoiceDate).toMatchObject({
       value: null,
       confidenceBp: 0,
-      evidence: { text: '27-Sep-26' },
+      evidence: { text: '27/09/26' },
     });
     // Not printed (an intra-state invoice has no IGST): a confident "absent".
     expect(r.header.igstPaise).toMatchObject({

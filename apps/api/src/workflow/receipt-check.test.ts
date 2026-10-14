@@ -265,10 +265,10 @@ describe('the receipt check: invoices against the ERP’s own goods-receipt reco
   });
 
   it('a value not read with certainty is asked; once answered, the invoice is compared and cleared', async () => {
-    // A two-digit year is not a valid date (RULES §1.4): the date is asked, never guessed.
+    // An all-number date with a two-digit year is not a valid date (RULES §1.4): the date is asked, never guessed.
     reading = {
       ...invoiceReading(),
-      header: { ...invoiceReading().header, invoiceDate: p('27-Sep-26') },
+      header: { ...invoiceReading().header, invoiceDate: p('27/09/26') },
     };
     await importExport(erpExport({ pdf: 'B04-quantity-mismatch.pdf' }));
     const inv = await checkAttached();
