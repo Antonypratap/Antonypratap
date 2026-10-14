@@ -267,25 +267,25 @@ export class Veyra {
     this.#ahead.clear();
   }
 
-  private readDocumentNow(doc: { id: string; mime: string; sha256: string; storagePath: string }) {
-    // The reader gets a verified local copy of the original (object storage: a private
-    // temporary file, removed as soon as the document has been read).
-    return this.storage.withLocalFile(
-      this.documentKey(doc),
-      async (filePath) => {
-        const started = Date.now();
-        const result = await this.extractor.extract({
-          documentId: doc.id,
-          filePath,
-          mime: doc.mime,
-          sha256: doc.sha256,
-        });
-        // How long the reading took, for the Control Centre (it changes nothing in the reading).
-        if (result.diagnostics) result.diagnostics.durationMs = Date.now() - started;
-        return result;
-      },
-      { sha256: doc.sha256 },
-    );
+  private async readDocumentNow(doc: {
+    id: string;
+    mime: string;
+    sha256: string;
+    storagePath: string;
+  }) {
+    // The reader gets the original's bytes in memory, verified against the checksum recorded at
+    // upload (and decrypted when storage is encrypted): no plaintext copy is written to disk.
+    const bytes = await this.storage.get(this.documentKey(doc), { sha256: doc.sha256 });
+    const started = Date.now();
+    const result = await this.extractor.extract({
+      documentId: doc.id,
+      bytes,
+      mime: doc.mime,
+      sha256: doc.sha256,
+    });
+    // How long the reading took, for the Control Centre (it changes nothing in the reading).
+    if (result.diagnostics) result.diagnostics.durationMs = Date.now() - started;
+    return result;
   }
 
   /** Creates the designated user and default settings when missing. Call once before use. */

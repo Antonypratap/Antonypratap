@@ -45,6 +45,7 @@ try {
     database: { url: config.database.url?.reveal() ?? null, pool: config.database.pool },
     migrate: config.migrateOnStart,
     storage: createStorage(config.storage),
+    storageFor: (dir) => createStorage(config.storage, dir),
     demo: config.demo,
     demoBusiness: config.demoBusiness,
     allowFixtureExtractor: config.allowFixtureExtractor,

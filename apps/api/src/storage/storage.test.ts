@@ -62,26 +62,13 @@ describe('document storage (Phase 6B)', () => {
     const s = localStorage();
     await s.put(KEY, PDF, META);
     writeFileSync(s.pathOf(KEY), 'tampered');
-    let read = false;
-    await expect(
-      s.withLocalFile(
-        KEY,
-        async () => {
-          read = true;
-        },
-        META,
-      ),
-    ).rejects.toBeInstanceOf(StorageIntegrityError);
-    expect(read).toBe(false);
+    await expect(s.get(KEY, META)).rejects.toBeInstanceOf(StorageIntegrityError);
   });
 
   it('a missing file is a typed not-found, for get, metadata and reading', async () => {
     const s = localStorage();
     await expect(s.get(KEY)).rejects.toBeInstanceOf(StorageNotFoundError);
     expect(await s.metadata(KEY)).toBeNull();
-    await expect(s.withLocalFile(KEY, async () => 'x')).rejects.toBeInstanceOf(
-      StorageNotFoundError,
-    );
   });
 
   it('keys cannot escape the store: traversal, absolute paths, null bytes, hidden files', () => {

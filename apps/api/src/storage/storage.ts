@@ -2,15 +2,16 @@ import { createHash } from 'node:crypto';
 
 /**
  * Where uploaded documents live (Phase 6B). The workflow sees only this port, never a filesystem
- * path. Today there is one implementation, LocalDocumentStorage (a folder; a persistent disk when
- * deployed). Object storage can be added later as another implementation of this interface.
+ * path. LocalDocumentStorage keeps the bytes in a folder (a persistent disk when deployed);
+ * EncryptedDocumentStorage wraps it so every file is encrypted at rest (docs/SECURITY.md). Readers
+ * get the bytes in memory, so no decrypted copy is ever written to disk.
  *
  * Keys are opaque, validated relative names (`<documentId>.pdf`, `imports/<id>/1-file.xlsx`).
  * They never come from a user: filenames are metadata only, so no upload can choose where it is
  * written.
  */
 export interface DocumentStorage {
-  readonly kind: 'local';
+  readonly kind: 'local' | 'encrypted';
   /** Stores bytes under `key` (replacing nothing: keys are unique per upload). */
   put(key: string, bytes: Uint8Array, meta: { mime: string; sha256: string }): Promise<void>;
   /** The bytes under `key`. With `sha256`, they are verified before they are returned. */
@@ -18,18 +19,8 @@ export interface DocumentStorage {
   exists(key: string): Promise<boolean>;
   /** Size of the stored object, or null when it does not exist. */
   metadata(key: string): Promise<{ sizeBytes: number } | null>;
-  /** Deletes the object (demo reset only; production never deletes documents). */
+  /** Deletes the object (deletion by a person or a retention policy, demo reset). */
   delete(key: string): Promise<void>;
-  /**
-   * Runs `fn` with a local file holding the object (the document readers need a path). For local
-   * storage that is the stored file itself; a remote store would provide a private temporary
-   * copy, removed afterwards.
-   */
-  withLocalFile<T>(
-    key: string,
-    fn: (path: string) => Promise<T>,
-    verify?: { sha256: string },
-  ): Promise<T>;
   /** Readiness: throws StorageUnavailableError when documents cannot be stored or read. */
   check(): Promise<void>;
 }
@@ -63,6 +54,20 @@ export class StorageIntegrityError extends Error {
   }
 }
 
+/**
+ * A stored document could not be decrypted: altered, written with a key this Veyrafy does not
+ * have, or (when encryption is required) stored unencrypted. Fails closed: never retried, never
+ * read as plaintext. The message names no key and no content.
+ */
+export class StorageDecryptError extends Error {
+  readonly code = 'STORAGE_DECRYPT';
+  readonly retryable = false;
+  constructor(readonly reason: 'tampered' | 'unknown_key' | 'not_encrypted' | 'malformed') {
+    super('The stored document could not be decrypted.');
+    this.name = 'StorageDecryptError';
+  }
+}
+
 export class InvalidStorageKeyError extends Error {
   readonly code = 'STORAGE_INVALID_KEY';
   readonly retryable = false;
@@ -73,13 +78,18 @@ export class InvalidStorageKeyError extends Error {
 }
 
 export type StorageError =
-  StorageUnavailableError | StorageNotFoundError | StorageIntegrityError | InvalidStorageKeyError;
+  | StorageUnavailableError
+  | StorageNotFoundError
+  | StorageIntegrityError
+  | StorageDecryptError
+  | InvalidStorageKeyError;
 
 export function isStorageError(error: unknown): error is StorageError {
   return (
     error instanceof StorageUnavailableError ||
     error instanceof StorageNotFoundError ||
     error instanceof StorageIntegrityError ||
+    error instanceof StorageDecryptError ||
     error instanceof InvalidStorageKeyError
   );
 }

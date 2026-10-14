@@ -66,6 +66,11 @@ export interface AppConfig {
   environment?: Environment;
   /** Document storage. Defaults to `<dataDir>/uploads` on the local filesystem. */
   storage?: DocumentStorage;
+  /**
+   * Storage for another folder (an Invoice Challenge workspace), with the same protection as
+   * `storage` (encrypted at rest when it is). Defaults to the local filesystem.
+   */
+  storageFor?: (dir: string) => DocumentStorage;
   /** Apply pending migrations on open (default true; production runs `db:migrate` instead). */
   migrate?: boolean;
   /**
@@ -408,6 +413,7 @@ export async function createApp(config: AppConfig) {
         commercial,
         workspaces: new ChallengeWorkspaces({
           root: join(config.dataDir, 'challenges'),
+          ...(config.storageFor ? { storage: config.storageFor } : {}),
           extractor: challengeAi ? realExtractor : localExtractor,
           erp: (filename, fresh) => {
             const store = FakeErpConnector.open({

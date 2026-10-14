@@ -116,10 +116,6 @@ class FlakyStorage implements DocumentStorage {
   async delete(k: string) {
     return this.inner.delete(k);
   }
-  async withLocalFile<T>(k: string, fn: (p: string) => Promise<T>, v?: { sha256: string }) {
-    this.#gate();
-    return this.inner.withLocalFile(k, fn, v);
-  }
   async check() {
     this.#gate();
   }
@@ -733,13 +729,9 @@ describe('jobs: retries, leases and shutdown', () => {
     });
     const inner = new LocalDocumentStorage(join(dir, 'u'));
     const slow: DocumentStorage = Object.assign(Object.create(inner) as LocalDocumentStorage, {
-      withLocalFile: async <T>(
-        k: string,
-        fn: (p: string) => Promise<T>,
-        v?: { sha256: string },
-      ) => {
+      get: async (k: string, v?: { sha256: string }) => {
         await gate;
-        return inner.withLocalFile(k, fn, v);
+        return inner.get(k, v);
       },
     });
     const app = await open({ storage: slow });

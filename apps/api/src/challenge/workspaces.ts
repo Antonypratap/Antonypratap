@@ -5,7 +5,7 @@ import type { Extractor } from '@veyra/extractor';
 import { openVeyraDb, type VeyraDatabase } from '../db/open';
 import { Presenter } from '../http/present';
 import { BusinessImports } from '../imports/service';
-import { LocalDocumentStorage } from '../storage';
+import { LocalDocumentStorage, type DocumentStorage } from '../storage';
 import { JobRunner } from '../workflow/runner';
 import { DEFAULT_SETTINGS, Veyra } from '../workflow/veyra';
 
@@ -52,6 +52,8 @@ export interface WorkspaceOptions {
   extractor: Extractor;
   /** Opens a workspace's records store. */
   erp: WorkspaceErpFactory;
+  /** The workspace's document storage (default: a plain folder; deployed: encrypted at rest). */
+  storage?: (dir: string) => DocumentStorage;
   clock?: () => Date;
   maxUploadBytes?: number;
   /** Close a workspace unused for this long (and with no work queued). */
@@ -79,6 +81,7 @@ export class ChallengeWorkspaces {
       clock: () => new Date(),
       idleMs: 10 * 60_000,
       maxOpen: 4,
+      storage: (d: string) => new LocalDocumentStorage(d),
       ...options,
       root: resolve(options.root),
     };
@@ -128,7 +131,7 @@ export class ChallengeWorkspaces {
       db: database.db,
       erp: guardCapabilities(erp.connector),
       extractor: this.#o.extractor,
-      storage: new LocalDocumentStorage(join(dir, 'uploads')),
+      storage: this.#o.storage(join(dir, 'uploads')),
       initialSettings: DEFAULT_SETTINGS,
       clock: this.#o.clock,
       organizationName: init.company,

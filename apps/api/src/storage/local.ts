@@ -80,17 +80,6 @@ export class LocalDocumentStorage implements DocumentStorage {
     }
   }
 
-  async withLocalFile<T>(
-    key: string,
-    fn: (path: string) => Promise<T>,
-    verify?: { sha256: string },
-  ): Promise<T> {
-    // Verify (and prove it exists) before the reader sees it.
-    if (verify) await this.get(key, verify);
-    else if (!(await this.exists(key))) throw new StorageNotFoundError();
-    return fn(this.pathOf(key));
-  }
-
   async check(): Promise<void> {
     try {
       await mkdir(this.root, { recursive: true });

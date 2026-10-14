@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import {
   confidenceBp,
@@ -11,7 +10,7 @@ import {
   type ExtractionResult,
   type OtherPrintedField,
 } from '@veyra/shared';
-import { ExtractorError, type Extractor, type ExtractorInput } from '../extractor';
+import { ExtractorError, inputBytes, type Extractor, type ExtractorInput } from '../extractor';
 import { imageSize } from '../local/image';
 import { footerRateProven, parseAmount, parseDate } from '../local/parse';
 import { rotationNote, uprightImage, type Rotation } from '../local/orientation';
@@ -794,7 +793,7 @@ export class GeminiExtractor implements Extractor {
     let doc: VisionDocument;
     const meter: AiMeter = { model: null, calls: 0, inputTokens: 0, outputTokens: 0 };
     try {
-      doc = await visionDocument(await readFile(input.filePath), input.mime);
+      doc = await visionDocument(Buffer.from(await inputBytes(input)), input.mime);
       if (doc.bytes > MAX_INLINE_BYTES)
         return await this.#fallback(input, 'too large for it', meter);
       ({ reading, model } = await this.#readWithRetries(doc.parts, meter));

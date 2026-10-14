@@ -21,6 +21,9 @@ const PRODUCTION = {
   DATABASE_URL: 'postgres://veyra:s3cret-db-pass@db.example.com:5432/veyra?sslmode=verify-full',
   VEYRA_ORGANIZATION_NAME: 'Toit',
   VEYRA_PUBLIC_ORIGIN: 'https://veyra.toit.example',
+  // Made-up data key (production requires encryption at rest), built at run time.
+  VEYRA_DATA_KEYS: `k1:${Buffer.alloc(32, 7).toString('base64')}`,
+  VEYRA_DATA_KEY_ACTIVE: 'k1',
 };
 const STAGING = {
   NODE_ENV: 'production',

@@ -1,10 +1,16 @@
+import { readFile } from 'node:fs/promises';
 import type { ExtractionResult, ExtractorId } from '@veyra/shared';
 
 /** What an extractor is given: the stored document and its identity (ARCHITECTURE §3.1). */
 export interface ExtractorInput {
   documentId: string;
-  /** Path of the stored original on disk. */
-  filePath: string;
+  /**
+   * The document's bytes. Veyrafy passes them in memory (decrypted from storage), so no plaintext
+   * copy of an invoice is ever written to disk to be read.
+   */
+  bytes?: Uint8Array;
+  /** A file holding the document (tools and tests); used only when `bytes` is not given. */
+  filePath?: string;
   mime: string;
   /** Lower-case hex SHA-256 of the document bytes. */
   sha256: string;
@@ -44,4 +50,11 @@ export class ExtractorError extends Error {
     super(message);
     this.name = 'ExtractorError';
   }
+}
+
+/** The input document's bytes: given in memory, or read from its file. */
+export async function inputBytes(input: ExtractorInput): Promise<Uint8Array> {
+  if (input.bytes) return input.bytes;
+  if (input.filePath) return new Uint8Array(await readFile(input.filePath));
+  throw new ExtractorError('MALFORMED_DOCUMENT', 'No document was given to read.');
 }

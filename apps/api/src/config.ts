@@ -4,6 +4,7 @@ import { MAX_UPLOAD_BYTES } from '@veyra/shared';
 import { DOCUMENT_LIMITS } from '@veyra/extractor';
 import { Secret } from './secret';
 import { parseServiceAccount } from './sources/google';
+import { Keyring, KeyringError } from './storage/keyring';
 
 /**
  * Deployment configuration (Phase 6). Everything environment-specific comes from environment
@@ -17,12 +18,20 @@ export const ENVIRONMENTS = ['development', 'staging', 'production'] as const;
 export type Environment = (typeof ENVIRONMENTS)[number];
 
 /**
- * Where uploaded documents are kept. Only local storage exists today (a folder, which must be a
- * persistent disk when deployed); object storage is a future adapter behind DocumentStorage.
+ * Where uploaded documents are kept: a folder (a persistent disk when deployed), encrypted at rest
+ * when `encryption` is set (required in production; docs/SECURITY.md, "Encryption at rest").
  */
 export interface StorageConfig {
   kind: 'local';
   dir: string;
+  encryption: {
+    /** VEYRA_DATA_KEYS: `id:base64-key` pairs (the key-encryption keys). Never logged. */
+    keys: Secret;
+    /** VEYRA_DATA_KEY_ACTIVE: the id new data is encrypted with. */
+    activeId: string;
+    /** VEYRA_ENCRYPT_REQUIRE: refuse to read files stored unencrypted (after the migration). */
+    requireEncrypted: boolean;
+  } | null;
 }
 
 /**
@@ -266,6 +275,10 @@ const VARS = {
     .string()
     .trim()
     .refine((v) => Buffer.from(v, 'base64').length === 32, '32 random bytes, base64'),
+  // Encryption at rest for documents: `id:key` pairs, each key 32 random bytes base64. Never echoed.
+  VEYRA_DATA_KEYS: z.string().trim().min(10).max(4000),
+  VEYRA_DATA_KEY_ACTIVE: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,15}$/),
+  VEYRA_ENCRYPT_REQUIRE: bool,
   VEYRA_ERP_SYNC_MINUTES: int(5, 24 * 60),
   VEYRA_ERP_SYNC_MAX_AGE_MINUTES: int(5, 7 * 24 * 60),
   VEYRA_SAMPLE_ERP: bool,
@@ -356,6 +369,31 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
   if (storageDirRaw !== undefined && deployed && !isAbsolute(storageDirRaw))
     problems.push('VEYRA_STORAGE_DIR must be an absolute path outside development');
 
+  // Documents are encrypted at rest whenever keys are configured; production requires it.
+  const dataKeys = read('VEYRA_DATA_KEYS');
+  const dataKeyActive = read('VEYRA_DATA_KEY_ACTIVE');
+  let encryption: StorageConfig['encryption'] = null;
+  if (dataKeys) {
+    if (!dataKeyActive) problems.push('VEYRA_DATA_KEY_ACTIVE is required with VEYRA_DATA_KEYS');
+    else
+      try {
+        Keyring.parse(dataKeys, dataKeyActive);
+        encryption = {
+          keys: new Secret(dataKeys),
+          activeId: dataKeyActive,
+          requireEncrypted: read('VEYRA_ENCRYPT_REQUIRE') ?? false,
+        };
+      } catch (e) {
+        // KeyringError messages name ids only, never a key.
+        problems.push(e instanceof KeyringError ? e.message : 'VEYRA_DATA_KEYS is not valid');
+      }
+  } else if (environment === 'production')
+    problems.push(
+      'VEYRA_DATA_KEYS and VEYRA_DATA_KEY_ACTIVE are required in production: documents are encrypted at rest (docs/SECURITY.md)',
+    );
+  else if (read('VEYRA_ENCRYPT_REQUIRE'))
+    problems.push('VEYRA_ENCRYPT_REQUIRE needs VEYRA_DATA_KEYS');
+
   const erp = deployed ? require('VEYRA_ERP', `in ${environment}`) : (read('VEYRA_ERP') ?? 'fake');
   const demo = read('VEYRA_DEMO') ?? !deployed;
   const allowFixtureExtractor = read('VEYRA_ALLOW_FIXTURE_EXTRACTOR') ?? false;
@@ -437,7 +475,11 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
       },
     },
     migrateOnStart,
-    storage: { kind: 'local', dir: resolve(storageDirRaw ?? resolve(dataDir, 'uploads')) },
+    storage: {
+      kind: 'local',
+      dir: resolve(storageDirRaw ?? resolve(dataDir, 'uploads')),
+      encryption,
+    },
     erp: { kind: erp ?? 'fake' },
     auth: {
       session: { idleMs: idleMinutes * 60_000, absoluteMs: absoluteHours * 3_600_000 },
@@ -693,6 +735,9 @@ function describe(name: VarName): string {
     return 'comma-separated origins such as https://veyra.example.com, never *';
   if (name === 'VEYRA_DEMO_PIN') return '4 to 12 digits';
   if (name === 'VEYRA_SECRETS_KEY') return '32 random bytes, base64 (openssl rand -base64 32)';
+  if (name === 'VEYRA_DATA_KEYS')
+    return 'comma-separated id:key pairs, each key 32 random bytes base64 (openssl rand -base64 32)';
+  if (name === 'VEYRA_DATA_KEY_ACTIVE') return 'one of the ids in VEYRA_DATA_KEYS';
   if (name.endsWith('_URL')) return 'an http(s) URL';
   if (/(^|_)(PORT|BYTES|PAGES|SIDE|PIXELS|MINUTE|MINUTES|HOURS|MS|PROXY)$/.test(name))
     return 'a whole number in range';
@@ -704,7 +749,9 @@ export function describeConfig(c: VeyraConfig) {
   return {
     environment: c.environment,
     database: c.database.url ? 'postgres' : 'embedded-postgres',
-    storage: c.storage.kind,
+    storage: c.storage.encryption
+      ? `${c.storage.kind}+encrypted:${c.storage.encryption.activeId}${c.storage.encryption.requireEncrypted ? ':required' : ''}`
+      : c.storage.kind,
     erp: c.erp.kind,
     cookieSecure: c.auth.cookieSecure,
     cors: c.http.corsOrigins.length > 0,

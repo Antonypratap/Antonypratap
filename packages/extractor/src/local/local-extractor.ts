@@ -1,6 +1,5 @@
-import { readFile } from 'node:fs/promises';
 import { ExtractionResultSchema, type ExtractionResult } from '@veyra/shared';
-import { ExtractorError, type Extractor, type ExtractorInput } from '../extractor';
+import { ExtractorError, inputBytes, type Extractor, type ExtractorInput } from '../extractor';
 import { decodeImage, encodePng, removeRules } from './image';
 import { rotationNote, uprightGray } from './orientation';
 import { wordsToSegments, type PageText } from './layout';
@@ -85,7 +84,7 @@ export class LocalDocumentExtractor implements Extractor {
   }
 
   async extract(input: ExtractorInput): Promise<ExtractionResult> {
-    const bytes = new Uint8Array(await readFile(input.filePath));
+    const bytes = await inputBytes(input);
     const mime = sniffDocument(bytes);
     if (!mime || mime !== input.mime)
       throw new ExtractorError(
