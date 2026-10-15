@@ -237,7 +237,7 @@ requires `https://`.
 - **Limits.** Size (20 MB), PDF pages (20) and image dimensions (12,000 px a side, 40 MP) are
   enforced before processing.
 - **Storage.** Files are stored under keys made from internal ids (`<documentId>.pdf`), outside
-  any web root, **encrypted at rest** (section 23; required in production).
+  any web root, **encrypted at rest** when data keys are set (section 23).
   - Readers get the bytes in memory: no decrypted copy is ever written to disk.
   - The user's filename is sanitized and kept only as metadata; it never becomes a path.
   - Storage keys are validated (no `..`, no separators), and every read is checked against the
@@ -631,7 +631,7 @@ These are known and **not** addressed by Phase 6C:
 | Document access control, audit, inert headers, opaque ids, traversal, disguised files | `apps/api/src/http/security.test.ts` |
 | No secrets in responses or logs, the redaction helper, safe database error logging | `apps/api/src/http/security.test.ts`, `src/production.test.ts` |
 | Production lock-down (no dev/demo/test routes) | `apps/api/src/http/security.test.ts`, `src/production.test.ts` |
-| Documents encrypted at rest: round trip, fresh keys and IVs, tampering and wrong or unknown keys refused, a file moved to another key refused, legacy plaintext until required, rotation (re-wrap only), no plaintext on disk, production refuses to start without keys, no key in messages or logs | `apps/api/src/storage/encrypted.test.ts` |
+| Documents encrypted at rest: round trip, fresh keys and IVs, tampering and wrong or unknown keys refused, a file moved to another key refused, legacy plaintext until required, rotation (re-wrap only), no plaintext on disk, the two-step rollout (starts without keys with a warning; refuses once required), no key in messages or logs | `apps/api/src/storage/encrypted.test.ts` |
 | The whole workflow with encryption required: upload, reading, verification and download unchanged; only ciphertext on disk; an altered file gives a safe error and no content; ERP-attached invoices stored encrypted, never in the database; deletion removes every copy and the text read, with the checks unchanged | `apps/api/src/storage/encrypted-workflow.test.ts` |
 | Encrypting existing data: dry run changes nothing, verified encryption, database-held invoices moved out, idempotent re-run, key rotation of files and credentials, checksum mismatch left untouched, counts-only report and audit | `apps/api/src/security/encrypt-existing.test.ts` |
 | ERP credentials: encryption, tampering, rotation with previous keys, re-encryption | `apps/api/src/erp-api/secrets.test.ts`, `src/erp-api/sync.test.ts` |
@@ -679,7 +679,11 @@ answers, audit) is **not** encrypted by Veyrafy (section 21).
 
 - **Separate per client.** Each client deployment has its own keys, never shared with another
   client, the demo or staging.
-- **Production refuses to start without data keys.**
+- **Rolled out in two steps** (a release never breaks a running service):
+  1. Without data keys an instance still starts, unencrypted. It warns in the log at every start,
+     and readiness (`/api/v1/system/status`) reports `encryptionAtRest: "off"`.
+  2. Once `VEYRA_ENCRYPT_REQUIRE=true`, missing keys refuse the start and unencrypted files are
+     refused (`encryptionAtRest: "required"`).
 - **Never exposed.** No API, log, error or audit event carries a key, only its id.
 
 **Generate (once per client deployment).**

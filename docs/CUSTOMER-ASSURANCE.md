@@ -23,7 +23,7 @@ in the repository; the "Evidence" column says how each statement is known.*
 | Statement | Evidence |
 |---|---|
 | Each client has its **own** Veyrafy service, database and file storage. One client's data is not reachable from another's. | Deployment (each client is a separate service) |
-| Every stored invoice file is **encrypted by Veyrafy** with its own key (AES-256-GCM), wrapped by a master key that only that client's service holds. Production refuses to start without it. | Code, Test |
+| Every stored invoice file is **encrypted by Veyrafy** with its own key (AES-256-GCM), wrapped by a master key that only that client's service holds. Once encryption is required on a service, it refuses to start without its key. | Code, Test; switched on and required: Deployment |
 | A changed or swapped file is refused rather than shown. | Test |
 | Invoices are read on Veyrafy's own server (text extraction and OCR). No decrypted copy is written to disk. | Code, Test |
 | **No AI service receives invoices by default.** An optional Google AI reader exists; production refuses it unless it is deliberately switched on after the client agrees in writing. | Code, Test |

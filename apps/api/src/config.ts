@@ -384,7 +384,9 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
   if (storageDirRaw !== undefined && deployed && !isAbsolute(storageDirRaw))
     problems.push('VEYRA_STORAGE_DIR must be an absolute path outside development');
 
-  // Documents are encrypted at rest whenever keys are configured; production requires it.
+  // Documents are encrypted at rest whenever keys are configured. Rolled out in two steps
+  // (docs/SECURITY.md §23): without keys an instance still starts, and says so loudly at start and
+  // in readiness; once VEYRA_ENCRYPT_REQUIRE is set, missing keys refuse the start.
   const dataKeys = read('VEYRA_DATA_KEYS');
   const dataKeyActive = read('VEYRA_DATA_KEY_ACTIVE');
   let encryption: StorageConfig['encryption'] = null;
@@ -402,12 +404,10 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
         // KeyringError messages name ids only, never a key.
         problems.push(e instanceof KeyringError ? e.message : 'VEYRA_DATA_KEYS is not valid');
       }
-  } else if (environment === 'production')
+  } else if (read('VEYRA_ENCRYPT_REQUIRE'))
     problems.push(
-      'VEYRA_DATA_KEYS and VEYRA_DATA_KEY_ACTIVE are required in production: documents are encrypted at rest (docs/SECURITY.md)',
+      'VEYRA_ENCRYPT_REQUIRE is true but VEYRA_DATA_KEYS and VEYRA_DATA_KEY_ACTIVE are not set: documents must be encrypted at rest (docs/SECURITY.md §23)',
     );
-  else if (read('VEYRA_ENCRYPT_REQUIRE'))
-    problems.push('VEYRA_ENCRYPT_REQUIRE needs VEYRA_DATA_KEYS');
 
   const erp = deployed ? require('VEYRA_ERP', `in ${environment}`) : (read('VEYRA_ERP') ?? 'fake');
   const demo = read('VEYRA_DEMO') ?? !deployed;

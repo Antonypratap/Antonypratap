@@ -78,6 +78,9 @@ describe('the invoice workflow with documents encrypted at rest', () => {
       await app.server.inject({ method: 'GET', url: `/api/v1/invoices/${invoiceId}` })
     ).json<ApiInvoiceDetail>();
     expect(inv.state).toBe('VERIFIED_PENDING_PAYMENT');
+    // The instance reports that every stored file must be encrypted.
+    const status = await app.server.inject({ method: 'GET', url: '/api/v1/system/status' });
+    expect(status.json()).toMatchObject({ encryptionAtRest: 'required' });
 
     // On disk: only ciphertext, under the document's key, and nothing else (no plaintext copy).
     const [row] = await app.veyra.db

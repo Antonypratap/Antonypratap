@@ -200,7 +200,7 @@ describe('the keyring', () => {
   });
 });
 
-describe('configuration: production requires encryption at rest', () => {
+describe('configuration: encryption at rest, rolled out in two steps', () => {
   const base = {
     NODE_ENV: 'production',
     VEYRA_ENV: 'production',
@@ -220,8 +220,20 @@ describe('configuration: production requires encryption at rest', () => {
     }
   };
 
-  it('refuses to start without data keys, and with a malformed or unknown active key', () => {
-    expect(problems(base)).toMatch(/VEYRA_DATA_KEYS and VEYRA_DATA_KEY_ACTIVE are required/);
+  it('step 1: production without data keys still starts (unencrypted, warned at start and in readiness)', () => {
+    expect(problems(base)).toBe('');
+    const config = load(base);
+    expect(config.storage.encryption).toBeNull();
+    expect(createStorage(config.storage).kind).toBe('local');
+  });
+
+  it('step 2: once encryption is required, missing keys refuse the start', () => {
+    expect(problems({ ...base, VEYRA_ENCRYPT_REQUIRE: 'true' })).toMatch(
+      /VEYRA_ENCRYPT_REQUIRE is true but VEYRA_DATA_KEYS and VEYRA_DATA_KEY_ACTIVE are not set/,
+    );
+  });
+
+  it('refuses a malformed or unknown active key, naming no key', () => {
     expect(problems({ ...base, VEYRA_DATA_KEYS: `k1:${K1}`, VEYRA_DATA_KEY_ACTIVE: 'k9' })).toMatch(
       /VEYRA_DATA_KEY_ACTIVE/,
     );

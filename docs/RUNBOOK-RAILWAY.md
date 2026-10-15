@@ -419,8 +419,19 @@ Starter unless an override is set in Veyrafy Operations.
 ## 16. Encryption at rest and data protection (docs/SECURITY.md §23)
 
 Invoice files are encrypted by Veyrafy before they are stored. Each client's service has its own
-keys. **veyrafy-toit refuses to start without them**, so set the variables (16.1) **before** this
-version is deployed there.
+keys. This is switched on in two steps, so no deploy takes a service down:
+
+1. **This version** runs with or without keys. Without them it stores files unencrypted, and says
+   so at every start (`documents are NOT encrypted at rest`) and in **Operations → status**
+   (`encryptionAtRest: off`). Set the keys (16.1) as soon as it is deployed; setting them before
+   is fine too.
+2. **After 16.2** (existing files encrypted), `VEYRA_ENCRYPT_REQUIRE=true` makes keys mandatory:
+   from then on the service refuses to start without them and refuses any unencrypted file
+   (`encryptionAtRest: required`).
+
+**Health check.** In veyrafy-toit → **Settings → Deploy**, set the health-check path to
+`/api/v1/health/ready`. Railway then keeps the previous version serving if a new one fails to
+start. Confirm in Railway's current documentation that this is how its health checks behave.
 
 ### 16.1 Keys (once per service: veyrafy-toit, and veyrafy-demo)
 

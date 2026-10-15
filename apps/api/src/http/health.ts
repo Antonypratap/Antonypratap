@@ -1,6 +1,6 @@
 import { describeConnection, type ErpConnectionStatus } from '@veyra/erp-connector';
 import type { Environment } from '../config';
-import type { DocumentStorage } from '../storage';
+import { EncryptedDocumentStorage, type DocumentStorage } from '../storage';
 import type { JobRunner } from '../workflow/runner';
 import type { Veyra } from '../workflow/veyra';
 
@@ -34,6 +34,11 @@ export interface ReadinessReport {
    * missing files cannot come back by restarting.
    */
   documents: { checked: number; missing: number } | null;
+  /**
+   * Document encryption at rest: `required` (every file must be encrypted), `on` (new files are;
+   * older ones may not be yet) or `off` (no data keys: files are stored unencrypted).
+   */
+  encryptionAtRest: 'required' | 'on' | 'off';
   /** Connection pool counts (null with the embedded development database). */
   pool: { total: number; idle: number; waiting: number; max: number } | null;
 }
@@ -101,6 +106,12 @@ export function readinessCheck(deps: {
       },
       jobs,
       documents,
+      encryptionAtRest:
+        deps.storage instanceof EncryptedDocumentStorage
+          ? deps.storage.options.requireEncrypted
+            ? 'required'
+            : 'on'
+          : 'off',
       // Counts only (Phase 7): connections open, idle, and requests waiting for one.
       pool: deps.poolStats?.() ?? null,
     };

@@ -129,6 +129,14 @@ await app.warmUp().then(
     ),
 );
 
+// Encryption at rest is rolled out in two steps (docs/SECURITY.md §23): an instance without data
+// keys still runs, but says so at every start until the keys are set.
+if (!config.storage.encryption && config.environment !== 'development')
+  log.warn(
+    { storage: config.storage.kind },
+    'documents are NOT encrypted at rest: set VEYRA_DATA_KEYS and VEYRA_DATA_KEY_ACTIVE (docs/RUNBOOK-RAILWAY.md §16)',
+  );
+
 app.runner.start();
 app.challenge?.start();
 await app.server.listen({ host: config.host, port: config.port });

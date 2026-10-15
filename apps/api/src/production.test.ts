@@ -147,6 +147,8 @@ describe('health', () => {
         erp: { status: 'CONNECTED' },
       },
       jobs: { queued: 0, running: 0, expired: 0, failedLast24h: 0 },
+      // No data keys here: documents are not encrypted at rest, and the status says so.
+      encryptionAtRest: 'off',
     });
     expect(res.body).not.toMatch(/veyra-prod-|\.db|uploads|\/tmp/);
   });
