@@ -340,6 +340,7 @@ type Row = ApiComparison['rows'][number] & {
   /** The invoice field the row compares (a value to confirm is asked as a question). */
   path?: string;
 };
+export type ComparisonRow = Row;
 const money = (p: number | null) => (p === null ? null : formatInr(paise(p)));
 const qty = (m: number | null, uom: string | null) =>
   m === null ? null : `${formatQty(milliQty(m))}${uom ? ` ${uom.toUpperCase()}` : ''}`;
@@ -387,6 +388,8 @@ export function receiptComparison(
   differences: ReceiptDifference[];
   /** Invoice total (before its round-off) less the receipt's total; null when not read. */
   totalDeltaPaise: number | null;
+  /** Every row with the invoice field it compares, when it compares one (the verification API). */
+  rows: readonly ComparisonRow[];
 } {
   const rows: Row[] = [];
   const push = (r: Omit<Row, 'note'> & { note?: string | null }) => rows.push({ note: null, ...r });
@@ -978,7 +981,7 @@ export function receiptComparison(
     confirm,
   }));
   const totalDeltaPaise = beforeRounding === null ? null : beforeRounding - erpTotal;
-  return { comparison, unread, differences, totalDeltaPaise };
+  return { comparison, unread, differences, totalDeltaPaise, rows };
 }
 
 /** The first three differences, then how many more (the table shows every one). */

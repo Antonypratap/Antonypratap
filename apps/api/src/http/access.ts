@@ -4,6 +4,7 @@ import { PLATFORM_ORGANIZATION_ID } from '../db/schema';
 import { safeEqual, type ActiveSession, type SessionStore } from '../auth/sessions';
 import type { Users } from '../auth/users';
 import { VeyraError } from '../workflow/veyra';
+import type { ApiClient } from '../verify/clients';
 
 /**
  * Centralized access control (Phase 6C, docs/SECURITY.md "Authorization").
@@ -21,7 +22,11 @@ import { VeyraError } from '../workflow/veyra';
  * origin (Origin / Sec-Fetch-Site), and every state-changing request with a session must echo the
  * session's CSRF token in the `x-veyra-csrf` header (constant-time comparison).
  */
-export type Access = 'public' | 'session' | Permission;
+/**
+ * Who may call a route: anyone, any signed-in user, a user with a permission, or (`api_client`)
+ * software holding a verification API key (docs/VERIFY-API.md): never a browser session.
+ */
+export type Access = 'public' | 'session' | 'api_client' | Permission;
 
 declare module 'fastify' {
   interface FastifyContextConfig {
@@ -34,6 +39,8 @@ declare module 'fastify' {
   interface FastifyRequest {
     /** The signed-in session, resolved from the cookie (null: nobody). */
     auth: ActiveSession | null;
+    /** The API client, resolved from its key on `api_client` routes (null elsewhere). */
+    apiClient: ApiClient | null;
   }
 }
 
@@ -57,6 +64,10 @@ export interface AccessOptions {
    * are then refused everywhere except their own session (sign out, who am I).
    */
   suspended?: () => Promise<boolean>;
+  /** Verification API keys (null: the API is off, and its routes are not registered). */
+  apiClients?: { authenticate(key: string): Promise<ApiClient | null> } | null;
+  /** API keys only over HTTPS (deployed instances): a key sent in the clear is refused. */
+  apiRequiresHttps?: boolean;
 }
 
 /** `__Host-` binds the cookie to this exact origin (Secure, Path=/, no Domain) where possible. */
@@ -118,9 +129,11 @@ export function actorOf(req: FastifyRequest): string {
 
 export function registerAccessControl(app: FastifyInstance, o: AccessOptions): void {
   app.decorateRequest('auth', null);
+  app.decorateRequest('apiClient', null);
   app.addHook('onRequest', async (req, reply) => {
     const access = req.routeOptions.config.access;
     if (!access) return; // unknown route: the 404 handler answers
+    if (access === 'api_client') return authenticateApiClient(req, reply, o);
     const token = req.cookies[o.cookieName];
     // Health probes never touch sessions (they must answer while the database is down).
     if (req.routeOptions.url?.startsWith('/api/v1/health')) return;
@@ -173,4 +186,38 @@ export function registerAccessControl(app: FastifyInstance, o: AccessOptions): v
       return o.deny(req, reply, 403, 'FORBIDDEN', 'You do not have permission to do this.');
     }
   });
+}
+
+/**
+ * An `api_client` route: the caller is software with a key (`Authorization: Bearer vfy_…`). No
+ * session cookie is read or accepted, so no CSRF token applies; a browser's cross-origin request is
+ * still refused. Keys travel only over HTTPS on a deployed instance.
+ */
+async function authenticateApiClient(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  o: AccessOptions,
+): Promise<FastifyReply | undefined> {
+  if (isUnsafe(req.method) && crossOrigin(req, o.allowedOrigins))
+    return o.deny(req, reply, 403, 'CSRF_REJECTED', 'This request did not come from Veyrafy.');
+  if (o.apiRequiresHttps && req.protocol !== 'https')
+    return o.deny(req, reply, 403, 'HTTPS_REQUIRED', 'Call the Veyrafy API over HTTPS.');
+  const header = req.headers.authorization;
+  const key = typeof header === 'string' && /^Bearer /i.test(header) ? header.slice(7).trim() : '';
+  const client = key && o.apiClients ? await o.apiClients.authenticate(key) : null;
+  if (!client) {
+    void reply.header('www-authenticate', 'Bearer realm="veyrafy"');
+    return o.deny(req, reply, 401, 'UNAUTHENTICATED', 'A valid Veyrafy API key is required.');
+  }
+  if (o.suspended && (await o.suspended()))
+    return o.deny(
+      req,
+      reply,
+      403,
+      'ACCOUNT_SUSPENDED',
+      'This Veyrafy account is suspended. Contact Veyrafy to restore access.',
+    );
+  req.apiClient = client;
+  req.log = req.log.child({ apiClientId: client.id });
+  return undefined;
 }

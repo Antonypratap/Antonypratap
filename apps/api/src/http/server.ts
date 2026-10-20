@@ -90,6 +90,9 @@ import { registerAuthRoutes } from './auth-routes';
 import { DataSources } from '../sources/service';
 import type { ErpApi } from '../erp-api/service';
 import { registerErpApiRoutes } from '../erp-api/routes';
+import type { ApiClients } from '../verify/clients';
+import { registerVerifyRoutes } from '../verify/routes';
+import { ApiRequestError, type VerificationService } from '../verify/service';
 import type { SheetsReader } from '../sources/sheets';
 import {
   auditTable,
@@ -142,6 +145,8 @@ export interface ServerOptions {
   challenge?: ChallengeService | null;
   /** The business's own ERP over its API (docs/ERP-API.md); absent (demo): its routes do not exist. */
   erpApi?: { api: ErpApi; sampleErp: boolean } | null;
+  /** The Client Invoice Verification API (docs/VERIFY-API.md); absent: its routes do not exist. */
+  verify?: { clients: ApiClients; service: VerificationService } | null;
   /**
    * The built web app, served from this same origin (production client instances). Absent: the
    * API serves /api only (development uses the Vite dev server).
@@ -322,6 +327,9 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     organizationId: veyra.organizationId,
     cookieName,
     allowedOrigins,
+    apiClients: options.verify?.clients ?? null,
+    // A deployed instance takes API keys only over HTTPS.
+    apiRequiresHttps: options.environment === 'production' || options.environment === 'staging',
     deny: (req, reply, status, code, message) =>
       reply.status(status).send(error(code, message, {}, req.id)),
   });
@@ -359,6 +367,9 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
           .catch(() => undefined);
       return reply.status(STATUS[err.code]).send(e(err.code, err.message, err.details));
     }
+    // The verification API's refusals: their own status and stable code, never content.
+    if (err instanceof ApiRequestError)
+      return reply.status(err.status).send(e(err.code, err.message, err.details));
     // Commercial refusals (Phase 8A): a business answer, never plan or implementation detail.
     if (err instanceof NotEntitledError || err instanceof LimitReachedError)
       return reply.status(403).send(e(err.code, err.message));
@@ -1044,6 +1055,14 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   app.post('/api/v1/imports/:id/confirm', IMPORTS, async (req) =>
     send(ApiImportSchema, await imports.confirm(Id.parse(req.params).id, actorOf(req))),
   );
+
+  // ── Client Invoice Verification API (docs/VERIFY-API.md) ─────────────────
+  if (options.verify)
+    registerVerifyRoutes(app, {
+      service: options.verify.service,
+      maxUploadBytes,
+      hit: (client) => limiter.hit('upload', `api-client:${client}`),
+    });
 
   // ── The business's own ERP over its API (docs/ERP-API.md) ───────────────
   if (options.erpApi)

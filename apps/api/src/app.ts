@@ -36,6 +36,8 @@ import type { WebFiles } from './http/web-static';
 import { DEFAULT_SETTINGS, DEMO_SETTINGS, Veyra } from './workflow/veyra';
 import { ErpApi } from './erp-api/service';
 import { switchableErp } from './erp-api/switchable';
+import { ApiClients } from './verify/clients';
+import { VerificationService } from './verify/service';
 import { ErpConfigurationError } from '@veyra/erp-connector';
 import { networkTransport, type HttpPolicy, type Transport } from './erp-api/http';
 import { SAMPLE_BASE_URL, sampleErpTransport } from './erp-api/sample/api';
@@ -132,6 +134,8 @@ export interface AppConfig {
    * The business's own ERP over its API (docs/ERP-API.md). Absent: defaults (no secrets key, so
    * no credentials can be saved). Never used in demo mode, which always uses the built-in records.
    */
+  /** The Client Invoice Verification API (VEYRA_VERIFY_API); off unless set. */
+  verifyApi?: boolean;
   erpApi?: {
     secretsKey: Secret | null;
     /** Earlier credential keys, still read during a rotation. */
@@ -356,9 +360,26 @@ export async function createApp(config: AppConfig) {
   const commercial = new CommercialAdmin(db, veyra.entitlements, veyra.clock);
   // A fresh ERP file gets the DEMO.md seed.
   if ((await erp.listVendors()).length === 0 && demoMode) erp.reset('demo');
+  // The Client Invoice Verification API (docs/VERIFY-API.md): only when switched on. It reads with
+  // the local reader only (no AI service), whatever reader the product itself uses.
+  const verify = config.verifyApi
+    ? {
+        clients: new ApiClients(db, () => veyra.now()),
+        service: new VerificationService({
+          db,
+          storage,
+          extractor: localExtractor,
+          now: () => veyra.now(),
+          maxUploadBytes: veyra.maxUploadBytes,
+          minConfidenceBp: async () => (await veyra.settings()).confidenceMinBp,
+          ...(config.log ? { log: config.log.child({ component: 'verify' }) } : {}),
+        }),
+      }
+    : null;
   const runner = new JobRunner(veyra, {
     ...(config.log ? { logger: config.log.child({ component: 'jobs' }) } : {}),
     ...(config.jobs ? { leaseMs: config.jobs.leaseMs } : {}),
+    ...(verify ? { extra: () => verify.service.processNext() } : {}),
   });
   if (config.log) {
     const log = config.log;
@@ -471,6 +492,7 @@ export async function createApp(config: AppConfig) {
   const cookieSecure = config.auth?.cookieSecure ?? environment !== 'development';
   const server = await buildServer({
     erpApi: erpApi ? { api: erpApi, sampleErp: sampleOn } : null,
+    verify,
     sheets: {
       reader: config.sheets?.reader ?? null,
       refreshMinutes: config.sheets?.refreshMinutes ?? 15,

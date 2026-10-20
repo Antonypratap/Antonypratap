@@ -22,6 +22,11 @@ export interface JobRunnerOptions {
   logger?: JobLogger;
   /** A claimed job not heard from for this long is treated as abandoned and re-queued. */
   leaseMs?: number;
+  /**
+   * Other work done by this loop when no invoice job is ready (the verification API's queue,
+   * docs/VERIFY-API.md). Returns false when it had nothing to do.
+   */
+  extra?: () => Promise<boolean>;
 }
 
 /**
@@ -52,6 +57,7 @@ export class JobRunner {
   #current: { jobId: string; done: Promise<unknown> } | null = null;
   #lastTick: number | null = null;
   readonly #log: JobLogger;
+  readonly #extra: (() => Promise<boolean>) | null;
   readonly leaseMs: number;
 
   constructor(
@@ -59,6 +65,7 @@ export class JobRunner {
     options: JobRunnerOptions = {},
   ) {
     this.#log = options.logger ?? silent;
+    this.#extra = options.extra ?? null;
     this.leaseMs = options.leaseMs ?? 5 * 60 * 1000;
   }
 
@@ -66,7 +73,7 @@ export class JobRunner {
   async step(): Promise<boolean> {
     if (this.#stopping) return false;
     const job = await this.veyra.claimJob();
-    if (!job) return false;
+    if (!job) return this.#extraStep();
     const started = Date.now();
     const context = {
       jobId: job.id,
@@ -112,6 +119,17 @@ export class JobRunner {
       this.#current = null;
     }
     return true;
+  }
+
+  /** The extra work (verifications), when there is no invoice job. It never throws. */
+  async #extraStep(): Promise<boolean> {
+    if (!this.#extra) return false;
+    try {
+      return await this.#extra();
+    } catch (error) {
+      this.#log.error({ code: safeErrorCode(error) }, 'verification step failed');
+      return false;
+    }
   }
 
   /**

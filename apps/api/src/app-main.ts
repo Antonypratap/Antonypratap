@@ -46,6 +46,7 @@ try {
     migrate: config.migrateOnStart,
     storage: createStorage(config.storage),
     storageFor: (dir) => createStorage(config.storage, dir),
+    verifyApi: config.verifyApi,
     demo: config.demo,
     demoBusiness: config.demoBusiness,
     allowFixtureExtractor: config.allowFixtureExtractor,

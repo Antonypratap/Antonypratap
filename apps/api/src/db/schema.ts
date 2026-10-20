@@ -1258,3 +1258,81 @@ export const erpSyncIssues = pgTable(
     index('erp_sync_issues_run').on(t.runId),
   ],
 );
+
+// ── Client Invoice Verification API (docs/VERIFY-API.md) ──────────────────────
+
+/**
+ * Software that calls the verification API on the business's behalf (e.g. an ERP partner). Its
+ * key is shown once when created and stored only as a SHA-256 hash; the prefix finds the row.
+ */
+export const apiClients = pgTable(
+  'api_clients',
+  {
+    seq: seq(),
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    keyPrefix: text('key_prefix').notNull().unique(),
+    keyHash: text('key_hash').notNull(),
+    status: text('status').notNull(),
+    createdAt: isoTimestamp('created_at').notNull(),
+    revokedAt: isoTimestamp('revoked_at'),
+    lastUsedAt: isoTimestamp('last_used_at'),
+  },
+  (t) => [check('api_clients_status', inList(t.status, ['active', 'revoked']))],
+);
+
+/**
+ * One verification: an invoice read by Veyrafy compared with the client's reference record. The
+ * row is also the unit of work (claimed with a lease by the job runner's loop). The invoice file
+ * is kept in (encrypted) document storage only until it has been read.
+ */
+export const verifications = pgTable(
+  'verifications',
+  {
+    seq: seq(),
+    id: text('id').primaryKey(),
+    clientId: text('client_id')
+      .notNull()
+      .references(() => apiClients.id),
+    referenceId: text('reference_id').notNull(),
+    /** The client's Idempotency-Key, or a hash of the request when it sent none. */
+    idempotencyKey: text('idempotency_key').notNull(),
+    /** SHA-256 of what was submitted (reference id, invoice, reference): a replay must match it. */
+    requestHash: text('request_hash').notNull(),
+    documentSha256: text('document_sha256').notNull(),
+    mime: text('mime').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    /** The invoice in document storage while it waits to be read; null afterwards. */
+    storageKey: text('storage_key'),
+    /** The reference record as received (normalised, attachments removed); null once deleted. */
+    referenceJson: text('reference_json'),
+    processingStatus: text('processing_status').notNull(),
+    status: text('status'),
+    resultJson: text('result_json'),
+    errorCode: text('error_code'),
+    attempts: integer('attempts').notNull(),
+    runAfter: isoTimestamp('run_after').notNull(),
+    lockedAt: isoTimestamp('locked_at'),
+    createdAt: isoTimestamp('created_at').notNull(),
+    completedAt: isoTimestamp('completed_at'),
+    deletedAt: isoTimestamp('deleted_at'),
+  },
+  (t) => [
+    check(
+      'verifications_processing_status',
+      inList(t.processingStatus, ['processing', 'completed', 'error', 'deleted']),
+    ),
+    check(
+      'verifications_status',
+      sql`${t.status} IS NULL OR ${t.status} IN ('PASSED', 'FAILED', 'REVIEW_REQUIRED')`,
+    ),
+    // An outcome exists only for a completed verification.
+    check(
+      'verifications_outcome',
+      sql`(${t.status} IS NOT NULL) = (${t.processingStatus} = 'completed')`,
+    ),
+    uniqueIndex('verifications_idempotency').on(t.clientId, t.idempotencyKey),
+    index('verifications_client').on(t.clientId, t.createdAt),
+    index('verifications_queue').on(t.processingStatus, t.runAfter),
+  ],
+);

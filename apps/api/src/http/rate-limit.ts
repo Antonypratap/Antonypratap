@@ -47,6 +47,7 @@ export function bucketOf(method: string, route: string | undefined): RateBucket 
   if (route === '/api/v1/challenge' || route === '/api/v1/challenge/claim') return 'login';
   if (
     route === '/api/v1/documents' ||
+    route === '/api/v1/verify' ||
     route === '/api/v1/imports' ||
     route === '/api/v1/challenge/me/invoices' ||
     route === '/api/v1/challenge/me/records'

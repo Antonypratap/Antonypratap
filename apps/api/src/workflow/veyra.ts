@@ -58,6 +58,7 @@ import type {
 } from '../engine/types';
 import { assertTransition } from './state-machine';
 import { canRecordInvoices, readOnlyQuestions } from './read-only';
+import { invoiceSideFrom } from './invoice-side';
 import { redactEvidence, redactReading } from './redact';
 import { parseAnswerInput } from './answers';
 import { executeCommit, type CommitHooks } from './commit';
@@ -68,7 +69,6 @@ import {
   normalizeReceipt,
   pickRecord,
   sameName,
-  toPaise,
   type InvoiceSide,
   type ReceiptRecord,
 } from './erp-receipts';
@@ -2099,20 +2099,6 @@ export class Veyra {
   async invoiceSide(invoiceId: string): Promise<InvoiceSide> {
     const f = await this.loadFields(this.db, invoiceId);
     const min = (await this.settings()).confidenceMinBp;
-    const v = <T extends string | number>(path: string) =>
-      readField<T>(f, path as never, min).value;
-    // Printed but not read with certainty: never taken as "not printed" (zero) by the comparison.
-    const unclear = [
-      'header.taxablePaise',
-      'header.cgstPaise',
-      'header.sgstPaise',
-      'header.igstPaise',
-      'header.roundOffPaise',
-      'header.totalPaise',
-    ].filter((path) => {
-      const state = readField(f, path as never, min).state;
-      return state !== 'usable' && state !== 'absent';
-    });
     const lines = await this.db
       .select({ lineNo: t.invoiceLines.lineNo })
       .from(t.invoiceLines)
@@ -2130,35 +2116,12 @@ export class Veyra {
       ? ((JSON.parse(x.rawJson) as { otherFields?: { label: string; value: string }[] })
           .otherFields ?? [])
       : [];
-    const freight = other
-      .filter((o) => /freight|cartage|carriage|transport/i.test(o.label))
-      .map((o) => toPaise(o.value.replace(/[₹\s]|Rs\.?/gi, '')))
-      .filter((p): p is number => p !== null);
-    return {
-      vendorName: v<string>('header.vendorName'),
-      vendorGstin: v<string>('header.vendorGstin'),
-      invoiceNumber: v<string>('header.invoiceNumber'),
-      invoiceDate: v<string>('header.invoiceDate'),
-      poNumber: v<string>('header.poNumber'),
-      taxablePaise: v<number>('header.taxablePaise'),
-      cgstPaise: v<number>('header.cgstPaise'),
-      sgstPaise: v<number>('header.sgstPaise'),
-      igstPaise: v<number>('header.igstPaise'),
-      roundOffPaise: v<number>('header.roundOffPaise'),
-      totalPaise: v<number>('header.totalPaise'),
-      freightPaise: freight.length ? freight.reduce((a, b) => a + b, 0) : null,
-      unclear,
-      lines: lines.map(({ lineNo }) => ({
-        lineNo,
-        description: v<string>(`lines[${lineNo}].description`),
-        hsnSac: v<string>(`lines[${lineNo}].hsnSac`),
-        uom: v<string>(`lines[${lineNo}].uom`),
-        qtyMilli: v<number>(`lines[${lineNo}].qtyMilli`),
-        unitPricePaise: v<number>(`lines[${lineNo}].unitPricePaise`),
-        taxablePaise: v<number>(`lines[${lineNo}].taxablePaise`),
-        gstRateBp: v<number>(`lines[${lineNo}].gstRateBp`),
-      })),
-    };
+    return invoiceSideFrom(
+      f,
+      lines.map((l) => l.lineNo),
+      other,
+      min,
+    );
   }
 
   /**
@@ -2565,7 +2528,7 @@ const CLAIM_LOCK = 7_665_001;
  * must end properly (a truncated upload has no end-of-file marker). Page count, encryption and
  * damaged content are found while reading, and fail the invoice visibly.
  */
-function checkDocumentShape(
+export function checkDocumentShape(
   bytes: Uint8Array,
   mime: 'application/pdf' | 'image/png' | 'image/jpeg',
 ) {

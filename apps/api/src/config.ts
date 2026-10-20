@@ -156,6 +156,8 @@ export interface VeyraConfig {
    * `syncMinutes` and checks wait when its records are older than `maxAgeMinutes`. `sampleErp`
    * offers the built-in Sample ERP (for showing prospects, e.g. dev.veyrafy.com).
    */
+  /** The Client Invoice Verification API (docs/VERIFY-API.md): off unless VEYRA_VERIFY_API=true. */
+  verifyApi: boolean;
   erpApi: {
     secretsKey: Secret | null;
     /** VEYRA_SECRETS_KEYS_PREVIOUS: earlier keys, still read during a rotation. Never logged. */
@@ -294,6 +296,7 @@ const VARS = {
   VEYRA_DATA_KEYS: z.string().trim().min(10).max(4000),
   VEYRA_DATA_KEY_ACTIVE: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,15}$/),
   VEYRA_ENCRYPT_REQUIRE: bool,
+  VEYRA_VERIFY_API: bool,
   VEYRA_ERP_SYNC_MINUTES: int(5, 24 * 60),
   VEYRA_ERP_SYNC_MAX_AGE_MINUTES: int(5, 7 * 24 * 60),
   VEYRA_SAMPLE_ERP: bool,
@@ -555,6 +558,7 @@ export function loadConfig(env: Env, defaults: { dataDir: string }): VeyraConfig
       serviceAccount: googleAccountOf(read('VEYRA_GOOGLE_SERVICE_ACCOUNT'), problems),
       refreshMinutes: read('VEYRA_SHEETS_REFRESH_MINUTES') ?? 15,
     },
+    verifyApi: read('VEYRA_VERIFY_API') ?? false,
     erpApi: {
       secretsKey: secretsKeyOf(read('VEYRA_SECRETS_KEY')),
       previousSecretsKeys: secretsKeyOf(read('VEYRA_SECRETS_KEYS_PREVIOUS')),
@@ -780,6 +784,7 @@ export function describeConfig(c: VeyraConfig) {
     email: c.email ? c.email.provider : 'off',
     googleSheets: c.sheets.serviceAccount !== null,
     erpApi: { secretsKey: c.erpApi.secretsKey !== null, sampleErp: c.erpApi.sampleErp },
+    verifyApi: c.verifyApi,
   };
 }
 

@@ -182,6 +182,32 @@ value from the request. The audit trail records that user.
 Tests: `src/http/security.test.ts` ("authorization"). The test walks every route and checks that
 it refuses anonymous requests, then checks each role.
 
+### Verification API clients (implemented, off by default)
+
+The Client Invoice Verification API ([VERIFY-API.md](VERIFY-API.md)) is called by software, not
+people. It exists only with `VEYRA_VERIFY_API=true`.
+
+- **Keys:** `vfy_<prefix>_<256-bit random secret>`, issued and revoked only with the server CLI
+  (`npm run api-clients`). Only the key's SHA-256 is stored; a key is compared in constant time and
+  shown once. Creation and revocation are audited (`api_client.created`, `api_client.revoked`).
+- **Route access `api_client`:** only `Authorization: Bearer`; no session cookie is read, so no
+  CSRF token applies, but a browser cross-origin request is still refused. HTTPS is required on
+  production and staging instances (`403 HTTPS_REQUIRED`), relying on the trusted-proxy setting
+  for the forwarded protocol. A suspended organization is refused.
+- **Client isolation:** every verification row carries its client id, and every read and delete
+  filters by it; another client's id answers 404. This is application-level filtering tested in
+  `verify/verify.test.ts`, not database row-level security.
+- **No workflow side effects:** a verification never creates an invoice, document, supplier,
+  question or ERP record, and the invoice is read by the local reader only.
+- **Limits:** submissions are rate-limited per key and per address (the `upload` bucket, §16);
+  the reference is at most 1 MB; the file has the same type, size and shape checks as uploads.
+  The invoice may also arrive as base64 inside the reference (`images`), so this one route takes
+  bodies up to about 28 MB; the API key is checked before any body is read, and the base64 is
+  decoded, checked like an upload and never stored with the reference.
+- **Retention:** the invoice file is deleted once read. The reference (without attachments) and
+  the result stay until the client deletes the verification, which leaves a tombstone and an
+  audit event (`verify.deleted`). There is no automatic expiry yet.
+
 ## 7. CSRF, origins and CORS (implemented)
 
 Authentication uses cookies, so cross-site request forgery is addressed in three layers:
@@ -450,6 +476,10 @@ These are recorded in `security_events` and shown to ADMINs at `GET /api/v1/secu
 - `password.changed`, `password.reset`;
 - `access.denied` (method, route, permission);
 - `document.accessed` (document id).
+
+The verification API's events (`api_client.created`, `api_client.revoked`, `verify.submitted`,
+`verify.completed`, `verify.error`, `verify.deleted`) are in `audit_events` with no invoice, and
+carry ids, counts and codes only.
 
 Invoice rejection and reprocessing, answered questions and ERP writes (attempt, result, conflict,
 reconciliation) are already recorded in the workflow trail (`audit_events`), with the acting user.

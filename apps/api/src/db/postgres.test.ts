@@ -97,6 +97,8 @@ const TABLES: PgTable[] = [
   t.erpSyncRuns,
   t.erpSyncState,
   t.erpSyncIssues,
+  t.apiClients,
+  t.verifications,
 ];
 
 describe('schema and migrations', () => {
