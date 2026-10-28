@@ -720,9 +720,11 @@ export function receiptComparison(
       path: `lines[${l.lineNo}].taxablePaise`,
     });
   }
-  const lineTaxable = inv.lines.every((l) => l.taxablePaise !== null)
-    ? inv.lines.reduce((s, l) => s + (l.taxablePaise ?? 0), 0)
-    : null;
+  // No line read is not a sum of zero: the goods value is then unknown, never ₹0.00.
+  const lineTaxable =
+    inv.lines.length > 0 && inv.lines.every((l) => l.taxablePaise !== null)
+      ? inv.lines.reduce((s, l) => s + (l.taxablePaise ?? 0), 0)
+      : null;
   // The goods value as printed; else, when every line amount was read, their sum (labelled so).
   // A taxable value printed with the freight in it is the lines' value plus that freight.
   const printedTaxable = inv.taxablePaise ?? null;

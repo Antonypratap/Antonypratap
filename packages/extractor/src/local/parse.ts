@@ -168,13 +168,21 @@ const L = {
   // "Buyer's Order No." (Tally) is the purchase order; a bare "Order No." may be the seller's own.
   po: /^(?:buyer'?s\s+)?(?:p\.?\s?o\.?|purchase\s+order|(?<=buyer'?s\s+)order)\s*(?:no|number|ref(?:erence)?|#)?\.?\s*[:\-.#]?\s*(.*)$/i,
   pos: /^place\s+of\s+supply\s*[:\-.]?\s*(.*)$/i,
-  billTo: /^(bill(?:ed)?\s*to|buyer|invoice\s+to|billing\s+address|customer)\b\s*[:-]?\s*(.*)$/i,
+  // A bare "To," on its own (a letter-style buyer block) is the bill-to label too.
+  billTo:
+    /^(bill(?:ed)?\s*to|buyer|invoice\s+to|billing\s+address|customer|to(?=\s*[:,.-]?\s*$))\b\s*[:,.-]?\s*(.*)$/i,
   shipTo: /^(ship(?:ped)?\s*to|consignee|deliver(?:y)?\s*(?:to|address))\b\s*[:-]?\s*(.*)$/i,
   gstin: /^(?:gstin|gst\s*(?:no|number|in)|gstin\/uin)\.?\s*[:\-.]?\s*(.*)$/i,
   pan: /^pan(?:\s*no)?\.?\s*[:\-.]?\s*(.*)$/i,
   state: /^state(?:\s*(?:name|code))?\s*[:\-.]?\s*(.*)$/i,
   contact: /^(phone|ph|tel|mobile|mob|email|e-mail|web|www|cin|msme|udyam)\b/i,
+  // Registration numbers printed in the header: never the supplier's name.
+  registration:
+    /^(msme|udyam|udyog|cin|fssai|iec|lut|tan|llpin|reg(?:istration|d)?|lic(?:ence|ense)?|drug\s+lic)\b|^[a-z .&/]{2,30}\b(?:no|number|code|id)\.?\s*[:-]/i,
 };
+
+/** A line's text without leading bullets, bars or other marks, for testing what it is. */
+const lead = (t: string) => t.replace(/^[^A-Za-z0-9₹]+/, '');
 
 const TOTALS = {
   // "Basic Value" / "Basic Amount" (Tally), "Goods Value", "Assessable Value": the goods subtotal.
@@ -229,11 +237,13 @@ function labelled(
         .sort((a, b) => a.y0 - b.y0)[0];
       const next = right ?? below;
       if (!next) continue;
-      const v = accept(clean(next.text));
+      // "Date      : 04/04/2026": the separator printed apart from its label opens the value.
+      const text = clean(next.text).replace(/^[:\-.#]+\s*/, '');
+      const v = accept(text);
       found.push({
         value: v ?? '',
         segs: [s, next],
-        spelled: clean(next.text).split(/\s+/)[0] ?? '',
+        spelled: text.split(/\s+/)[0] ?? '',
       });
     }
   }
@@ -823,15 +833,21 @@ export function parseInvoice(pages: readonly PageText[]): ParsedInvoice {
     )
     .sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0);
 
-  const nameSeg = sellerSegs.find(
-    (s) =>
-      /[A-Za-z]{2}/.test(s.text) &&
-      !isMeta(s.text) &&
-      !L.gstin.test(s.text) &&
-      !L.pan.test(s.text) &&
-      !L.contact.test(s.text) &&
-      !L.state.test(s.text),
-  );
+  // The supplier's name: a line with letters that is not a label, an ID or contact details; the
+  // largest such heading when one clearly stands out (a letterhead prints the name biggest).
+  const nameCands = sellerSegs.filter((s) => {
+    const t = lead(s.text);
+    return (
+      /[A-Za-z]{2}/.test(t) &&
+      !isMeta(t) &&
+      !L.gstin.test(t) &&
+      !L.pan.test(t) &&
+      !L.contact.test(t) &&
+      !L.registration.test(t) &&
+      !L.state.test(t)
+    );
+  });
+  const nameSeg = nameCands[0];
   const vendorGstin = single(gstinsIn(sellerSegs));
   if (vendorGstin.ambiguous) warnings.push('More than one supplier GSTIN is printed.');
   const panCands = sellerSegs
@@ -909,6 +925,21 @@ export function parseInvoice(pages: readonly PageText[]): ParsedInvoice {
     roundOff: total(TOTALS.roundOff, true),
     total: total(TOTALS.total),
   };
+  // GST is at most 28% of the goods value (14% for each of CGST and SGST), and the goods value is at
+  // most the invoice total: a "tax" read larger than that is the supply value printed beside it in
+  // a tax summary box, not the tax. It is then not read (asked), never a wrong value. Paise.
+  const base = totals.taxable.value ?? totals.total.value;
+  for (const [head, limit] of [
+    ['cgst', 0.14],
+    ['sgst', 0.14],
+    ['igst', 0.28],
+  ] as const) {
+    const t = totals[head];
+    if (base !== null && base > 0 && t.value !== null && t.value > base * limit + 100) {
+      totals[head] = { ...t, value: null, unreadable: true };
+      warnings.push(`The ${head.toUpperCase()} amount read is larger than GST can be: not read.`);
+    }
+  }
   const fromFooter = footerRate(lines, totalRows, totals);
   if (fromFooter) warnings.push(fromFooter);
   for (const [k, t] of Object.entries(totals))

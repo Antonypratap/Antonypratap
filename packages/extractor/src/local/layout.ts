@@ -88,6 +88,14 @@ export function valueConf(segs: readonly Segment[], value: string): number {
 }
 
 /**
+ * Vertical table rules that OCR reads as characters: a stand-alone bar, or one stuck to a word
+ * ("|Quantity", "MSME|"). Left in, they break every label and number read at the start or end of a
+ * word. Only bar shapes are removed; letters and digits are never touched.
+ */
+const RULE_CHARS = /^[|¦‖│┃]+|[|¦‖│┃]+$/g;
+export const withoutRules = (text: string): string => text.replace(RULE_CHARS, '').trim();
+
+/**
  * OCR words → segments: words on one OCR line merge while the gap between them is small (about
  * one character height); a wider gap starts a new segment (another column of the layout).
  */
@@ -97,7 +105,10 @@ export function wordsToSegments(
 ): Segment[] {
   const out: Segment[] = [];
   for (const line of lines) {
-    const words = line.words.filter((w) => w.text.trim() !== '').sort((a, b) => a.x0 - b.x0);
+    const words = line.words
+      .map((w) => ({ ...w, text: withoutRules(w.text) }))
+      .filter((w) => w.text !== '')
+      .sort((a, b) => a.x0 - b.x0);
     let run: Segment[] = [];
     const flush = () => {
       if (run.length) out.push(joinSegments(run));

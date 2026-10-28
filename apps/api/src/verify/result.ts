@@ -76,6 +76,26 @@ function referenceWording(text: string | null): string | null {
     .replace(/\bERP\b/g, 'reference');
 }
 
+/**
+ * A supplier name that reads like a registration or contact line ("MSME No: UDYAM-…", "PAN:
+ * AAKCE…", a table rule "|"): the name was misread, so a difference is not proven.
+ */
+export function looksLikeLabel(name: string | null): boolean {
+  if (name === null) return false;
+  const t = name.trim();
+  return (
+    /^[|¦‖│┃:]/.test(t) ||
+    /\b(msme|udyam|udyog|gstin|pan|cin|fssai|iec|tan|phone|ph|tel|mobile|mob|e-?mail)\b\s*(no\.?|number)?\s*[:-]/i.test(
+      t,
+    ) ||
+    /^[^:]{0,30}\b(no|number|code|id)\.?\s*:/i.test(t) ||
+    /\d{6,}/.test(t)
+  );
+}
+
+const SELF_CHECK_FAILED =
+  "The invoice's own figures do not add up as Veyrafy read them, so this may be a reading error rather than a real difference. Check it against the invoice.";
+
 const slug = (s: string) =>
   s
     .toLowerCase()
@@ -125,6 +145,22 @@ export function verificationOutcome(
   inv: InvoiceSide,
   totalDeltaPaise: number | null,
 ): VerificationOutcome {
+  // When the invoice disagrees with itself as read (its lines, tax and total do not add up), a
+  // difference in its figures may be a misreading: asked, never reported as a proven failure.
+  // The tax heads are checked too, as GST allows: CGST and SGST are always equal, and no head can be
+  // more than its highest rate (14%, or 28% for IGST) of the invoice total, which includes it.
+  const total = inv.totalPaise;
+  const taxImpossible =
+    (inv.cgstPaise !== null && inv.sgstPaise !== null && inv.cgstPaise !== inv.sgstPaise) ||
+    (total !== null &&
+      total > 0 &&
+      ((inv.cgstPaise ?? 0) > total * 0.14 ||
+        (inv.sgstPaise ?? 0) > total * 0.14 ||
+        (inv.igstPaise ?? 0) > total * 0.28));
+  const selfInconsistent =
+    taxImpossible ||
+    rows.some((r) => r.section === 'Invoice arithmetic' && r.result === 'mismatch');
+  const nameMisread = looksLikeLabel(inv.vendorName);
   const used = new Map<string, number>();
   const checks: (Check & { row: ComparisonRow })[] = [];
   for (const r of rows) {
@@ -144,6 +180,24 @@ export function verificationOutcome(
       result = 'unverified';
       reason =
         'No item lines were read on the invoice with certainty, so the items could not be compared.';
+    }
+    if (
+      result === 'failed' &&
+      selfInconsistent &&
+      (r.section === 'Invoice arithmetic' || r.section === 'Totals')
+    ) {
+      result = 'unverified';
+      reason = SELF_CHECK_FAILED;
+    }
+    if (
+      result === 'failed' &&
+      nameMisread &&
+      r.path === 'header.vendorName' &&
+      r.label === 'Name'
+    ) {
+      result = 'unverified';
+      reason =
+        'The supplier name read looks like a registration or contact line, not a name, so it could not be compared. Check it against the invoice.';
     }
     const section = referenceWording(r.section) ?? r.section;
     const label = referenceWording(r.label) ?? r.label;
