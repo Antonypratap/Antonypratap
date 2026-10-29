@@ -44,13 +44,13 @@ export function Questions() {
                       ? ASK_LABEL[inv.question.kind]
                       : inv.failure
                         ? 'Veyrafy couldn’t finish'
-                        : 'Checked against your ERP'}
+                        : 'Checked against your records'}
                   </span>
                   <span className={styles.summary}>
                     {inv.question?.headline ??
                       (inv.failure
                         ? 'Check the file and try again, or reject it.'
-                        : 'It does not match your ERP yet. Review the differences, then reject it or check it again.')}
+                        : 'It does not match your records yet. Review the differences, then reject it or check it again.')}
                   </span>
                   <span className={styles.evidence}>
                     {inv.question?.evidence ?? inv.failure?.reason}

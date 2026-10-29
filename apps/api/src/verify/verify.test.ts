@@ -344,6 +344,15 @@ describe('the invoice sent as base64 inside the reference', () => {
     expect(row?.referenceJson ?? '').not.toContain('JVBERi0');
   });
 
+  it('a single record sent without the `data` wrapper is the same verification', async () => {
+    const [record] = withImages([doc('D01-clean-text.pdf')]).data;
+    const res = await json({ reference_id: 'PO-7701/INV-501-U', ...record }, 'json-unwrapped');
+    expect(res.statusCode, res.body).toBe(202);
+    await app.runner.drain();
+    const v = (await get(res.json<VerificationView>().verification_id)).json<VerificationView>();
+    expect(v).toMatchObject({ processing_status: 'completed', status: 'PASSED' });
+  });
+
   it('a data URL and line breaks in the base64 are accepted; the same request by multipart is the same verification', async () => {
     const file = doc('D01-clean-text.pdf');
     const ref = withImages([file]);

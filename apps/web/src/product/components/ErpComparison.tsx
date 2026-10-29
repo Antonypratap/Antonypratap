@@ -52,7 +52,7 @@ export function ErpComparison({
           <p className={styles.eyebrow}>
             {comparison.source === 'erp_receipt'
               ? 'Checked against your ERP’s goods receipt'
-              : 'Checked against your ERP'}
+              : 'Checked against your ERP and your company details'}
           </p>
           <h2 id="erp-check-title" className={styles.headline}>
             {comparison.headline}
@@ -127,7 +127,9 @@ export function ErpComparison({
               <tr>
                 <th scope="col">Check</th>
                 <th scope="col">On the invoice</th>
-                <th scope="col">In your ERP</th>
+                <th scope="col">
+                  {comparison.source === 'erp_receipt' ? 'In your ERP receipt' : 'Your records'}
+                </th>
                 <th scope="col" className={styles.resultHead}>
                   Result
                 </th>

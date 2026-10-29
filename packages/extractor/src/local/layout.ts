@@ -17,7 +17,7 @@ export interface Segment {
   conf: number;
   source: Extract<ExtractionMethod, 'pdf_text' | 'tesseract'>;
   /** OCR only: each word with its own confidence, so a value is scored by its own words. */
-  words?: { text: string; conf: number }[];
+  words?: { text: string; conf: number; x0?: number; x1?: number }[];
 }
 
 export interface PageText {
@@ -65,7 +65,11 @@ export function joinSegments(parts: readonly Segment[], sep = ' '): Segment {
     conf: Math.min(...parts.map((p) => p.conf)),
     source: parts.some((p) => p.source === 'tesseract') ? 'tesseract' : 'pdf_text',
     ...(parts.some((p) => p.words)
-      ? { words: parts.flatMap((p) => p.words ?? [{ text: p.text, conf: p.conf }]) }
+      ? {
+          words: parts.flatMap(
+            (p) => p.words ?? [{ text: p.text, conf: p.conf, x0: p.x0, x1: p.x1 }],
+          ),
+        }
       : {}),
   };
 }
@@ -121,7 +125,7 @@ export function wordsToSegments(
         text,
         page,
         source: 'tesseract',
-        words: [{ text, conf: w.conf }],
+        words: [{ text, conf: w.conf, x0: w.x0, x1: w.x1 }],
       };
       const prev = run.at(-1);
       const h = Math.max(height(seg), prev ? height(prev) : 0, 1);

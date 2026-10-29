@@ -495,16 +495,25 @@ describe('reconciliation states: match, mismatch, unmatched, to confirm, not com
   });
 
   it('a round-off or tax printed but not read is asked, never taken as zero', () => {
-    // As a scan may read it: the round-off (-0.40) printed but not read with certainty.
+    // As a scan may read it: the round-off (-0.40) printed but not read with certainty. The total
+    // (5,640.00) is the lines and tax (5,640.40) rounded to the rupee, as a round-off makes it:
+    // compared so, never with the round-off taken as zero.
     const inv = invoice({ roundOffPaise: null, unclear: ['header.roundOffPaise'] });
     const r = receiptComparison(inv, erp());
-    expect(r.comparison).toMatchObject({ verdict: 'incomplete', mismatched: 0 });
-    expect(find(r, /arithmetic/, 'Lines + tax + round-off = total')?.result).toBe(
+    expect(r.comparison).toMatchObject({ mismatched: 0 });
+    expect(find(r, /arithmetic/, 'Lines + tax + round-off = total')?.result).toBe('match');
+    expect(find(r, /Totals/, 'Invoice total')?.result).toBe('match');
+    expect(r.totalDeltaPaise).toBeNull();
+    // A total that is not the rest rounded to the rupee: asked.
+    const odd = receiptComparison(
+      invoice({ roundOffPaise: null, totalPaise: 564_100, unclear: ['header.roundOffPaise'] }),
+      erp(),
+    );
+    expect(find(odd, /arithmetic/, 'Lines + tax + round-off = total')?.result).toBe(
       'needs_confirmation',
     );
-    expect(find(r, /Totals/, 'Invoice total')?.result).toBe('needs_confirmation');
-    expect(r.unread).toContain('header.roundOffPaise');
-    expect(r.totalDeltaPaise).toBeNull();
+    expect(find(odd, /Totals/, 'Invoice total')?.result).toBe('needs_confirmation');
+    expect(odd.unread).toContain('header.roundOffPaise');
     // Truly not printed (not listed as unclear): zero, and the total does not add up by 0.40.
     const absent = receiptComparison(invoice({ roundOffPaise: null }), erp());
     expect(find(absent, /arithmetic/, 'Lines + tax + round-off = total')?.result).toBe('mismatch');

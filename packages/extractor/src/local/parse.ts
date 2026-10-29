@@ -7,8 +7,10 @@ import {
   type ExtractedLine,
   type ExtractionMethod,
 } from '@veyra/shared';
+import { resolveStateCode } from '@veyra/india-tax';
 import { ExtractorError } from '../extractor';
 import {
+  height,
   joinSegments,
   rows,
   unitOf,
@@ -129,6 +131,8 @@ export function parseAmount(text: string, allowNegative = false): number | null 
     t = t.slice(1);
   }
   t = t.replace(/^(₹|rs\.?|inr)/i, '');
+  // OCR punctuation after the paise ("358.38,"): not part of the amount.
+  t = t.replace(/(\.\d{2})[,;:'`]$/, '$1');
   if (!/^\d[\d,]*(\.\d+)?$/.test(t)) return null;
   if (negative && !allowNegative) return null;
   const r = parseMoney(negative ? `-${t}` : t, { allowNegative });
@@ -136,7 +140,9 @@ export function parseAmount(text: string, allowNegative = false): number | null 
 }
 
 const isMoneyToken = (t: string) =>
-  /^(\(-\)|\(?-?)(₹|rs\.?|inr)?\s?-?\d[\d,]*(\.\d+)?\)?$/i.test(t.trim());
+  /^(\(-\)|\(?-?)(₹|rs\.?|inr)?\s?-?\d[\d,]*(\.\d+)?\)?$/i.test(
+    t.trim().replace(/(\.\d{2})[,;:'`]$/, '$1'),
+  );
 
 /** The rightmost amount on a row of segments (the value column of a totals block). */
 function rowAmount(
@@ -304,7 +310,11 @@ type Col =
   | 'tax';
 
 function classify(label: string): Col | null {
-  const t = label.toLowerCase().replace(/\s+/g, ' ').trim();
+  const t = label
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/^[^a-z0-9#]+/, '')
+    .trim();
   if (/^(sl|s\.? ?no|sr|#|no\.?)\b/.test(t) || t === 'sl' || t === '#') return 'sl';
   if (/hsn|sac/.test(t)) return 'hsn';
   if (/desc|particular|goods|product|item name|services/.test(t)) return 'description';
@@ -327,13 +337,22 @@ interface Table {
   cols: { col: Col; x0: number; x1: number; seg: Segment }[];
 }
 
+/**
+ * OCR specks: a dash, a dot or a sliver of a ruled line read as "=", "—" or "1" (far thinner or
+ * flatter than any printed character). Never a value or a column label.
+ */
+const isSpeck = (s: Segment, unit: number) =>
+  s.source === 'tesseract' && (height(s) < unit * 0.35 || s.x1 - s.x0 < unit * 0.2);
+
 /** Finds the line-item table header on a page: a row band holding at least three column labels. */
 function findHeader(page: PageText, unit: number): Table | null {
   const anchors = page.segments.filter((s) =>
     /\b(description|particulars|goods|product)\b/i.test(s.text),
   );
   for (const a of anchors) {
-    const band = page.segments.filter((s) => Math.abs(yMid(s) - yMid(a)) <= unit * 1.6);
+    const band = page.segments.filter(
+      (s) => Math.abs(yMid(s) - yMid(a)) <= unit * 1.6 && !isSpeck(s, unit),
+    );
     // Stack two-line header cells ("Taxable" over "Value") by horizontal overlap.
     const cells: Segment[][] = [];
     for (const s of [...band].sort((x, y) => x.x0 - y.x0 || x.y0 - y.y0)) {
@@ -346,7 +365,13 @@ function findHeader(page: PageText, unit: number): Table | null {
     const cols = cells
       .map((c) => {
         const seg = joinSegments([...c].sort((x, y) => x.y0 - y.y0));
-        return { col: classify(seg.text), x0: seg.x0, x1: seg.x1, seg };
+        // A stacked cell that does not read as a label as a whole ("EEE No." from a stray mark
+        // over "No."): the label is one of its parts.
+        const col =
+          classify(seg.text) ??
+          c.map((part) => classify(part.text)).find((k): k is Col => k !== null) ??
+          null;
+        return { col, x0: seg.x0, x1: seg.x1, seg };
       })
       .filter((c): c is Table['cols'][number] => c.col !== null);
     const kinds = new Set(cols.map((c) => c.col));
@@ -377,6 +402,51 @@ function columnOf(table: Table, s: Segment): Col | null {
   return null;
 }
 
+/**
+ * An OCR segment whose words fall in more than one column ("1 22185-Calcium chloride … 28272000",
+ * the serial, the item and the HSN read as one run): split at the columns by each word's position.
+ * A segment without word positions, or within one column, is kept as it is.
+ */
+function byColumn(table: Table, s: Segment): Segment[] {
+  const words = s.words;
+  if (!words || words.length < 2 || words.some((w) => w.x0 === undefined || w.x1 === undefined))
+    return [s];
+  const parts: { col: Col | null; words: typeof words }[] = [];
+  for (const w of words) {
+    const col = cellCol(table, { ...s, text: w.text, x0: w.x0 ?? s.x0, x1: w.x1 ?? s.x1 });
+    const last = parts.at(-1);
+    if (last && last.col === col) last.words.push(w);
+    else parts.push({ col, words: [w] });
+  }
+  if (parts.length < 2) return [s];
+  return parts.map((p) => ({
+    ...s,
+    text: p.words.map((w) => w.text).join(' '),
+    x0: Math.min(...p.words.map((w) => w.x0 ?? s.x0)),
+    x1: Math.max(...p.words.map((w) => w.x1 ?? s.x1)),
+    conf: Math.min(...p.words.map((w) => w.conf)),
+    words: p.words,
+  }));
+}
+
+/**
+ * The column a table value belongs to: by position, except that the narrow serial and HSN columns
+ * only hold what they can (a row number; a 4–8 digit code). Item text that runs left past the
+ * description's heading, or wraps under the serial number, stays with the description.
+ */
+function cellCol(table: Table, s: Segment): Col | null {
+  const col = columnOf(table, s);
+  const desc = table.cols.some((c) => c.col === 'description');
+  const t = s.text.trim();
+  if (desc && col === 'sl' && !/^\d{1,3}[.)]?$/.test(t)) return 'description';
+  if (desc && col === 'hsn' && !/^\d{4,8}$/.test(t)) {
+    const d = table.cols.find((c) => c.col === 'description');
+    const h = table.cols.find((c) => c.col === 'hsn');
+    if (d && h && d.x0 < h.x0 && /[A-Za-z]/.test(t)) return 'description';
+  }
+  return col;
+}
+
 const isTotalsLabel = (t: string) =>
   Object.values(TOTALS).some((re) => re.test(t)) || /^amount\s+in\s+words/i.test(t);
 
@@ -389,13 +459,16 @@ function tableLines(
   table: Table,
   unit: number,
 ): { lines: RawLine[]; endY: number | null } {
-  const below = page.segments.filter((s) => s.y0 >= table.bottom - unit * 0.2);
+  const below = page.segments
+    .filter((s) => s.y0 >= table.bottom - unit * 0.2 && !isSpeck(s, unit))
+    .flatMap((s) => byColumn(table, s));
   const endSeg = below
     .filter((s) => isTotalsLabel(s.text) && columnOf(table, s) !== 'sl')
     .sort((a, b) => a.y0 - b.y0)[0];
   const endY = endSeg ? endSeg.y0 - unit * 0.2 : null;
   const body = below.filter((s) => endY === null || s.y1 <= endY + unit * 0.4);
-  const anchorCol: Col = table.cols.some((c) => c.col === 'qty') ? 'qty' : 'taxable';
+  const has = (c: Col) => table.cols.some((x) => x.col === c);
+  const anchorCol: Col = has('qty') ? 'qty' : has('taxable') ? 'taxable' : 'amount';
   const isAnchor = (s: Segment) => {
     if (columnOf(table, s) !== anchorCol) return false;
     const tok = s.text.split(/\s+/)[0] ?? '';
@@ -414,7 +487,7 @@ function tableLines(
       }
     });
     if (best < 0 || dist > unit * 2.2) continue;
-    const col = columnOf(table, s);
+    const col = cellCol(table, s);
     if (!col) continue;
     const line = lines[best];
     if (line) (line.cells[col] ??= []).push(s);
@@ -473,8 +546,25 @@ function lineFields(raw: RawLine, lineNo: number): ExtractedLine {
       const kept = segs.filter(
         (x) => !(x.text === String(lineNo) && x.x0 <= left + 1 && segs.length > 1),
       );
-      const text = cellText(kept);
-      return kept.length ? toField(text || null, kept, false, text) : none<string>();
+      // The row number read stuck to the item by a ruled line ("3/103711-…", "3|Item").
+      const text = cellText(kept).replace(new RegExp(`^${lineNo}\\s*[/|]\\s*(?=\\S)`), '');
+      if (!kept.length) return none<string>();
+      // Free text, never used in a sum: scored by its words on average (by length), so one
+      // smudged word does not make the whole description unreadable.
+      const field = toField(text || null, kept, false, text);
+      const squash = (t: string) => t.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const target = squash(text);
+      // The words that spell the description (a row number dropped from it is not scored).
+      const words = kept
+        .flatMap((x) => x.words ?? [])
+        .filter((w) => squash(w.text) !== '' && target.includes(squash(w.text)));
+      if (!text || !words.length || kept.some((x) => x.source !== 'tesseract')) return field;
+      const len = words.reduce((n, w) => n + w.text.length, 0);
+      const mean = words.reduce((n, w) => n + w.conf * w.text.length, 0) / Math.max(1, len);
+      return {
+        ...field,
+        confidenceBp: confidenceBp(Math.min(TEXT_LAYER_BP, Math.round(mean * 100))),
+      };
     })(),
     vendorItemCode: f('code', (t) => (/^[A-Za-z0-9][A-Za-z0-9/_.-]*$/.test(t) ? t : null)),
     hsnSac: f('hsn', (t) => (/^\d{4}(\d{2}){0,2}$/.test(t) ? t : null)),
@@ -514,8 +604,18 @@ function blockUnder(page: PageText, label: Segment, stopY: number, unit: number)
       (L.billTo.test(s.text) || L.shipTo.test(s.text)) &&
       Math.abs(yMid(s) - yMid(label)) <= unit * 0.6,
   );
+  // The invoice's own details box beside the address ("Invoice No.", "Date", "P.O. No."): the
+  // block stops before it, so its values never become part of the address.
+  const details = page.segments.filter(
+    (s) =>
+      s.x0 > label.x0 + unit * 4 &&
+      s.y0 >= label.y0 - unit * 0.5 &&
+      s.y1 <= stopY &&
+      [L.invoiceNo, L.invoiceDate, L.po, L.pos].some((re) => re.test(s.text)),
+  );
   const rightLimit = Math.min(
     ...peers.filter((p) => p.x0 > label.x0).map((p) => p.x0 - unit * 0.5),
+    ...details.map((d) => d.x0 - unit * 0.5),
     Infinity,
   );
   const leftLimit = Math.max(
@@ -532,11 +632,12 @@ function blockUnder(page: PageText, label: Segment, stopY: number, unit: number)
         s.x0 < rightLimit,
     )
     .sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0);
-  // A block ends at the first vertical gap wider than two lines.
+  // A block ends at the first vertical gap wider than two lines (the first line may sit a little
+  // further below its label: "To," then a blank line, then the name).
   const segs: Segment[] = [];
   let lastY = label.y1;
   for (const s of inColumn) {
-    if (s.y0 - lastY > unit * 2.2) break;
+    if (s.y0 - lastY > unit * (segs.length === 0 ? 3.5 : 2.2)) break;
     segs.push(s);
     lastY = Math.max(lastY, s.y1);
   }
@@ -545,12 +646,114 @@ function blockUnder(page: PageText, label: Segment, stopY: number, unit: number)
   return { label, segs: [...own, ...segs] };
 }
 
+const B36 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+/** The GSTIN's own check character (its 15th) agrees with the first fourteen. */
+export function gstinCheckOk(g: string): boolean {
+  if (g.length !== 15) return false;
+  let sum = 0;
+  for (let i = 0; i < 14; i++) {
+    const v = B36.indexOf(g[i] ?? '');
+    if (v < 0) return false;
+    const p = v * (i % 2 === 0 ? 1 : 2);
+    sum += Math.floor(p / 36) + (p % 36);
+  }
+  return B36[(36 - (sum % 36)) % 36] === g[14];
+}
+/** Characters OCR confuses, in both directions. */
+const LOOKS_LIKE: Readonly<Record<string, string>> = {
+  O: '0',
+  D: '0',
+  Q: '0',
+  I: '1',
+  L: '1',
+  Z: '2',
+  S: '5',
+  B: '8',
+  G: '6',
+  T: '7',
+  '0': 'O',
+  '1': 'I',
+  '2': 'Z',
+  '5': 'S',
+  '8': 'B',
+  '6': 'G',
+  '7': 'T',
+};
+const DIGIT_AT = new Set([0, 1, 7, 8, 9, 10]);
+const LETTER_AT = new Set([2, 3, 4, 5, 6, 11]);
+/**
+ * An OCR-read GSTIN made consistent with the GSTIN's fixed layout (digits where only a digit can
+ * stand, letters where only a letter, "Z" in the 14th place) and with its check character. Returns
+ * the GSTIN only when exactly one reading passes the check; null when none or several do (then it
+ * is asked, never guessed).
+ */
+export function ocrGstin(raw: string): string | null {
+  const t = raw.toUpperCase().replace(/[^0-9A-Z]/g, '');
+  if (t.length !== 15) return null;
+  const forced = [...t].map((c, i) => {
+    if (DIGIT_AT.has(i) && !/\d/.test(c)) return /\d/.test(LOOKS_LIKE[c] ?? '') ? LOOKS_LIKE[c] : c;
+    if (LETTER_AT.has(i) && !/[A-Z]/.test(c))
+      return /[A-Z]/.test(LOOKS_LIKE[c] ?? '') ? LOOKS_LIKE[c] : c;
+    if (i === 13 && c === '2') return 'Z';
+    return c;
+  });
+  const base = forced.join('');
+  if (!GSTIN_EXACT.test(base)) return null;
+  if (gstinCheckOk(base)) return base;
+  // One character in a place that can hold either a letter or a digit (the 13th and the check
+  // character): the one swap that passes the check, if exactly one does.
+  const swaps = [12, 14].flatMap((i) => {
+    const alt = LOOKS_LIKE[base[i] ?? ''];
+    return alt ? [`${base.slice(0, i)}${alt}${base.slice(i + 1)}`] : [];
+  });
+  const valid = swaps.filter((g) => GSTIN_EXACT.test(g) && gstinCheckOk(g));
+  return valid.length === 1 ? (valid[0] ?? null) : null;
+}
+const GSTIN_EXACT = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/;
+
+/** State codes printed by name in the same block ("STATE: Karnataka"), for an OCR-read GSTIN. */
+function printedStateCodes(segs: readonly Segment[]): string[] {
+  const codes = new Set<string>();
+  for (const s of segs) {
+    const m = /\bstate(?:\s*name)?\s*[:-]\s*([A-Za-z][A-Za-z &.]{2,40})/i.exec(s.text);
+    const r = m ? resolveStateCode((m[1] ?? '').replace(/\s+code.*$/i, '')) : null;
+    if (r?.ok) codes.add(r.value);
+  }
+  return [...codes];
+}
+
 function gstinsIn(segs: readonly Segment[]): { value: string; segs: Segment[] }[] {
   const out: { value: string; segs: Segment[] }[] = [];
+  const states = printedStateCodes(segs);
   for (const s of segs) {
     const up = s.text.toUpperCase();
-    const m = GSTIN.exec(up.replace(/\s+/g, ''));
+    const ocr = s.source === 'tesseract';
     const labelled1 = L.gstin.exec(s.text);
+    // OCR: the 15 characters after the label (or anywhere on the line), made consistent with the
+    // GSTIN's layout and check character; a reading that cannot be is printed but not readable.
+    if (ocr) {
+      const token =
+        (labelled1 ? clean(labelled1[1] ?? '').split(/\s+/)[0] : null) ??
+        // Unlabelled: only a word that looks like one (15 characters, at least six digits).
+        up.split(/\s+/).find((w) => {
+          const t = w.replace(/[^0-9A-Z]/g, '');
+          return t.length === 15 && (t.match(/\d/g) ?? []).length >= 6;
+        }) ??
+        null;
+      const m = GSTIN.exec(up.replace(/\s+/g, ''));
+      const raw = token && token.replace(/[^0-9A-Za-z]/g, '').length === 15 ? token : m?.[0];
+      if (raw) {
+        // Its state code misread ("20" for "29"): the state printed beside it, if exactly one, and
+        // only when the whole GSTIN then passes its check.
+        const tidy = raw.toUpperCase().replace(/[^0-9A-Z]/g, '');
+        const byState = states.length === 1 ? ocrGstin(`${states[0] ?? ''}${tidy.slice(2)}`) : null;
+        // Not made valid: kept as read, to be shown and asked (its confidence is held below
+        // any threshold by proveByChecks), never trusted.
+        out.push({ value: ocrGstin(raw) ?? byState ?? tidy, segs: [s] });
+        continue;
+      }
+    }
+    const m = GSTIN.exec(up.replace(/\s+/g, ''));
     if (m) out.push({ value: m[0], segs: [s] });
     else if (labelled1) {
       // A GSTIN label whose value does not have the GSTIN shape: keep the reading (it becomes
@@ -1008,5 +1211,118 @@ export function parseInvoice(pages: readonly PageText[]): ParsedInvoice {
     for (const k of Object.keys(line) as (keyof ExtractedLine)[])
       if (k !== 'lineNo')
         (line as Record<string, unknown>)[k] = stamp(line[k], hasTaxColumn && lineTax.has(k));
+  const proven = proveByChecks(header, lines);
+  if (proven) warnings.push(proven);
   return { header, lines, warnings };
+}
+
+/** Confidence given to an OCR value that an independent check proves (just under a text layer). */
+const PROVEN_BP = 9800;
+/** Below this an OCR reading is too poor to be proven by anything: it stays asked. */
+const PROVABLE_BP = 5000;
+
+/**
+ * OCR values the invoice proves itself: a GSTIN that passes its check character (which catches
+ * every single misread character), and amounts that agree with each other exactly (each line's
+ * quantity × rate = its amount; the lines add up to the goods value; each tax head is its rate on
+ * that value; the total is goods plus tax, rounded to the rupee). Several separately read values
+ * agreeing to the paisa is proof that each was read right, whatever OCR's own score for a smudged
+ * "358.38,". Only raises confidence; never changes or supplies a value. Returns a note when it did.
+ */
+function proveByChecks(header: ExtractedHeader, lines: ExtractedLine[]): string | null {
+  const done: string[] = [];
+  type F = { value: unknown; confidenceBp: number; source: ExtractionMethod };
+  const usable = (f: F) => f.value !== null && f.confidenceBp >= PROVABLE_BP;
+  const raise = <T extends F>(f: T): T =>
+    f.source === 'tesseract' && f.confidenceBp < PROVEN_BP
+      ? { ...f, confidenceBp: confidenceBp(PROVEN_BP) }
+      : f;
+  const h = header as unknown as Record<string, F>;
+
+  for (const k of ['vendorGstin', 'buyerGstin', 'shipToGstin']) {
+    const f = h[k];
+    // An OCR GSTIN that fails its check character is misread somewhere: shown, never trusted.
+    if (f && f.source === 'tesseract' && typeof f.value === 'string' && !gstinCheckOk(f.value))
+      h[k] = { ...f, confidenceBp: confidenceBp(Math.min(f.confidenceBp, PROVABLE_BP - 1)) };
+    else if (f && usable(f) && typeof f.value === 'string' && gstinCheckOk(f.value)) {
+      if (f.confidenceBp < PROVEN_BP && f.source === 'tesseract')
+        done.push('GSTIN check character');
+      h[k] = raise(f);
+    }
+  }
+
+  // Lines: quantity × rate = amount, read separately and agreeing.
+  const n = (f: F) => f.value as number;
+  const lineOk = lines.map((l) => {
+    const q = l.qtyMilli as F;
+    const r = l.unitPricePaise as F;
+    const a = l.taxablePaise as F;
+    const d = l.discountPaise as F;
+    if (!usable(q) || !usable(r) || !usable(a) || (d.value !== null && d.value !== 0)) return false;
+    return Math.round((n(q) * n(r)) / 1000) === n(a);
+  });
+  if (lines.length === 0 || lineOk.some((ok) => !ok)) return done.length ? note(done) : null;
+  for (const l of lines) {
+    const raw = l as unknown as Record<string, F>;
+    for (const k of ['qtyMilli', 'unitPricePaise', 'taxablePaise']) {
+      const f = raw[k];
+      if (f) raw[k] = raise(f);
+    }
+  }
+  done.push('quantity × rate on every line');
+  const goods = lines.reduce((sum, l) => sum + n(l.taxablePaise as F), 0);
+  if (usable(h.taxablePaise as F) && n(h.taxablePaise as F) === goods) {
+    h.taxablePaise = raise(h.taxablePaise as F);
+    done.push('goods value');
+  } else if ((h.taxablePaise as F).value !== null) return note(done);
+
+  // Tax heads: the GST rate read on the lines, on the goods value (per rate or per line).
+  const rates = lines.map((l) => (l.gstRateBp as F).value as number | null);
+  if (rates.some((r) => r === null)) return note(done);
+  const half = (paise: number, bp: number) => Math.round((paise * bp) / 20_000);
+  const whole = (paise: number, bp: number) => Math.round((paise * bp) / 10_000);
+  const byRate = new Map<number, number>();
+  lines.forEach((l, i) =>
+    byRate.set(rates[i] as number, (byRate.get(rates[i] as number) ?? 0) + n(l.taxablePaise as F)),
+  );
+  const expect = (f: (p: number, bp: number) => number) => ({
+    perRate: [...byRate].reduce((s, [bp, p]) => s + f(p, bp), 0),
+    perLine: lines.reduce((s, l, i) => s + f(n(l.taxablePaise as F), rates[i] as number), 0),
+  });
+  const halfTax = expect(half);
+  const igstTax = expect(whole);
+  let tax = 0;
+  const heads: [string, { perRate: number; perLine: number }][] = [];
+  const igst = h.igstPaise as F;
+  if (igst.value !== null && igst.value !== 0) heads.push(['igstPaise', igstTax]);
+  else heads.push(['cgstPaise', halfTax], ['sgstPaise', halfTax]);
+  for (const [k, want] of heads) {
+    const f = h[k] as F;
+    if (!usable(f) || (n(f) !== want.perRate && n(f) !== want.perLine)) return note(done);
+    tax += n(f);
+  }
+  for (const [k] of heads) h[k] = raise(h[k] as F);
+  for (const l of lines) {
+    const raw = l as unknown as Record<string, F>;
+    raw.gstRateBp = raise(raw.gstRateBp as F);
+  }
+  done.push('GST on the lines');
+
+  // Total: goods + tax + round-off; with the round-off unread, goods + tax rounded to the rupee.
+  const total = h.totalPaise as F;
+  const ro = h.roundOffPaise as F;
+  if (!usable(total)) return note(done);
+  if (usable(ro) && goods + tax + n(ro) === n(total)) {
+    h.totalPaise = raise(total);
+    h.roundOffPaise = raise(ro);
+    done.push('invoice total');
+  } else if (ro.value === null && n(total) === Math.round((goods + tax) / 100) * 100) {
+    h.totalPaise = raise(total);
+    done.push('invoice total (rounded to the rupee)');
+  }
+  return note(done);
+
+  function note(what: string[]): string | null {
+    return what.length ? `Confirmed by the invoice's own checks: ${what.join('; ')}.` : null;
+  }
 }

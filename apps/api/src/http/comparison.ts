@@ -113,7 +113,8 @@ export function buildComparison(x: ComparisonInput): ApiComparison | null {
     mustEqual = false,
   ) => {
     let verdict = judge(rules, lineNo);
-    if (mustEqual && invoice !== null && erp !== null && !same(invoice, erp))
+    const plain = erp?.replace(/\s*\(your company\)$/, '') ?? null;
+    if (mustEqual && invoice !== null && plain !== null && !same(invoice, plain))
       verdict = { result: 'mismatch', note: verdict.note ?? 'The invoice and the ERP differ.' };
     rows.push({ section, label, invoice, erp, ...verdict });
   };
@@ -159,7 +160,16 @@ export function buildComparison(x: ComparisonInput): ApiComparison | null {
     x.vendor ? (x.vendor.status === 'active' ? 'Active' : 'Inactive') : null,
     ['R13'],
   );
-  add('You', 'Your GSTIN on the invoice', h.buyerGstin, x.companyGstin, ['R04'], null, true);
+  // Compared with the company's own details (Settings), not with the ERP: said as such.
+  add(
+    'You',
+    'Billed to your GSTIN',
+    h.buyerGstin,
+    `${x.companyGstin} (your company)`,
+    ['R04'],
+    null,
+    true,
+  );
 
   // Purchase order and goods receipt.
   add('Purchase order', 'Order number', h.poNumber, x.po?.poNumber ?? null, ['R17'], null, true);
@@ -271,17 +281,25 @@ export function buildComparison(x: ComparisonInput): ApiComparison | null {
       ? 'cleared'
       : 'incomplete';
   const describe = (r: Row) =>
-    `${r.section} – ${r.label}: invoice ${r.invoice ?? 'not read'}, ERP ${r.erp ?? 'none'}`;
+    r.section === 'You'
+      ? `the invoice is billed to GSTIN ${r.invoice ?? 'not read'}, not your company's (${(r.erp ?? '').replace(/\s*\(your company\)$/, '')})`
+      : `${r.section} – ${r.label}: invoice ${r.invoice ?? 'not read'}, ERP ${r.erp ?? 'none'}`;
+  // Nothing of this supplier or order in the ERP: those rows were never compared, and that is said.
+  const notInErp =
+    !x.vendor && !x.po
+      ? ' This supplier and its order were not found in your ERP, so the supplier, the order and the items have not been compared with it.'
+      : '';
+  const onlyBuyer = mismatches.length > 0 && mismatches.every((r) => r.section === 'You');
   const summary =
     verdict === 'mismatch'
-      ? `Does not match the ERP. ${listed(mismatches.map(describe))}.`
+      ? `${onlyBuyer ? 'Billed to another company:' : 'Does not match your records:'} ${listed(mismatches.map(describe))}.${notInErp}`
       : verdict === 'cleared'
         ? `Every value matches the ERP${x.po ? ` (order ${x.po.poNumber}` : ''}${
             x.po && x.grns.length ? `, receipt ${x.grns.map((g) => g.grnNumber).join(', ')}` : ''
           }${x.po ? ')' : ''}${h.totalPaise !== null ? `; total ${money(h.totalPaise)}` : ''}.`
         : unread
           ? 'Veyrafy could not read this invoice well enough to compare it with your ERP. Answer the question above, or upload a clearer copy.'
-          : `${toConfirm} value${toConfirm === 1 ? '' : 's'} still to be confirmed before this invoice can be cleared.`;
+          : `${toConfirm} value${toConfirm === 1 ? '' : 's'} still to be confirmed before this invoice can be cleared.${notInErp}`;
   return {
     source: 'erp_checks',
     verdict,
@@ -289,7 +307,9 @@ export function buildComparison(x: ComparisonInput): ApiComparison | null {
       verdict === 'cleared'
         ? 'Cleared: every value matches your ERP'
         : verdict === 'mismatch'
-          ? `${mismatches.length} value${mismatches.length === 1 ? ' does' : 's do'} not match your ERP`
+          ? onlyBuyer
+            ? 'Billed to a different company'
+            : `${mismatches.length} value${mismatches.length === 1 ? ' does' : 's do'} not match your records`
           : unread
             ? 'Not compared yet: the invoice could not be read well enough'
             : 'Not cleared yet',

@@ -116,7 +116,8 @@ beside `data`, and the invoice file as base64 in the record's `images`:
 ```
 
 - `data` holds **exactly one** record; `images` holds **exactly one** file: the invoice (PDF, JPEG
-  or PNG, at most 20 MB before encoding).
+  or PNG, at most 20 MB before encoding). A single record sent without the `data` wrapper is
+  also accepted.
 - The base64 may be plain or URL-safe, may include line breaks, and may start with a data URL
   prefix (`data:application/pdf;base64,`). The file type is decided by its content, not by
   `mime_type` or `file_name`.
@@ -206,6 +207,36 @@ scanned documents read by OCR take longer.
 
 `review_required` is `true` whenever any check is unverified (including on a FAILED result that
 also has unverified values).
+
+**How values are compared**
+
+FAILED is only returned for a difference Veyrafy can prove. What it cannot prove is
+`unverified`, with the reason, never `failed`:
+
+- **Units.** When the invoice and the reference count an item in different units (for example
+  `NOS` packs of 500 g on the invoice and `KGS` in the reference), quantity and rate are not
+  compared as numbers. The quantity is `unverified` ("counted in different units") and the
+  amount is compared. Spellings of the same unit (`NOS`, `PCS`, `EACH`; `KG`, `KGS`) are treated
+  as one.
+- **Item names.** The supplier's wording and your item name rarely match word for word. Lines
+  are paired by the words their names share, or, when none are shared, by quantity, rate and
+  amount (amount alone when the units differ). A paired line whose names differ is `unverified`
+  ("confirm it is the same item"). Its quantity, rate and amount are still compared, and a
+  difference there is `failed`.
+- **`other_charges`.** `GTC0000001`, `GTC0000002` and `GTC0000004` are CGST, SGST and IGST, and
+  `FRTWITHGST` is freight. `ASSESSABLE` (and `TAXABLE`) repeat the line's taxable value and are
+  never added to the total. Any other code is shown as an unrecognised charge to confirm.
+- **Round-off.** `invoice_amount` matches whether you recorded the invoice total or the amount
+  before its round-off (₹7,374.60 for a ₹7,375.00 invoice). When the round-off printed on the
+  invoice cannot be read, the total is compared rounded to the rupee.
+- **The invoice's own arithmetic.** When the invoice's figures as read do not add up (lines,
+  tax and total), a difference in those figures may be a misreading. It is `unverified`, not
+  `failed`. A supplier name that reads like a registration line ("MSME No: …") is `unverified`
+  for the same reason.
+- **Scans and photos.** A value is used only when it was read with certainty. A low-confidence
+  OCR value counts as read when the invoice itself proves it: a GSTIN by its check character,
+  and amounts that agree to the paisa (each line's quantity × rate, the lines' sum, the tax on
+  them, and the total).
 
 **Fields**
 

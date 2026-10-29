@@ -27,6 +27,18 @@ export const CHARGE_CODES: Readonly<Record<string, 'cgst' | 'sgst' | 'igst' | 'f
   GTC0000004: 'igst',
   FRTWITHGST: 'freight',
 };
+/**
+ * Codes that carry the line's assessable (taxable) value again, not a charge: never added to the
+ * total. The value stands in for the line amount only when the ERP gives no basic amount.
+ */
+export const VALUE_CODES: ReadonlySet<string> = new Set([
+  'ASSESSABLE',
+  'ASSESSABLE_VALUE',
+  'ASSESSABLEVALUE',
+  'TAXABLE',
+  'TAXABLE_VALUE',
+  'TAXABLEVALUE',
+]);
 
 const Num = z.union([z.number(), z.string()]).nullable().optional();
 const ItemSchema = z
@@ -70,7 +82,19 @@ const RecordSchema = z
       .optional(),
   })
   .loose();
-export const ReceiptFileSchema = z.object({ data: z.array(RecordSchema).min(1) }).loose();
+/**
+ * The ERP's export (`{ data: [...] }`), a list of records, or a single record (as the verification
+ * API takes it): all read as the export.
+ */
+export const ReceiptFileSchema = z.preprocess(
+  (v) =>
+    Array.isArray(v)
+      ? { data: v }
+      : v !== null && typeof v === 'object' && !('data' in v) && 'invoice_info' in v
+        ? { data: [v] }
+        : v,
+  z.object({ data: z.array(RecordSchema).min(1) }).loose(),
+);
 export type RawReceiptRecord = z.infer<typeof RecordSchema>;
 
 export interface ReceiptLine {
@@ -154,7 +178,12 @@ export function normalizeReceipt(raw: RawReceiptRecord): ReceiptRecord {
       };
       for (const c of it.other_charges ?? []) {
         const value = toPaise(c.value) ?? 0;
-        const head = CHARGE_CODES[c.code.trim().toUpperCase()];
+        const code = c.code.trim().toUpperCase();
+        if (VALUE_CODES.has(code)) {
+          if (line.amountPaise === null) line.amountPaise = value;
+          continue;
+        }
+        const head = CHARGE_CODES[code];
         if (head === 'freight') line.freightPaise += value;
         else if (head) line[`${head}Paise`] += value;
         else line.other.push({ code: c.code, paise: value });
@@ -344,6 +373,55 @@ export type ComparisonRow = Row;
 const money = (p: number | null) => (p === null ? null : formatInr(paise(p)));
 const qty = (m: number | null, uom: string | null) =>
   m === null ? null : `${formatQty(milliQty(m))}${uom ? ` ${uom.toUpperCase()}` : ''}`;
+
+/** Spellings of the same unit ("Nos", "PCS", "each"; "KGS", "kilogram"), as one key. */
+const UNIT_SPELLINGS: Readonly<Record<string, readonly string[]>> = {
+  count: [
+    'NO',
+    'NOS',
+    'NUMBER',
+    'NUMBERS',
+    'PC',
+    'PCS',
+    'PIECE',
+    'PIECES',
+    'EA',
+    'EACH',
+    'UNIT',
+    'UNITS',
+    'UNT',
+    'U',
+    'QTY',
+  ],
+  kg: ['KG', 'KGS', 'KILO', 'KILOS', 'KILOGRAM', 'KILOGRAMS', 'KGM'],
+  g: ['G', 'GM', 'GMS', 'GRM', 'GRAM', 'GRAMS', 'GRAMME', 'GRAMMES'],
+  l: ['L', 'LT', 'LTR', 'LTRS', 'LITRE', 'LITRES', 'LITER', 'LITERS'],
+  ml: ['ML', 'MLS', 'MILLILITRE', 'MILLILITRES', 'MILLILITER', 'MILLILITERS'],
+  m: ['M', 'MTR', 'MTRS', 'METRE', 'METRES', 'METER', 'METERS'],
+  box: ['BOX', 'BOXES', 'BX'],
+  pack: ['PKT', 'PKTS', 'PACK', 'PACKS', 'PACKET', 'PACKETS', 'PAC'],
+  set: ['SET', 'SETS'],
+  pair: ['PR', 'PRS', 'PAIR', 'PAIRS'],
+  dozen: ['DOZ', 'DOZEN', 'DOZENS', 'DZN'],
+  bag: ['BAG', 'BAGS'],
+  roll: ['ROLL', 'ROLLS'],
+  bottle: ['BTL', 'BTLS', 'BOTTLE', 'BOTTLES'],
+  can: ['CAN', 'CANS'],
+  ton: ['TON', 'TONS', 'TONNE', 'TONNES', 'MT'],
+};
+const UNIT_KEY = new Map(
+  Object.entries(UNIT_SPELLINGS).flatMap(([key, all]) => all.map((u) => [u, key] as const)),
+);
+const unitKey = (u: string | null): string | null => {
+  const t = u?.toUpperCase().replace(/[^A-Z]/g, '') ?? '';
+  return t ? (UNIT_KEY.get(t) ?? t) : null;
+};
+/** Both units read, and they are different units (packs and kilograms), not two spellings. */
+export const unitsDiffer = (a: string | null, b: string | null): boolean => {
+  const x = unitKey(a);
+  const y = unitKey(b);
+  return x !== null && y !== null && x !== y;
+};
 
 /** A row that is a difference or something to confirm, as the finding and the summary use it. */
 export interface ReceiptDifference {
@@ -573,12 +651,14 @@ export function receiptComparison(
     }
   /** Agree on quantity, and on rate and amount wherever both sides hold them (one at least). */
   const sameValues = (l: InvLine, e: ReceiptLine) =>
-    l.qtyMilli !== null &&
-    l.qtyMilli === e.qtyMilli &&
-    (l.unitPricePaise === null || e.ratePaise === null || l.unitPricePaise === e.ratePaise) &&
-    (l.taxablePaise === null || e.amountPaise === null || l.taxablePaise === e.amountPaise) &&
-    ((l.unitPricePaise !== null && l.unitPricePaise === e.ratePaise) ||
-      (l.taxablePaise !== null && l.taxablePaise === e.amountPaise));
+    // Counted in different units (packs and kilograms): the amount alone can agree.
+    (unitsDiffer(l.uom, e.uom) && l.taxablePaise !== null && l.taxablePaise === e.amountPaise) ||
+    (l.qtyMilli !== null &&
+      l.qtyMilli === e.qtyMilli &&
+      (l.unitPricePaise === null || e.ratePaise === null || l.unitPricePaise === e.ratePaise) &&
+      (l.taxablePaise === null || e.amountPaise === null || l.taxablePaise === e.amountPaise) &&
+      ((l.unitPricePaise !== null && l.unitPricePaise === e.ratePaise) ||
+        (l.taxablePaise !== null && l.taxablePaise === e.amountPaise)));
   const possible: { inv: InvLine; erp: ReceiptLine }[] = [];
   for (const i of [...freeInv]) {
     const l = inv.lines[i] as InvLine;
@@ -624,7 +704,9 @@ export function receiptComparison(
         result: 'needs_confirmation',
         // An item name not read is asked as a question (the rest of the line agrees).
         ...(p.inv.description === null ? { path: `lines[${p.inv.lineNo}].description` } : {}),
-        note: `${spellingDiffers(p.inv.description, p.erp.name) ? `The spelling differs (${p.inv.description} / ${p.erp.name}), and quantity` : 'The names differ, but quantity'}${p.inv.unitPricePaise !== null && p.inv.unitPricePaise === p.erp.ratePaise ? ', rate' : ''}${p.inv.taxablePaise !== null && p.inv.taxablePaise === p.erp.amountPaise ? ' and amount' : ''} agree. Confirm whether this is the same item: it is not counted as a match or a difference.`,
+        note: unitsDiffer(p.inv.uom, p.erp.uom)
+          ? `The names differ and the units differ (${p.inv.uom} on the invoice, ${p.erp.uom} in the ERP), but the amount agrees. Confirm whether this is the same item: it is not counted as a match or a difference.`
+          : `${spellingDiffers(p.inv.description, p.erp.name) ? `The spelling differs (${p.inv.description} / ${p.erp.name}), and quantity` : 'The names differ, but quantity'}${p.inv.unitPricePaise !== null && p.inv.unitPricePaise === p.erp.ratePaise ? ', rate' : ''}${p.inv.taxablePaise !== null && p.inv.taxablePaise === p.erp.amountPaise ? ' and amount' : ''} agree. Confirm whether this is the same item: it is not counted as a match or a difference.`,
       });
       return;
     }
@@ -666,35 +748,73 @@ export function receiptComparison(
     }
     const l = p.inv;
     const e = p.erp;
-    cmp(section, 'Item', l.description, e.name, sameName(l.description, e.name), {
-      note: 'The item names differ.',
-      path: `lines[${l.lineNo}].description`,
-    });
+    // The supplier's wording and the ERP's item name rarely agree word for word. Paired by the
+    // words they share, a different name is asked about, never a proven difference: the quantity,
+    // rate and amount below are what can differ.
+    if (l.description !== null && !sameName(l.description, e.name))
+      push({
+        section,
+        label: 'Item',
+        invoice: l.description,
+        erp: e.name,
+        result: 'needs_confirmation',
+        note: "The supplier's item name and the ERP's differ; they share words, so they were paired. Confirm it is the same item.",
+      });
+    else
+      cmp(section, 'Item', l.description, e.name, sameName(l.description, e.name), {
+        note: 'The item names differ.',
+        path: `lines[${l.lineNo}].description`,
+      });
     cmp(section, 'HSN/SAC', l.hsnSac, e.hsn, e.hsn === null ? null : l.hsnSac === e.hsn, {
       path: `lines[${l.lineNo}].hsnSac`,
       // Only needed when the ERP holds one to compare.
       required: e.hsn !== null,
     });
-    cmp(
-      section,
-      'Quantity',
-      qty(l.qtyMilli, l.uom),
-      qty(e.qtyMilli, e.uom),
-      e.qtyMilli === null ? null : l.qtyMilli === e.qtyMilli,
-      { note: 'Quantity received differs from the invoice.', path: `lines[${l.lineNo}].qtyMilli` },
-    );
-    cmp(
-      section,
-      'Rate',
-      money(l.unitPricePaise),
-      money(e.ratePaise),
-      e.ratePaise === null ? null : l.unitPricePaise === e.ratePaise,
-      {
-        note: 'Rate differs.',
-        path: `lines[${l.lineNo}].unitPricePaise`,
-        required: e.ratePaise !== null,
-      },
-    );
+    if (unitsDiffer(l.uom, e.uom) && l.qtyMilli !== null && e.qtyMilli !== null) {
+      // Packs on the invoice, kilograms in the ERP: the numbers cannot be compared as they are.
+      // Asked once, with the amount (compared below) as the evidence; never a difference.
+      const amountAgrees = l.taxablePaise !== null && l.taxablePaise === e.amountPaise;
+      push({
+        section,
+        label: 'Quantity',
+        invoice: qty(l.qtyMilli, l.uom),
+        erp: qty(e.qtyMilli, e.uom),
+        result: 'needs_confirmation',
+        note: `Counted in different units (${String(l.uom).toUpperCase()} on the invoice, ${String(e.uom).toUpperCase()} in the ERP), so quantity and rate cannot be compared directly${amountAgrees ? '; the amount agrees' : ''}. Confirm the quantity received.`,
+      });
+      push({
+        section,
+        label: 'Rate',
+        invoice: money(l.unitPricePaise),
+        erp: money(e.ratePaise),
+        result: 'not_compared',
+        note: 'Rates per different units are not compared; the amount is.',
+      });
+    } else {
+      cmp(
+        section,
+        'Quantity',
+        qty(l.qtyMilli, l.uom),
+        qty(e.qtyMilli, e.uom),
+        e.qtyMilli === null ? null : l.qtyMilli === e.qtyMilli,
+        {
+          note: 'Quantity received differs from the invoice.',
+          path: `lines[${l.lineNo}].qtyMilli`,
+        },
+      );
+      cmp(
+        section,
+        'Rate',
+        money(l.unitPricePaise),
+        money(e.ratePaise),
+        e.ratePaise === null ? null : l.unitPricePaise === e.ratePaise,
+        {
+          note: 'Rate differs.',
+          path: `lines[${l.lineNo}].unitPricePaise`,
+          required: e.ratePaise !== null,
+        },
+      );
+    }
     cmp(
       section,
       'Amount',
@@ -752,7 +872,15 @@ export function receiptComparison(
   const printedTax = (inv.cgstPaise ?? 0) + (inv.sgstPaise ?? 0) + (inv.igstPaise ?? 0);
   const unreadRate = inv.lines.find((l) => l.gstRateBp === null || l.gstRateBp === undefined);
   const unclear = (...paths: string[]) => paths.find((x) => inv.unclear?.includes(x));
-  const taxUnclear = unclear('header.cgstPaise', 'header.sgstPaise', 'header.igstPaise');
+  // GST is CGST + SGST or IGST, never both: with one pair read, the other head not being read
+  // with certainty does not matter.
+  const intra = (inv.cgstPaise ?? 0) > 0 && (inv.sgstPaise ?? 0) > 0;
+  const inter = (inv.igstPaise ?? 0) > 0 && !inv.cgstPaise && !inv.sgstPaise;
+  const taxUnclear = intra
+    ? unclear('header.cgstPaise', 'header.sgstPaise')
+    : inter
+      ? unclear('header.igstPaise')
+      : unclear('header.cgstPaise', 'header.sgstPaise', 'header.igstPaise');
   const sumUnclear = unclear('header.roundOffPaise') ?? taxUnclear;
   const notRead =
     'A value it depends on was not read with certainty; it is asked, never taken as zero.';
@@ -809,7 +937,24 @@ export function receiptComparison(
       note: ok ? null : 'The tax printed is not the GST rate applied to the line amounts.',
     });
   }
-  if (invGoods !== null && inv.totalPaise !== null && sumUnclear) {
+  const toRupee = (p: number) => Math.round(p / 100) * 100;
+  // Only the round-off unread: the total is the rest rounded to the rupee, or it does not add up.
+  const onlyRoundOffUnclear = sumUnclear === 'header.roundOffPaise' && !taxUnclear;
+  if (
+    invGoods !== null &&
+    inv.totalPaise !== null &&
+    onlyRoundOffUnclear &&
+    inv.totalPaise === toRupee(invGoods + printedTax + (inv.freightPaise ?? 0))
+  ) {
+    push({
+      section: 'Invoice arithmetic',
+      label: 'Lines + tax + round-off = total',
+      invoice: money(inv.totalPaise),
+      erp: `${money(invGoods + printedTax + (inv.freightPaise ?? 0))} calculated, rounded to the rupee`,
+      result: 'match',
+      note: 'The round-off was not read; the total is the lines and tax rounded to the rupee.',
+    });
+  } else if (invGoods !== null && inv.totalPaise !== null && sumUnclear) {
     push({
       section: 'Invoice arithmetic',
       label: 'Lines + tax + round-off = total',
@@ -881,7 +1026,17 @@ export function receiptComparison(
   const roundOffUnclear = unclear('header.roundOffPaise');
   const beforeRounding =
     inv.totalPaise === null || roundOffUnclear ? null : inv.totalPaise - (inv.roundOffPaise ?? 0);
-  if (inv.totalPaise !== null && roundOffUnclear)
+  if (inv.totalPaise !== null && roundOffUnclear && inv.totalPaise === toRupee(erpTotal))
+    push({
+      section: 'Totals',
+      label: 'Invoice total',
+      invoice: money(inv.totalPaise),
+      erp: money(erpTotal),
+      result: 'match',
+      note: 'The round-off was not read; the invoice total is the ERP total rounded to the rupee.',
+      path: 'header.totalPaise',
+    });
+  else if (inv.totalPaise !== null && roundOffUnclear)
     push({
       section: 'Totals',
       label: 'Invoice total',
@@ -910,9 +1065,18 @@ export function receiptComparison(
     'Invoice amount recorded in the ERP',
     money(inv.totalPaise),
     recorded ? money(erp.erpInvoiceAmountPaise) : null,
-    recorded ? inv.totalPaise === erp.erpInvoiceAmountPaise : null,
+    // The ERP may record the amount before the invoice's round-off (₹4,698.76 for ₹4,699.00).
+    recorded
+      ? inv.totalPaise === erp.erpInvoiceAmountPaise ||
+          (beforeRounding !== null && beforeRounding === erp.erpInvoiceAmountPaise) ||
+          (roundOffUnclear !== undefined &&
+            inv.totalPaise !== null &&
+            inv.totalPaise === toRupee(erp.erpInvoiceAmountPaise ?? 0))
+      : null,
     {
-      ...(recorded ? {} : { note: 'The ERP has not recorded the invoice amount yet (it is 0).' }),
+      ...(recorded
+        ? { note: 'The amount the ERP recorded differs from the invoice total.' }
+        : { note: 'The ERP has not recorded the invoice amount yet (it is 0).' }),
       path: 'header.totalPaise',
       required: false,
     },
