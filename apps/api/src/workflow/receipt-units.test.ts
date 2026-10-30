@@ -190,3 +190,70 @@ describe('a round-off that could not be read', () => {
     expect(c.rows.find((r) => r.label === 'Invoice total')?.result).toBe('needs_confirmation');
   });
 });
+
+describe('one item on each side under different names, and no GST charged', () => {
+  const bill: InvoiceSide = {
+    vendorName: 'Hemanth Foods Pvt Ltd',
+    vendorGstin: '29BBQPN1599K1ZO',
+    invoiceNumber: '77/26-27',
+    invoiceDate: '2026-04-27',
+    poNumber: null,
+    taxablePaise: 3_000_000,
+    cgstPaise: null,
+    sgstPaise: null,
+    igstPaise: null,
+    roundOffPaise: null,
+    totalPaise: 3_000_000,
+    freightPaise: null,
+    lines: [
+      {
+        lineNo: 1,
+        description: 'BRAND CHEF RICE 30KG BAG',
+        hsnSac: '10064000',
+        uom: 'BAG',
+        qtyMilli: 20_000,
+        unitPricePaise: 150_000,
+        taxablePaise: 3_000_000,
+        gstRateBp: null,
+      },
+    ],
+  };
+  const received = only({
+    invoice_info: {
+      grn_id: 9,
+      grn_no: 14,
+      dc_no: '77/26-27',
+      invoice_date: '27/04/2026',
+      invoice_amount: 21000,
+      vendor_name: 'Hemanth Foods Pvt Ltd',
+    },
+    items: [
+      {
+        item_name: 'Basmati Grain',
+        uom: 'KGS',
+        quantity: '420',
+        basic_rate: '50',
+        basic_amount: 21000,
+        cgst: 0,
+        sgst: 0,
+        igst: 0,
+        other_charges: [{ code: 'ASSESSABLE', value: 21000 }],
+      },
+    ],
+  });
+  const c = receiptComparison(bill, received);
+  const row = (label: string) => c.rows.find((r) => r.label === label);
+
+  it('paired and asked about, never two unmatched items; the amount shows the real difference', () => {
+    expect(c.rows.some((r) => r.result === 'unmatched')).toBe(false);
+    expect(row('Item')?.result).toBe('needs_confirmation');
+    expect(row('Item')?.note).toMatch(/only item on the invoice/);
+    expect(row('Quantity')).toMatchObject({ result: 'needs_confirmation', invoice: '20 BAG' });
+    expect(row('Amount')?.result).toBe('mismatch');
+    expect(verificationOutcome(c.rows, bill, c.totalDeltaPaise).status).toBe('FAILED');
+  });
+
+  it('no GST on either side and no rate printed: not compared, never asked', () => {
+    expect(row('GST calculated from the rates')?.result).toBe('not_compared');
+  });
+});

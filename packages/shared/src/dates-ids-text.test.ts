@@ -85,6 +85,9 @@ describe('normalizeUom (fixed synonym table)', () => {
   });
 
   it('never guesses an unknown unit', () => {
+    expect(normalizeUom('BAGS')).toBe('BAG');
+    expect(normalizeUom('Bottles')).toBe('BTL');
+    expect(normalizeUom('gms')).toBe('GMS');
     expect(normalizeUom('bundle')).toBeNull();
     expect(normalizeUom('')).toBeNull();
   });

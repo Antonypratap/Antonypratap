@@ -132,7 +132,7 @@ export function parseAmount(text: string, allowNegative = false): number | null 
   }
   t = t.replace(/^(₹|rs\.?|inr)/i, '');
   // OCR punctuation after the paise ("358.38,"): not part of the amount.
-  t = t.replace(/(\.\d{2})[,;:'`]$/, '$1');
+  t = t.replace(/(\.\d{2})[,;:'`!]$/, '$1');
   if (!/^\d[\d,]*(\.\d+)?$/.test(t)) return null;
   if (negative && !allowNegative) return null;
   const r = parseMoney(negative ? `-${t}` : t, { allowNegative });
@@ -141,7 +141,7 @@ export function parseAmount(text: string, allowNegative = false): number | null 
 
 const isMoneyToken = (t: string) =>
   /^(\(-\)|\(?-?)(₹|rs\.?|inr)?\s?-?\d[\d,]*(\.\d+)?\)?$/i.test(
-    t.trim().replace(/(\.\d{2})[,;:'`]$/, '$1'),
+    t.trim().replace(/(\.\d{2})[,;:'`!]$/, '$1'),
   );
 
 /** The rightmost amount on a row of segments (the value column of a totals block). */
@@ -176,7 +176,7 @@ const L = {
   pos: /^place\s+of\s+supply\s*[:\-.]?\s*(.*)$/i,
   // A bare "To," on its own (a letter-style buyer block) is the bill-to label too.
   billTo:
-    /^(bill(?:ed)?\s*to|buyer|invoice\s+to|billing\s+address|customer|to(?=\s*[:,.-]?\s*$))\b\s*[:,.-]?\s*(.*)$/i,
+    /^(bill(?:ed)?\s*to|buyer(?:'?s)?(?!'?s?\s+order)(?:\s+details?)?|invoice\s+to|billing\s+address|customer|to(?=\s*[:,.-]?\s*$))\b\s*[:,.-]?\s*(.*)$/i,
   shipTo: /^(ship(?:ped)?\s*to|consignee|deliver(?:y)?\s*(?:to|address))\b\s*[:-]?\s*(.*)$/i,
   gstin: /^(?:gstin|gst\s*(?:no|number|in)|gstin\/uin)\.?\s*[:\-.]?\s*(.*)$/i,
   pan: /^pan(?:\s*no)?\.?\s*[:\-.]?\s*(.*)$/i,
@@ -315,7 +315,8 @@ function classify(label: string): Col | null {
     .replace(/\s+/g, ' ')
     .replace(/^[^a-z0-9#]+/, '')
     .trim();
-  if (/^(sl|s\.? ?no|sr|#|no\.?)\b/.test(t) || t === 'sl' || t === '#') return 'sl';
+  // "Si": "Sl" as OCR often reads it.
+  if (/^(sl|si|s\.? ?no|sr|#|no\.?)\b/.test(t) || t === 'sl' || t === '#') return 'sl';
   if (/hsn|sac/.test(t)) return 'hsn';
   if (/desc|particular|goods|product|item name|services/.test(t)) return 'description';
   if (/item ?code|sku|part ?no|code/.test(t)) return 'code';
@@ -350,8 +351,15 @@ function findHeader(page: PageText, unit: number): Table | null {
     /\b(description|particulars|goods|product)\b/i.test(s.text),
   );
   for (const a of anchors) {
+    // The invoice's own field labels in the box above the table ("Buyer's Order No.", "Dated")
+    // are not column headings, however close they sit.
     const band = page.segments.filter(
-      (s) => Math.abs(yMid(s) - yMid(a)) <= unit * 1.6 && !isSpeck(s, unit),
+      (s) =>
+        Math.abs(yMid(s) - yMid(a)) <= unit * 1.6 &&
+        !isSpeck(s, unit) &&
+        ![L.invoiceNo, L.invoiceDate, L.po, L.pos, L.billTo, L.shipTo].some((re) =>
+          re.test(s.text),
+        ),
     );
     // Stack two-line header cells ("Taxable" over "Value") by horizontal overlap.
     const cells: Segment[][] = [];
@@ -362,7 +370,15 @@ function findHeader(page: PageText, unit: number): Table | null {
       if (cell) cell.push(s);
       else cells.push([s]);
     }
-    const cols = cells
+    // A stacked cell whose parts are different headings ("GST" and "Qty" bridged by a mark
+    // between them) is those headings, each where it is printed.
+    const split = cells.flatMap((c) => {
+      const kinds = c.map((part) => classify(part.text));
+      return new Set(kinds.filter((k) => k !== null)).size > 1
+        ? c.filter((_, i) => kinds[i] !== null).map((part) => [part])
+        : [c];
+    });
+    const cols = split
       .map((c) => {
         const seg = joinSegments([...c].sort((x, y) => x.y0 - y.y0));
         // A stacked cell that does not read as a label as a whole ("EEE No." from a stray mark
@@ -403,7 +419,7 @@ function columnOf(table: Table, s: Segment): Col | null {
 }
 
 /**
- * An OCR segment whose words fall in more than one column ("1 22185-Calcium chloride … 28272000",
+ * An OCR segment whose words fall in more than one column ("1 5521-Potassium nitrate … 28342110",
  * the serial, the item and the HSN read as one run): split at the columns by each word's position.
  * A segment without word positions, or within one column, is kept as it is.
  */
@@ -476,7 +492,13 @@ function tableLines(
   };
   const anchors = body.filter(isAnchor).sort((a, b) => yMid(a) - yMid(b));
   const lines: RawLine[] = anchors.map(() => ({ cells: {} }));
+  // A heading's second line ("No" under "Sl", "/SAC" under "HSN") sits between the headings and
+  // the first row: wholly above the first row and without a figure, it is not part of any line.
+  const firstTop = anchors[0]?.y0;
+  const headingTail = (s: Segment) =>
+    firstTop !== undefined && s.y1 <= firstTop + unit * 0.1 && !/\d/.test(s.text);
   for (const s of body) {
+    if (headingTail(s)) continue;
     let best = -1;
     let dist = Infinity;
     anchors.forEach((a, i) => {
@@ -734,11 +756,9 @@ function gstinsIn(segs: readonly Segment[]): { value: string; segs: Segment[] }[
     if (ocr) {
       const token =
         (labelled1 ? clean(labelled1[1] ?? '').split(/\s+/)[0] : null) ??
-        // Unlabelled: only a word that looks like one (15 characters, at least six digits).
-        up.split(/\s+/).find((w) => {
-          const t = w.replace(/[^0-9A-Z]/g, '');
-          return t.length === 15 && (t.match(/\d/g) ?? []).length >= 6;
-        }) ??
+        // Unlabelled: only a word that is a valid GSTIN once read right ("MSME No:KR0O3E0162671"
+        // is fifteen characters too, and is not one).
+        up.split(/\s+/).find((w) => ocrGstin(w) !== null) ??
         null;
       const m = GSTIN.exec(up.replace(/\s+/g, ''));
       const raw = token && token.replace(/[^0-9A-Za-z]/g, '').length === 15 ? token : m?.[0];
@@ -1042,6 +1062,8 @@ export function parseInvoice(pages: readonly PageText[]): ParsedInvoice {
     const t = lead(s.text);
     return (
       /[A-Za-z]{2}/.test(t) &&
+      // OCR scraps of a stamp, a signature or a smudge: never the supplier's name.
+      !(s.source === 'tesseract' && (s.conf < 50 || (t.match(/[A-Za-z]/g) ?? []).length < 4)) &&
       !isMeta(t) &&
       !L.gstin.test(t) &&
       !L.pan.test(t) &&
@@ -1278,7 +1300,22 @@ function proveByChecks(header: ExtractedHeader, lines: ExtractedLine[]): string 
 
   // Tax heads: the GST rate read on the lines, on the goods value (per rate or per line).
   const rates = lines.map((l) => (l.gstRateBp as F).value as number | null);
-  if (rates.some((r) => r === null)) return note(done);
+  if (rates.some((r) => r === null)) {
+    // No GST on the lines and no tax printed (a bill of supply, exempt goods): the total is the
+    // goods value itself.
+    const total = h.totalPaise as F;
+    const noTax = ['cgstPaise', 'sgstPaise', 'igstPaise', 'cessPaise'].every(
+      (k) => (h[k] as F).value === null && (h[k] as F).confidenceBp > 0,
+    );
+    if (noTax && usable(total) && n(total) === goods) {
+      h.totalPaise = raise(total);
+      // The total is the goods value to the paisa: no tax and no round-off can be printed.
+      for (const k of ['cgstPaise', 'sgstPaise', 'igstPaise', 'cessPaise', 'roundOffPaise'])
+        if ((h[k] as F).value === null) h[k] = raise(h[k] as F);
+      done.push('invoice total');
+    }
+    return note(done);
+  }
   const half = (paise: number, bp: number) => Math.round((paise * bp) / 20_000);
   const whole = (paise: number, bp: number) => Math.round((paise * bp) / 10_000);
   const byRate = new Map<number, number>();
@@ -1312,7 +1349,12 @@ function proveByChecks(header: ExtractedHeader, lines: ExtractedLine[]): string 
   const total = h.totalPaise as F;
   const ro = h.roundOffPaise as F;
   if (!usable(total)) return note(done);
-  if (usable(ro) && goods + tax + n(ro) === n(total)) {
+  if (ro.value === null && ro.confidenceBp > 0 && usable(total) && goods + tax === n(total)) {
+    // The total is goods plus tax to the paisa: there is no round-off.
+    h.totalPaise = raise(total);
+    h.roundOffPaise = raise(ro);
+    done.push('invoice total');
+  } else if (usable(ro) && goods + tax + n(ro) === n(total)) {
     h.totalPaise = raise(total);
     h.roundOffPaise = raise(ro);
     done.push('invoice total');

@@ -673,6 +673,27 @@ export function receiptComparison(
     freeErp.delete(e);
     possible.push({ inv: l, erp: erp.lines[e] as ReceiptLine });
   }
+  // A single item on each side whose names share no word ("BRAND CHEF RICE 30KG BAG" and
+  // "Basmati Grain"): most likely the same item under the supplier's name. Paired, the item asked
+  // about, and its quantity, rate and amount still compared, so a real difference shows where it is.
+  // With more items, one left over on each side may be a different item: both stay unmatched.
+  const lonely: { inv: InvLine; erp: ReceiptLine }[] = [];
+  if (
+    inv.lines.length === 1 &&
+    erp.lines.length === 1 &&
+    freeInv.size === 1 &&
+    freeErp.size === 1
+  ) {
+    const i = [...freeInv][0] as number;
+    const e = [...freeErp][0] as number;
+    const l = inv.lines[i];
+    if (l && l.description !== null) {
+      freeInv.delete(i);
+      freeErp.delete(e);
+      lonely.push({ inv: l, erp: erp.lines[e] as ReceiptLine });
+      pairs.push({ inv: l, erp: erp.lines[e] ?? null });
+    }
+  }
   // An invoice item whose name was not read could be any ERP item left over.
   const unreadLeft = [...freeInv].some((i) => inv.lines[i]?.description === null);
   type Entry =
@@ -758,7 +779,9 @@ export function receiptComparison(
         invoice: l.description,
         erp: e.name,
         result: 'needs_confirmation',
-        note: "The supplier's name for this item differs from the ERP's. Please confirm it is the same item.",
+        note: lonely.some((x) => x.inv === l)
+          ? 'The only item on the invoice and the only one in the ERP, under different names. Please confirm it is the same item; its quantity and amount are compared below.'
+          : "The supplier's name for this item differs from the ERP's. Please confirm it is the same item.",
       });
     else
       cmp(section, 'Item', l.description, e.name, sameName(l.description, e.name), {
@@ -902,6 +925,21 @@ export function receiptComparison(
       result: 'needs_confirmation',
       note: notRead,
       path: taxUnclear,
+    });
+  } else if (
+    printedTax === 0 &&
+    inv.lines.every((l) => l.gstRateBp === null || l.gstRateBp === undefined) &&
+    erp.lines.every((e) => e.cgstPaise + e.sgstPaise + e.igstPaise === 0)
+  ) {
+    // No GST charged (exempt goods, a bill of supply), none in the ERP, and no rate printed to
+    // check it against: nothing to compare.
+    push({
+      section: 'Invoice arithmetic',
+      label: 'GST calculated from the rates',
+      invoice: money(0),
+      erp: money(0),
+      result: 'not_compared',
+      note: 'No GST is charged on the invoice or in the ERP, and no GST rate is printed to check.',
     });
   } else if (unreadRate) {
     push({
@@ -1065,7 +1103,7 @@ export function receiptComparison(
     'Invoice amount recorded in the ERP',
     money(inv.totalPaise),
     recorded ? money(erp.erpInvoiceAmountPaise) : null,
-    // The ERP may record the amount before the invoice's round-off (₹4,698.76 for ₹4,699.00).
+    // The ERP may record the amount before the invoice's round-off (₹7,374.60 for ₹7,375.00).
     recorded
       ? inv.totalPaise === erp.erpInvoiceAmountPaise ||
           (beforeRounding !== null && beforeRounding === erp.erpInvoiceAmountPaise) ||
