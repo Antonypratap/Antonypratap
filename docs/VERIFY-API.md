@@ -168,6 +168,7 @@ Any other part, a second file, or a file under another name is refused with `400
   "reference_id": "PO-7701/INV-501",
   "processing_status": "processing",
   "status": null,
+  "summary": null,
   "review_required": null,
   "scope": "invoice_vs_reference",
   "checks": [],
@@ -247,7 +248,8 @@ FAILED is only returned for a difference Veyrafy can prove. What it cannot prove
 | `scope` | Always `invoice_vs_reference` in this version. |
 | `checks[]` | Every check made: `id` (stable slug), `section`, `label`, `field` (the invoice field compared, or `null`), `result` (`passed`, `failed`, `unverified`, `not_compared`), `invoice_value`, `reference_value`, `reason`. |
 | `failed_fields[]` | One entry per failed check: `field`, `check_id`, `invoice_value`, `reference_value`, `difference` (`{value, unit}`: invoice minus reference, for amounts in `INR` and quantities in their unit; `null` when not numeric), `reason`. |
-| `unverified_fields[]` | One entry per unverified check: `field`, `check_id`, `reason`. |
+| `unverified_fields[]` | One entry per unverified check: `field`, `check_id`, `invoice_value` (what Veyrafy read; `null` only when it could not be read), `reference_value`, `reason`. Show `invoice_value` as read: a value to confirm is not necessarily unreadable (for example, an item name that differs from yours). |
+| `summary` | The result in one or two plain sentences, for a person (for example, "Nothing differs from the reference. A person should confirm 3 item names that differ from yours; 3 quantities counted in different units (NOS on the invoice, KGS in the reference)."). `null` until completed. |
 | `error` | `null`, or `{code, message}` when `processing_status` is `error`. |
 | `created_at`, `completed_at` | ISO 8601 UTC. |
 
@@ -265,6 +267,7 @@ your logic on `status`, `result` and `field`, not on `label` or `reason` wording
   "reference_id": "PO-7701/INV-501",
   "processing_status": "completed",
   "status": "PASSED",
+  "summary": "Every value checked matches the reference (20 checks).",
   "review_required": false,
   "scope": "invoice_vs_reference",
   "checks": [
@@ -335,6 +338,7 @@ your logic on `status`, `result` and `field`, not on `label` or `reason` wording
   "reference_id": "PO-7701/INV-501",
   "processing_status": "completed",
   "status": "FAILED",
+  "summary": "1 value differs from the reference: line 1 rate.",
   "review_required": false,
   "scope": "invoice_vs_reference",
   "checks": [
@@ -409,6 +413,7 @@ your logic on `status`, `result` and `field`, not on `label` or `reason` wording
   "reference_id": "PO-7701/INV-501",
   "processing_status": "completed",
   "status": "REVIEW_REQUIRED",
+  "summary": "Nothing differs from the reference. A person should confirm 1 value not read clearly on the invoice.",
   "review_required": true,
   "scope": "invoice_vs_reference",
   "checks": [
@@ -438,6 +443,8 @@ your logic on `status`, `result` and `field`, not on `label` or `reason` wording
     {
       "field": "header.totalPaise",
       "check_id": "totals_invoice_total",
+      "invoice_value": null,
+      "reference_value": "₹13,275.00",
       "reason": "Not read on the invoice with certainty. Confirm it to compare."
     }
   ],
@@ -455,6 +462,7 @@ your logic on `status`, `result` and `field`, not on `label` or `reason` wording
   "reference_id": "PO-7701/INV-501",
   "processing_status": "error",
   "status": null,
+  "summary": null,
   "review_required": null,
   "scope": "invoice_vs_reference",
   "checks": [],

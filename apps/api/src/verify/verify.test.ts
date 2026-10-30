@@ -351,6 +351,7 @@ describe('the invoice sent as base64 inside the reference', () => {
     await app.runner.drain();
     const v = (await get(res.json<VerificationView>().verification_id)).json<VerificationView>();
     expect(v).toMatchObject({ processing_status: 'completed', status: 'PASSED' });
+    expect(v.summary).toMatch(/^Every value checked matches the reference/);
   });
 
   it('a data URL and line breaks in the base64 are accepted; the same request by multipart is the same verification', async () => {

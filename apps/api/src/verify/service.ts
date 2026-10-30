@@ -16,7 +16,7 @@ import { fieldsFromExtraction, invoiceSideFrom } from '../workflow/invoice-side'
 import { isRetryable, safeErrorCode } from '../workflow/retry';
 import { VeyraError, checkDocumentShape, uploadLimitText } from '../workflow/veyra';
 import type { ApiClient } from './clients';
-import { verificationOutcome, type Outcome, type VerificationOutcome } from './result';
+import { summaryOf, verificationOutcome, type Outcome, type VerificationOutcome } from './result';
 
 /**
  * The Client Invoice Verification API's work (docs/VERIFY-API.md): a client submits an invoice and
@@ -76,6 +76,8 @@ export interface VerificationView {
   reference_id: string;
   processing_status: 'processing' | 'completed' | 'error' | 'deleted';
   status: Outcome | null;
+  /** The result in plain words (null until completed). */
+  summary: string | null;
   review_required: boolean | null;
   scope: string;
   checks: VerificationOutcome['checks'];
@@ -351,11 +353,30 @@ export class VerificationService {
       reference_id: row.referenceId,
       processing_status: status,
       status: (row.status as Outcome | null) ?? null,
+      summary: result
+        ? (result.summary ??
+          summaryOf(
+            result.status,
+            result.checks.filter((c) => c.result === 'failed'),
+            result.checks.filter((c) => c.result === 'unverified'),
+            result.checks.length,
+          ))
+        : null,
       review_required: result ? result.review_required : null,
       scope: result?.scope ?? 'invoice_vs_reference',
       checks: result?.checks ?? [],
       failed_fields: result?.failed_fields ?? [],
-      unverified_fields: result?.unverified_fields ?? [],
+      // Results stored before the values were included: taken from the check itself.
+      unverified_fields: (result?.unverified_fields ?? []).map((u) => {
+        const c = result?.checks.find((x) => x.id === u.check_id);
+        return {
+          field: u.field,
+          check_id: u.check_id,
+          invoice_value: u.invoice_value ?? c?.invoice_value ?? null,
+          reference_value: u.reference_value ?? c?.reference_value ?? null,
+          reason: u.reason,
+        };
+      }),
       error:
         status === 'error'
           ? {

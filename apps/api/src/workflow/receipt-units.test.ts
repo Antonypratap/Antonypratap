@@ -125,6 +125,12 @@ describe('ERP record in other units, with its own item names', () => {
     const o = verificationOutcome(c.rows, invoice, c.totalDeltaPaise);
     expect(o.status).toBe('REVIEW_REQUIRED');
     expect(o.failed_fields).toEqual([]);
+    // What was read is given with each value to confirm, never left out as "not readable".
+    const qty = o.unverified_fields.find((u) => /^line_1_.*_quantity$/.test(u.check_id));
+    expect(qty).toMatchObject({ invoice_value: '10 NOS', reference_value: '5 KGS' });
+    expect(o.summary).toBe(
+      'Nothing differs from the reference. A person should confirm 3 item names that differ from yours; 3 quantities counted in different units (NOS on the invoice, KGS in the reference).',
+    );
   });
 
   it('a real difference in the same units still fails', () => {

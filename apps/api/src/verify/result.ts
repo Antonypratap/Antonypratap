@@ -45,11 +45,16 @@ export interface FailedField {
 export interface UnverifiedField {
   field: string;
   check_id: string;
+  /** What Veyrafy read on the invoice (null when it could not be read). */
+  invoice_value: string | null;
+  reference_value: string | null;
   reason: string;
 }
 
 export interface VerificationOutcome {
   status: Outcome;
+  /** The result in one or two plain sentences, for a person. */
+  summary: string;
   review_required: boolean;
   scope: typeof SCOPE;
   checks: Check[];
@@ -259,6 +264,7 @@ export function verificationOutcome(
 
   return {
     status,
+    summary: summaryOf(status, failed, unverified, checks.length),
     review_required: unverified.length > 0 || status === 'REVIEW_REQUIRED',
     scope: SCOPE,
     checks: checks.map((c) => ({
@@ -282,7 +288,59 @@ export function verificationOutcome(
     unverified_fields: unverified.map((c) => ({
       field: c.field ?? `${c.section} / ${c.label}`,
       check_id: c.id,
+      invoice_value: c.invoice_value,
+      reference_value: c.reference_value,
       reason: c.reason ?? 'Not read with certainty.',
     })),
   };
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** The result in plain words: what differs, and what a person should confirm and why. */
+export function summaryOf(
+  status: Outcome,
+  failed: readonly Check[],
+  unverified: readonly Check[],
+  total: number,
+): string {
+  if (status === 'PASSED') return `Every value checked matches the reference (${total} checks).`;
+  const items = unverified.filter((c) => c.label === 'Item' && c.invoice_value !== null);
+  const units = unverified.filter(
+    (c) => c.label === 'Quantity' && /different units/.test(c.reason ?? ''),
+  );
+  const unread = unverified.filter((c) => c.invoice_value === null);
+  const other = unverified.filter(
+    (c) => !items.includes(c) && !units.includes(c) && !unread.includes(c),
+  );
+  const unitPair = units[0] ? /\(([^)]*)\)/.exec(units[0].reason ?? '')?.[1] : undefined;
+  const confirm = [
+    items.length
+      ? plural(
+          items.length,
+          'item name that differs from yours',
+          'item names that differ from yours',
+        )
+      : '',
+    units.length
+      ? `${plural(units.length, 'quantity', 'quantities')} counted in different units${unitPair ? ` (${unitPair})` : ''}`
+      : '',
+    unread.length
+      ? plural(
+          unread.length,
+          'value not read clearly on the invoice',
+          'values not read clearly on the invoice',
+        )
+      : '',
+    other.length ? plural(other.length, 'other value', 'other values') : '',
+  ].filter(Boolean);
+  const ask = confirm.length ? `A person should confirm ${confirm.join('; ')}.` : '';
+  if (status === 'FAILED') {
+    const labels = failed
+      .slice(0, 3)
+      .map((c) => `${c.section.replace(/^Line (\d+) · .*/, 'line $1')} ${c.label.toLowerCase()}`);
+    const more = failed.length > 3 ? ` and ${failed.length - 3} more` : '';
+    return `${plural(failed.length, 'value differs', 'values differ')} from the reference: ${labels.join(', ')}${more}.${ask ? ` ${ask}` : ''}`;
+  }
+  return `Nothing differs from the reference. ${ask}`.trim();
 }

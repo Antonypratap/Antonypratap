@@ -705,8 +705,8 @@ export function receiptComparison(
         // An item name not read is asked as a question (the rest of the line agrees).
         ...(p.inv.description === null ? { path: `lines[${p.inv.lineNo}].description` } : {}),
         note: unitsDiffer(p.inv.uom, p.erp.uom)
-          ? `The names differ and the units differ (${p.inv.uom} on the invoice, ${p.erp.uom} in the ERP), but the amount agrees. Confirm whether this is the same item: it is not counted as a match or a difference.`
-          : `${spellingDiffers(p.inv.description, p.erp.name) ? `The spelling differs (${p.inv.description} / ${p.erp.name}), and quantity` : 'The names differ, but quantity'}${p.inv.unitPricePaise !== null && p.inv.unitPricePaise === p.erp.ratePaise ? ', rate' : ''}${p.inv.taxablePaise !== null && p.inv.taxablePaise === p.erp.amountPaise ? ' and amount' : ''} agree. Confirm whether this is the same item: it is not counted as a match or a difference.`,
+          ? `The item name differs and it is counted in different units (${String(p.inv.uom).toUpperCase()} on the invoice, ${String(p.erp.uom).toUpperCase()} in the ERP), but the amount (${money(p.inv.taxablePaise)}) matches. Please confirm it is the same item.`
+          : `${spellingDiffers(p.inv.description, p.erp.name) ? `The spelling differs (${p.inv.description} / ${p.erp.name}), but the quantity` : 'The item name differs, but the quantity'}${p.inv.unitPricePaise !== null && p.inv.unitPricePaise === p.erp.ratePaise ? ', rate' : ''}${p.inv.taxablePaise !== null && p.inv.taxablePaise === p.erp.amountPaise ? ' and amount' : ''} match. Please confirm it is the same item.`,
       });
       return;
     }
@@ -758,7 +758,7 @@ export function receiptComparison(
         invoice: l.description,
         erp: e.name,
         result: 'needs_confirmation',
-        note: "The supplier's item name and the ERP's differ; they share words, so they were paired. Confirm it is the same item.",
+        note: "The supplier's name for this item differs from the ERP's. Please confirm it is the same item.",
       });
     else
       cmp(section, 'Item', l.description, e.name, sameName(l.description, e.name), {
@@ -780,7 +780,7 @@ export function receiptComparison(
         invoice: qty(l.qtyMilli, l.uom),
         erp: qty(e.qtyMilli, e.uom),
         result: 'needs_confirmation',
-        note: `Counted in different units (${String(l.uom).toUpperCase()} on the invoice, ${String(e.uom).toUpperCase()} in the ERP), so quantity and rate cannot be compared directly${amountAgrees ? '; the amount agrees' : ''}. Confirm the quantity received.`,
+        note: `Counted in different units (${String(l.uom).toUpperCase()} on the invoice, ${String(e.uom).toUpperCase()} in the ERP), so the quantities cannot be compared directly${amountAgrees ? '; the amount matches' : ''}. Please confirm the quantity received.`,
       });
       push({
         section,

@@ -324,7 +324,9 @@ describe('reconciliation states: match, mismatch, unmatched, to confirm, not com
     });
     const row = rowsOf(r).find((x) => x.label === 'Item' && x.result === 'needs_confirmation');
     expect(row).toMatchObject({ invoice: 'MIRRIOR', erp: 'MIRROR' });
-    expect(row?.note).toMatch(/^The spelling differs \(MIRRIOR \/ MIRROR\), and quantity, rate/);
+    expect(row?.note).toMatch(
+      /^The spelling differs \(MIRRIOR \/ MIRROR\), but the quantity, rate/,
+    );
     // Never a match on spelling alone: a different amount leaves both items unmatched.
     const other = erp();
     const mirror = other.lines.find((l) => l.name === 'MIRROR');
