@@ -96,7 +96,9 @@ export function valueConf(segs: readonly Segment[], value: string): number {
  * ("|Quantity", "MSME|"). Left in, they break every label and number read at the start or end of a
  * word. Only bar shapes are removed; letters and digits are never touched.
  */
-const RULE_CHARS = /^[|¦‖│┃]+|[|¦‖│┃]+$/g;
+// "[" and "]" too: a border at a word's edge is read as a bracket as often as a bar ("[Dated",
+// "30,000.00]"). A bracket pair round a word ("[Copy]") is kept.
+const RULE_CHARS = /^[|¦‖│┃]+|[|¦‖│┃]+$|^\[(?![^\]]*\]$)|(?<!^\[[^\]]*)\]$/g;
 export const withoutRules = (text: string): string => text.replace(RULE_CHARS, '').trim();
 
 /**

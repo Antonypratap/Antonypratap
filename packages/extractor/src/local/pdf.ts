@@ -13,6 +13,7 @@ import {
 import { textRunsToSegments, wordsToSegments, type PageText } from './layout';
 import { LIMITS } from './limits';
 import type { OcrEngine } from './ocr';
+import { skewNote, straighten } from './deskew';
 import { rotationNote, uprightCanvas, uprightGray, type Rotation } from './orientation';
 
 interface PdfImage {
@@ -232,9 +233,9 @@ export async function readPdf(
         if (image && coversPage) {
           const up = uprightGray(grayFromPdfImage(image));
           if (up.rotation) warnings.push(rotationNote(n, up.rotation));
-          const lines = await ocr.recognize(
-            encodePng(removeRules(downscale(up.image, ocrScaleFactor(dpi)))),
-          );
+          const level = straighten(downscale(up.image, ocrScaleFactor(dpi)));
+          if (level.skewDeg) warnings.push(skewNote(n, level.skewDeg));
+          const lines = await ocr.recognize(encodePng(removeRules(level.image)));
           const segments = wordsToSegments(lines, n);
           if (segments.length > 0) {
             pages.push({ page: n, segments });
@@ -260,7 +261,9 @@ export async function readPdf(
         });
         const up = uprightGray(gray);
         if (up.rotation) warnings.push(rotationNote(n, up.rotation));
-        const lines = await ocr.recognize(encodePng(removeRules(up.image)));
+        const level = straighten(up.image);
+        if (level.skewDeg) warnings.push(skewNote(n, level.skewDeg));
+        const lines = await ocr.recognize(encodePng(removeRules(level.image)));
         pages.push({ page: n, segments: wordsToSegments(lines, n) });
         diagnostics.renderedPages++;
         warnings.push(`Page ${n} has no readable text layer: read as an image by OCR.`);

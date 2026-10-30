@@ -264,3 +264,14 @@ describe("values proven by the invoice's own checks", () => {
     expect(o.header.totalPaise.confidenceBp).toBeLessThan(9000);
   });
 });
+
+describe('table borders read as brackets', () => {
+  it('a bracket at a word edge is dropped; a bracketed word is kept', async () => {
+    const { withoutRules } = await import('./layout');
+    expect(withoutRules('[Dated')).toBe('Dated');
+    expect(withoutRules('30,000.00]')).toBe('30,000.00');
+    expect(withoutRules('[10064000')).toBe('10064000');
+    expect(withoutRules('[Copy]')).toBe('[Copy]');
+    expect(withoutRules('Rate')).toBe('Rate');
+  });
+});
