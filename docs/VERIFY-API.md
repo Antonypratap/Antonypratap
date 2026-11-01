@@ -91,7 +91,8 @@ beside `data`, and the invoice file as base64 in the record's `images`:
         "invoice_date": "2026-09-27",
         "invoice_amount": 7375,
         "vendor_name": "Shakti Steel Suppliers Pvt Ltd",
-        "vendor_code": "V-1"
+        "vendor_code": "V-1",
+        "vendor_gstin_number": "29AAKCE3344D1ZP"
       },
       "items": [
         {
@@ -156,7 +157,8 @@ Any other part, a second file, or a file under another name is refused with `400
   `A–Z a–z 0–9 . _ : / -`. Returned unchanged.
 - Header `Idempotency-Key` (optional, recommended): 1–128 characters from `A–Z a–z 0–9 . _ : -`.
 - `dc_no` is compared with the invoice number printed on the invoice; `invoice_amount` with its
-  total. All values in this document are made up.
+  total; `vendor_gstin_number` (optional, recommended) with the supplier's GSTIN printed on it.
+  All values in this document are made up.
 - The invoice file is read and then deleted. `images` is never stored with your record.
 
 **Answer: `202 Accepted`**, with `Location: /api/v1/verification/{verification_id}` and
@@ -234,6 +236,10 @@ FAILED is only returned for a difference Veyrafy can prove. What it cannot prove
   tax and total), a difference in those figures may be a misreading. It is `unverified`, not
   `failed`. A supplier name that reads like a registration line ("MSME No: …") is `unverified`
   for the same reason.
+- **Supplier GSTIN.** Send `vendor_gstin_number` so the GSTIN is checked against yours. A GSTIN
+  read on the invoice is never matched to yours unless it was read with certainty. When OCR read
+  it one character away from yours, and the reading fails the GSTIN check character, the reason
+  says so ("very likely that GSTIN misread"), for a person to confirm.
 - **Scans and photos.** A value is used only when it was read with certainty. A low-confidence
   OCR value counts as read when the invoice itself proves it: a GSTIN by its check character,
   and amounts that agree to the paisa (each line's quantity × rate, the lines' sum, the tax on

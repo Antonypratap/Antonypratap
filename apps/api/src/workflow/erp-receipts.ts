@@ -73,6 +73,7 @@ const RecordSchema = z
         invoice_amount: Num,
         vendor_name: z.string().min(1),
         vendor_code: z.string().nullable().optional(),
+        vendor_gstin_number: z.string().nullable().optional(),
       })
       .loose(),
     items: z.array(ItemSchema).min(1),
@@ -121,6 +122,8 @@ export interface ReceiptRecord {
   erpInvoiceAmountPaise: number | null;
   vendorName: string;
   vendorCode: string | null;
+  /** The supplier's GSTIN as the ERP holds it (`vendor_gstin_number`); null when it holds none. */
+  vendorGstin?: string | null;
   lines: ReceiptLine[];
 }
 
@@ -159,6 +162,7 @@ export function normalizeReceipt(raw: RawReceiptRecord): ReceiptRecord {
     erpInvoiceAmountPaise: toPaise(info.invoice_amount),
     vendorName: info.vendor_name.trim(),
     vendorCode: info.vendor_code ?? null,
+    vendorGstin: info.vendor_gstin_number?.trim().toUpperCase().replace(/\s+/g, '') || null,
     lines: raw.items.map((it) => {
       const line: ReceiptLine = {
         name: it.item_name.trim(),
@@ -497,7 +501,12 @@ export function receiptComparison(
     invoice: string | null,
     erpText: string | null,
     equal: boolean | null,
-    o: { note?: string; path?: string; required?: boolean } = {},
+    o: {
+      note?: string;
+      path?: string;
+      required?: boolean;
+      unsureNote?: (read: string) => string | null;
+    } = {},
   ) => {
     const path = o.path ? { path: o.path } : {};
     const unsure = o.path ? uncertainText(o.path) : null;
@@ -509,9 +518,10 @@ export function receiptComparison(
         erp: erpText,
         result: o.required === false ? 'not_compared' : 'needs_confirmation',
         note:
-          o.path === 'header.vendorGstin' && !validateGstin(unsure).ok
+          o.unsureNote?.(unsure) ??
+          (o.path === 'header.vendorGstin' && !validateGstin(unsure).ok
             ? 'Read as shown, but it fails the GSTIN check, so a character is misread. Confirm it to compare.'
-            : 'Read as shown, but not with certainty. Confirm it to compare.',
+            : 'Read as shown, but not with certainty. Confirm it to compare.'),
         ...path,
       });
     if (invoice === null)
@@ -591,10 +601,29 @@ export function receiptComparison(
       path: 'header.vendorName',
     },
   );
-  cmp('Supplier', 'GSTIN', inv.vendorGstin, null, null, {
-    note: 'The ERP record carries no GSTIN.',
-    path: 'header.vendorGstin',
-  });
+  // The supplier's GSTIN as the ERP holds it: compared exactly. A reading that is not certain is
+  // never matched to it; when it is one character away and fails its own check, that is said.
+  const erpGstin = erp.vendorGstin ?? null;
+  cmp(
+    'Supplier',
+    'GSTIN',
+    inv.vendorGstin,
+    erpGstin,
+    erpGstin === null ? null : inv.vendorGstin === erpGstin,
+    {
+      note:
+        erpGstin === null ? 'The ERP record carries no GSTIN.' : 'The GSTIN differs from the ERP.',
+      path: 'header.vendorGstin',
+      unsureNote: (read) =>
+        erpGstin !== null &&
+        read.length === erpGstin.length &&
+        [...read].filter((c, i) => c !== erpGstin[i]).length === 1 &&
+        !validateGstin(read).ok &&
+        validateGstin(erpGstin).ok
+          ? `Read as shown: one character away from the ERP's ${erpGstin}, and the reading fails the GSTIN check, so it is very likely that GSTIN misread. Please confirm.`
+          : null,
+    },
+  );
   // The GSTIN itself (format, checksum, state code), whether or not the ERP holds one.
   if (inv.vendorGstin !== null) {
     const valid = validateGstin(inv.vendorGstin).ok;

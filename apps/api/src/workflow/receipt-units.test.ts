@@ -306,3 +306,35 @@ describe('invoice numbers', () => {
     expect(o.checks.some((x) => x.id.startsWith('required_'))).toBe(false);
   });
 });
+
+describe("the supplier's GSTIN the ERP holds", () => {
+  const withGstin = (g: string) =>
+    only({ ...single, invoice_info: { ...single.invoice_info, vendor_gstin_number: g } });
+  const gstinRow = (inv: InvoiceSide, erpGstin: string) =>
+    receiptComparison(inv, withGstin(erpGstin)).rows.find((r) => r.label === 'GSTIN');
+
+  it('is compared: the same passes, a different valid one fails', () => {
+    expect(gstinRow(invoice, '29AAKCE3344D1ZP')?.result).toBe('match');
+    expect(gstinRow(invoice, ' 29aakce3344d1zp ')?.result).toBe('match');
+    expect(gstinRow(invoice, '29BBQPN1599K1ZO')?.result).toBe('mismatch');
+  });
+
+  it('an uncertain reading one character away is never matched, but the likely misread is named', () => {
+    const unsure: InvoiceSide = {
+      ...invoice,
+      vendorGstin: null,
+      uncertain: { 'header.vendorGstin': '29AAKCE3344D1ZB' },
+    };
+    const row = gstinRow(unsure, '29AAKCE3344D1ZP');
+    expect(row?.result).toBe('needs_confirmation');
+    expect(row?.note).toMatch(/one character away from the ERP's 29AAKCE3344D1ZP/);
+    // Not one character away: the plain reason.
+    expect(gstinRow(unsure, '29BBQPN1599K1ZO')?.note).toMatch(/fails the GSTIN check/);
+  });
+
+  it('none held: not compared, as before', () => {
+    expect(
+      receiptComparison(invoice, only(single)).rows.find((r) => r.label === 'GSTIN')?.result,
+    ).toBe('not_compared');
+  });
+});
