@@ -1,7 +1,8 @@
 import { ExtractionResultSchema, type ExtractionResult } from '@veyra/shared';
 import { ExtractorError, inputBytes, type Extractor, type ExtractorInput } from '../extractor';
-import { decodeImage, encodePng, removeRules } from './image';
+import { decodeImage, encodePng, removeRules, type Gray } from './image';
 import { skewNote, straighten } from './deskew';
+import { secondLook } from './second-look';
 import { rotationNote, uprightGray } from './orientation';
 import { wordsToSegments, type PageText } from './layout';
 import type { OllamaAssist } from './ollama';
@@ -101,11 +102,13 @@ export class LocalDocumentExtractor implements Extractor {
   ): Promise<ExtractionResult> {
     let pages: PageText[];
     const warnings: string[] = [];
+    let images = new Map<number, Gray>();
     const diagnostics = { readers: [this.id], textPages: 0, imagePages: 0, rendered: false };
     if (mime === 'application/pdf') {
       const { readPdf } = await import('./pdf');
       const read = await readPdf(bytes, this.#ocr);
       pages = read.pages;
+      images = read.images;
       warnings.push(...read.warnings);
       diagnostics.textPages = read.diagnostics.textPages;
       diagnostics.imagePages = read.diagnostics.scanImagePages + read.diagnostics.renderedPages;
@@ -115,13 +118,17 @@ export class LocalDocumentExtractor implements Extractor {
       if (up.rotation) warnings.push(rotationNote(1, up.rotation));
       const level = straighten(up.image);
       if (level.skewDeg) warnings.push(skewNote(1, level.skewDeg));
-      const lines = await this.#ocr.recognize(encodePng(removeRules(level.image)));
+      const image = removeRules(level.image);
+      images.set(1, image);
+      const lines = await this.#ocr.recognize(encodePng(image));
       pages = [{ page: 1, segments: wordsToSegments(lines, 1) }];
       warnings.push('Read by OCR.');
       diagnostics.imagePages = 1;
     }
     const parsed = parseInvoice(pages);
     warnings.push(...parsed.warnings);
+    const looked = await secondLook(parsed.header, images, this.#ocr);
+    if (looked) warnings.push(looked);
     let { header, lines } = parsed;
     if (this.#ollama) {
       const assisted = await this.#ollama.fill({ header, lines }, pages);

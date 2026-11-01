@@ -9,6 +9,7 @@ import {
   grayFromPdfImage,
   ocrScaleFactor,
   removeRules,
+  type Gray,
 } from './image';
 import { textRunsToSegments, wordsToSegments, type PageText } from './layout';
 import { LIMITS } from './limits';
@@ -197,7 +198,13 @@ export const loadPdfJs = (): Promise<PdfJs> =>
 export async function readPdf(
   bytes: Uint8Array,
   ocr: OcrEngine,
-): Promise<{ pages: PageText[]; warnings: string[]; diagnostics: PdfReadDiagnostics }> {
+): Promise<{
+  pages: PageText[];
+  warnings: string[];
+  diagnostics: PdfReadDiagnostics;
+  /** Each OCR'd page as it was read (segment coordinates are in its pixels), for a second look. */
+  images: Map<number, Gray>;
+}> {
   const { doc, lib, close } = await openPdf(bytes);
   try {
     if (doc.numPages > LIMITS.maxPdfPages)
@@ -207,6 +214,7 @@ export async function readPdf(
       );
     const pages: PageText[] = [];
     const warnings: string[] = [];
+    const images = new Map<number, Gray>();
     const diagnostics: PdfReadDiagnostics = {
       pages: doc.numPages,
       textPages: 0,
@@ -235,7 +243,9 @@ export async function readPdf(
           if (up.rotation) warnings.push(rotationNote(n, up.rotation));
           const level = straighten(downscale(up.image, ocrScaleFactor(dpi)));
           if (level.skewDeg) warnings.push(skewNote(n, level.skewDeg));
-          const lines = await ocr.recognize(encodePng(removeRules(level.image)));
+          const read = removeRules(level.image);
+          images.set(n, read);
+          const lines = await ocr.recognize(encodePng(read));
           const segments = wordsToSegments(lines, n);
           if (segments.length > 0) {
             pages.push({ page: n, segments });
@@ -263,7 +273,9 @@ export async function readPdf(
         if (up.rotation) warnings.push(rotationNote(n, up.rotation));
         const level = straighten(up.image);
         if (level.skewDeg) warnings.push(skewNote(n, level.skewDeg));
-        const lines = await ocr.recognize(encodePng(removeRules(level.image)));
+        const read = removeRules(level.image);
+        images.set(n, read);
+        const lines = await ocr.recognize(encodePng(read));
         pages.push({ page: n, segments: wordsToSegments(lines, n) });
         diagnostics.renderedPages++;
         warnings.push(`Page ${n} has no readable text layer: read as an image by OCR.`);
@@ -271,7 +283,7 @@ export async function readPdf(
         page.cleanup();
       }
     }
-    return { pages, warnings, diagnostics };
+    return { pages, warnings, diagnostics, images };
   } catch (error) {
     if (error instanceof ExtractorError) throw error;
     throw new ExtractorError(

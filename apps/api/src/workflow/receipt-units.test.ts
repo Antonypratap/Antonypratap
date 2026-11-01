@@ -257,3 +257,52 @@ describe('one item on each side under different names, and no GST charged', () =
     expect(row('GST calculated from the rates')?.result).toBe('not_compared');
   });
 });
+
+describe('a value read without certainty', () => {
+  it('is shown as read with the reason, never compared; a GSTIN that fails its check says so', () => {
+    const c = receiptComparison(
+      {
+        ...invoice,
+        vendorGstin: null,
+        invoiceNumber: null,
+        uncertain: {
+          'header.vendorGstin': '29KKMPE4321H1ZC',
+          'header.invoiceNumber': '21/2026-27',
+        },
+      },
+      only(single),
+    );
+    const row = (label: string) => c.rows.find((r) => r.label === label);
+    expect(row('Invoice number')).toMatchObject({
+      invoice: '21/2026-27',
+      result: 'needs_confirmation',
+      note: 'Read as shown, but not with certainty. Confirm it to compare.',
+    });
+    expect(row('GSTIN')?.note).toMatch(/fails the GSTIN check/);
+  });
+});
+
+describe('invoice numbers', () => {
+  const number = (printed: string, recorded: string) =>
+    receiptComparison(
+      { ...invoice, invoiceNumber: printed },
+      only({ ...single, invoice_info: { ...single.invoice_info, dc_no: recorded } }),
+    ).rows.find((r) => r.label === 'Invoice number')?.result;
+  it('a letter added at the end (a part receipt) is asked about; any other difference fails', () => {
+    expect(number('21/2026-27', '21/2026-27A')).toBe('needs_confirmation');
+    expect(number('21/2026-27', '21/2026-27-B')).toBe('needs_confirmation');
+    expect(number('21/2026-27', '21/2026-27')).toBe('match');
+    expect(number('21/2026-27', '12/2026-27')).toBe('mismatch');
+    expect(number('21/2026-27', '21/2026-277')).toBe('mismatch');
+    expect(number('21/2026-27', '21/2026-27AB')).toBe('mismatch');
+    // Reported once, on the invoice number's own field: never also as "not read".
+    const inv = { ...invoice, invoiceNumber: '21/2026-27' };
+    const c = receiptComparison(
+      inv,
+      only({ ...single, invoice_info: { ...single.invoice_info, dc_no: '21/2026-27A' } }),
+    );
+    const o = verificationOutcome(c.rows, inv, c.totalDeltaPaise);
+    expect(o.unverified_fields.filter((u) => u.field === 'header.invoiceNumber')).toHaveLength(1);
+    expect(o.checks.some((x) => x.id.startsWith('required_'))).toBe(false);
+  });
+});

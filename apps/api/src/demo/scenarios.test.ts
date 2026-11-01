@@ -208,7 +208,9 @@ describe('demo scenario launcher', () => {
     // A misread that is not a valid value cannot be "confirmed": it must be entered.
     expect(q?.options.map((o) => o.id)).toEqual(['set:header.buyerGstin', 'reject']);
     await answer(q as ApiQuestion, 'set:header.buyerGstin', '29AAACS1111A1Z6');
-    expect((await detail(id)).state).toBe('NEEDS_INPUT'); // the next unclear value is asked in turn
+    // The order number OCR was unsure of is read the same again on a closer look (a second look),
+    // so nothing else is asked: with the GSTIN entered, every check passes.
+    expect((await detail(id)).state).toBe('VERIFIED_PENDING_PAYMENT');
   }, 60_000);
 
   it('two invoices in one file: stopped; one file per invoice; never merged', async () => {

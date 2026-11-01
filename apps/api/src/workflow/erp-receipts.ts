@@ -343,6 +343,11 @@ export interface InvoiceSide {
    * only when the path is not listed here: an unread round-off or tax is never taken as zero.
    */
   unclear?: readonly string[];
+  /**
+   * What was read where the reading was not certain (path → the value as stored). Never compared;
+   * shown with the value to confirm, so a person sees what Veyrafy read.
+   */
+  uncertain?: Readonly<Record<string, string>>;
   lines: {
     lineNo: number;
     description: string | null;
@@ -368,6 +373,8 @@ type Result = ApiComparison['rows'][number]['result'];
 type Row = ApiComparison['rows'][number] & {
   /** The invoice field the row compares (a value to confirm is asked as a question). */
   path?: string;
+  /** The invoice field compared, when it is not to be asked as a question (the API's `field`). */
+  field?: string;
 };
 export type ComparisonRow = Row;
 const money = (p: number | null) => (p === null ? null : formatInr(paise(p)));
@@ -471,6 +478,15 @@ export function receiptComparison(
 } {
   const rows: Row[] = [];
   const push = (r: Omit<Row, 'note'> & { note?: string | null }) => rows.push({ note: null, ...r });
+  /** An uncertain reading, formatted like the values compared (never compared itself). */
+  const uncertainText = (path: string): string | null => {
+    const raw = inv.uncertain?.[path];
+    if (raw === undefined) return null;
+    if (/Paise$/.test(path) && /^-?\d+$/.test(raw)) return money(Number(raw));
+    if (/qtyMilli$/.test(path) && /^\d+$/.test(raw)) return qty(Number(raw), null);
+    if (path === 'header.invoiceDate' && /^\d{4}-\d{2}-\d{2}$/.test(raw)) return dateText(raw);
+    return raw;
+  };
   /**
    * Compare two values. A required value not read on the invoice must be confirmed; an optional
    * one not read, a value the ERP does not hold, or one that cannot be compared, is not compared.
@@ -484,6 +500,20 @@ export function receiptComparison(
     o: { note?: string; path?: string; required?: boolean } = {},
   ) => {
     const path = o.path ? { path: o.path } : {};
+    const unsure = o.path ? uncertainText(o.path) : null;
+    if (invoice === null && unsure !== null)
+      return push({
+        section,
+        label,
+        invoice: unsure,
+        erp: erpText,
+        result: o.required === false ? 'not_compared' : 'needs_confirmation',
+        note:
+          o.path === 'header.vendorGstin' && !validateGstin(unsure).ok
+            ? 'Read as shown, but it fails the GSTIN check, so a character is misread. Confirm it to compare.'
+            : 'Read as shown, but not with certainty. Confirm it to compare.',
+        ...path,
+      });
     if (invoice === null)
       return o.required === false
         ? push({
@@ -581,15 +611,38 @@ export function receiptComparison(
     });
   }
 
-  // Invoice.
-  cmp(
-    'Invoice',
-    'Invoice number',
-    inv.invoiceNumber,
-    erp.invoiceNo,
-    inv.invoiceNumber !== null && invoiceNoKey(inv.invoiceNumber) === invoiceNoKey(erp.invoiceNo),
-    { path: 'header.invoiceNumber' },
-  );
+  // Invoice. A number that differs only by a letter added at the end ("77/26-27" and
+  // "77/26-27A", as an ERP may mark a second receipt against one invoice) is asked about, never
+  // a proven difference.
+  const suffixOnly =
+    inv.invoiceNumber !== null &&
+    (() => {
+      const a = invoiceNoKey(inv.invoiceNumber);
+      const b = invoiceNoKey(erp.invoiceNo);
+      const [short, long] = a.length < b.length ? [a, b] : [b, a];
+      return (
+        short !== long && long.startsWith(short) && /^[-/ ]?[A-Z]$/.test(long.slice(short.length))
+      );
+    })();
+  if (suffixOnly)
+    push({
+      section: 'Invoice',
+      label: 'Invoice number',
+      invoice: inv.invoiceNumber,
+      erp: erp.invoiceNo,
+      result: 'needs_confirmation',
+      note: 'The numbers differ only by a letter at the end, which often marks a part receipt. Please confirm it is the same invoice.',
+      field: 'header.invoiceNumber',
+    });
+  else
+    cmp(
+      'Invoice',
+      'Invoice number',
+      inv.invoiceNumber,
+      erp.invoiceNo,
+      inv.invoiceNumber !== null && invoiceNoKey(inv.invoiceNumber) === invoiceNoKey(erp.invoiceNo),
+      { path: 'header.invoiceNumber' },
+    );
   const recorded = erp.erpInvoiceAmountPaise !== null && erp.erpInvoiceAmountPaise > 0;
   cmp(
     'Invoice',
@@ -720,7 +773,7 @@ export function receiptComparison(
       push({
         section,
         label: 'Item',
-        invoice: p.inv.description,
+        invoice: p.inv.description ?? uncertainText(`lines[${p.inv.lineNo}].description`),
         erp: p.erp.name,
         result: 'needs_confirmation',
         // An item name not read is asked as a question (the rest of the line agrees).

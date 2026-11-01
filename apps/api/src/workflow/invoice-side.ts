@@ -28,6 +28,14 @@ export function invoiceSideFrom(
     const state = readField(fields, path as never, minConfidenceBp).state;
     return state !== 'usable' && state !== 'absent';
   });
+  // What was read below the threshold: never used to compare, only shown beside the question
+  // (as a person confirming it needs to see what Veyrafy read).
+  const uncertain: Record<string, string> = {};
+  for (const [path, field] of fields) {
+    if (field.value === null || typeof field.value === 'object') continue;
+    if (readField(fields, path as never, minConfidenceBp).state === 'low_confidence')
+      uncertain[path] = String(field.value);
+  }
   const freight = otherFields
     .filter((o) => /freight|cartage|carriage|transport/i.test(o.label))
     .map((o) => toPaise(o.value.replace(/[₹\s]|Rs\.?/gi, '')))
@@ -46,6 +54,7 @@ export function invoiceSideFrom(
     totalPaise: v<number>('header.totalPaise'),
     freightPaise: freight.length ? freight.reduce((a, b) => a + b, 0) : null,
     unclear,
+    uncertain,
     lines: lineNos.map((lineNo) => ({
       lineNo,
       description: v<string>(`lines[${lineNo}].description`),

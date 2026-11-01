@@ -213,7 +213,7 @@ export function verificationOutcome(
       id: n === 1 ? base : `${base}_${n}`,
       section,
       label,
-      field: r.path ?? null,
+      field: r.path ?? r.field ?? null,
       result,
       invoice_value: r.invoice,
       reference_value: r.erp,
@@ -305,11 +305,20 @@ export function summaryOf(
   total: number,
 ): string {
   if (status === 'PASSED') return `Every value checked matches the reference (${total} checks).`;
-  const items = unverified.filter((c) => c.label === 'Item' && c.invoice_value !== null);
+  const items = unverified.filter(
+    (c) =>
+      c.label === 'Item' && c.invoice_value !== null && !/not with certainty/.test(c.reason ?? ''),
+  );
   const units = unverified.filter(
     (c) => c.label === 'Quantity' && /different units/.test(c.reason ?? ''),
   );
-  const unread = unverified.filter((c) => c.invoice_value === null);
+  // Not read, or read without certainty (the reading is shown, but it is not trusted).
+  const unread = unverified.filter(
+    (c) =>
+      !items.includes(c) &&
+      !units.includes(c) &&
+      (c.invoice_value === null || /not with certainty|misread/.test(c.reason ?? '')),
+  );
   const other = unverified.filter(
     (c) => !items.includes(c) && !units.includes(c) && !unread.includes(c),
   );
@@ -336,9 +345,10 @@ export function summaryOf(
   ].filter(Boolean);
   const ask = confirm.length ? `A person should confirm ${confirm.join('; ')}.` : '';
   if (status === 'FAILED') {
-    const labels = failed
-      .slice(0, 3)
-      .map((c) => `${c.section.replace(/^Line (\d+) · .*/, 'line $1')} ${c.label.toLowerCase()}`);
+    const labels = failed.slice(0, 3).map((c) => {
+      const line = /^Line (\d+) · /.exec(c.section);
+      return line ? `line ${line[1]} ${c.label.toLowerCase()}` : c.label.toLowerCase();
+    });
     const more = failed.length > 3 ? ` and ${failed.length - 3} more` : '';
     return `${plural(failed.length, 'value differs', 'values differ')} from the reference: ${labels.join(', ')}${more}.${ask ? ` ${ask}` : ''}`;
   }
