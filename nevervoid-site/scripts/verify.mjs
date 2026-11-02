@@ -261,6 +261,18 @@ if (failures.length) {
     ['https://www.nevervoid.com/food-photography', 301, 'https://www.nevervoid.com/Food-photography'],
     ['https://www.nevervoid.com/does-not-exist', 200, null], // falls through to the asset server's 404 page
   ];
+  {
+    const r = await run('https://nevervoid-site.pages.dev/Fitness-Photography');
+    if (r.status !== 200 || r.headers.get('x-robots-tag') !== 'noindex, nofollow') {
+      console.log('MIDDLEWARE FAIL: pages.dev preview is not noindex');
+      process.exit(1);
+    }
+    const p = await run('https://www.nevervoid.com/Fitness-Photography');
+    if (p.headers.get('x-robots-tag')) {
+      console.log('MIDDLEWARE FAIL: production must not be noindex');
+      process.exit(1);
+    }
+  }
   let mwFail = 0;
   for (const [u, st, loc] of cases) {
     const r = await run(u);

@@ -54,5 +54,12 @@ export async function onRequest(context) {
   if (!PAGES) PAGES = new Set(await (await context.env.ASSETS.fetch(new URL('/_routes-data.json', url))).json().then((r) => r.pages));
   const r = resolve(url.pathname, { pages: PAGES, ...ROUTES });
   if (r) return Response.redirect(new URL(r.location + url.search, url).toString(), r.status);
-  return context.next();
+  const res = await context.next();
+  // Preview copies on *.pages.dev must never be indexed (duplicate of www.nevervoid.com).
+  if (url.hostname.endsWith('.pages.dev')) {
+    const out = new Response(res.body, res);
+    out.headers.set('X-Robots-Tag', 'noindex, nofollow');
+    return out;
+  }
+  return res;
 }
