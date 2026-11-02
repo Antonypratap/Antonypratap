@@ -8,6 +8,7 @@
     "node": ">=22.12"
   },
   "scripts": {
+    "images": "node scripts/images.mjs",
     "extract": "node scripts/extract.mjs",
     "build": "node scripts/build.mjs",
     "verify": "node scripts/verify.mjs",

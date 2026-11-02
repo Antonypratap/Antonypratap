@@ -8,6 +8,7 @@ See [`reports/seo-audit-and-migration-plan.md`](reports/seo-audit-and-migration-
 
 ```bash
 npm install
+npm run images       # select ~980 photos, download from SmugMug, write WebP to public/img (resumable)
 npm run build        # data/ + src/ -> dist/ (pages, image pages, sitemap, robots, redirects)
 npm run verify       # tests every old URL + on-page SEO, writes reports/migration-report.*
 npm test             # build + verify
@@ -35,11 +36,13 @@ NODE_USE_ENV_PROXY=1 node scripts/extract.mjs rendered.json                     
 | `src/content/blog/*.md` | Journal posts. Add a `.md` file with the same front matter to publish a new post |
 | `src/redirects.js` | The single redirect resolver used in production, in local preview and in tests |
 | `functions/_middleware.js` | Generated Cloudflare Pages middleware (301s). Do not edit by hand |
+| `data/media.json` | The selected photos: file name, dimensions, sizes generated |
+| `public/img/` | Optimised photos (WebP) and social-preview JPEGs |
 | `public/` | CSS, favicon, `_headers` |
 
 ## Hosting
 
-Built for **Cloudflare Pages**: root directory `nevervoid-site`, build command `npm run build`, output `dist`. Pages are written as `Page.html` and served at `/Page`, with no trailing slash, exactly like SmugMug. Images are still served from SmugMug's CDN, so keep the SmugMug subscription active until the images are self-hosted.
+Built for **Cloudflare Pages**: root directory `nevervoid-site`, build command `npm run build`, output `dist`. Pages are written as `Page.html` and served at `/Page`, with no trailing slash, exactly like SmugMug. Photos are self-hosted in `public/img/` (WebP, 400/800/1600 px), so the site does not depend on SmugMug.
 
 ## Adding a Journal post
 

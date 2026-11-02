@@ -114,14 +114,33 @@ Identified from titles, H1s and copy. Confirm with Search Console once it is ava
 | `/Candid-Wedding-Photography/Candid-Engagement` and `/…/Engagement-Photography` (same title) | Merge | Same |
 | Long titles (48 over 65 characters) | Shorten | Only once we know which titles rank; changing a ranking title is a risk |
 
-### Images
-The new site still serves your photos from SmugMug's CDN, so **SmugMug must stay active** after launch. Before you ever cancel SmugMug, download the originals, self-host them, and re-run the build. Image search traffic also points at `photos.smugmug.com` URLs, so plan that step separately.
+### Images (done)
+The site no longer depends on SmugMug for photos. `scripts/images.mjs` selected **982 photos**, keeping your own gallery order:
+
+| Pages | Photos per page |
+|---|---|
+| Headshot and fitness pages | first 40 |
+| Other service pages | 16 |
+| Homepage | 12 |
+| Client, event and personal galleries | 6 (4 for galleries last updated before 2018) |
+
+Each photo is self-hosted under `/img/`:
+- **Sizes:** WebP at 400, 800 and 1600 px, averaging 15, 45 and 126 KB.
+- **Names:** descriptive file names.
+- **Privacy:** EXIF and GPS data are stripped.
+- **Layout:** explicit width and height, so pages don't shift while loading.
+- **Social previews:** a 1200 px JPEG for each page's lead photo (103 in total).
+
+The 911 MB downloaded became 146 MB. The other ~6,700 photos are not shown; their old image-page URLs 301 to their gallery (tested). To promote specific photos, list their IDs in `data/popular.json`, for example from SmugMug Stats → Popularity, and re-run `npm run images`.
+
+Image search traffic currently points at `photos.smugmug.com` URLs, which will move to `www.nevervoid.com/img/…` once the new sitemap is indexed.
 
 ## Verification (run `npm test`)
 - 138 old URLs return 200 at the identical URL with the expected title. `/Covid` returns a 301 to `/`.
 - 24 legacy and keyword URLs return a single 301 to a live page.
 - 551 URL variants (trailing slash, lowercase, UPPERCASE, `.html`) take one 301 to the right page.
-- All 7,743 old image-page links return 200.
+- All 7,743 old image-page links resolve: 940 image pages are kept and the rest 301 to their gallery.
+- No page references SmugMug-hosted images, every referenced image file exists, and every photo has width and height.
 - Every page has exactly one H1, a title, a meta description of 50 or more characters, a self-referencing canonical, and valid JSON-LD. All 7,536 internal links return 200 with no redirect hops.
 - Every sitemap URL returns 200, is indexable and matches its canonical.
 - The generated Cloudflare middleware is executed against 8 cases: bare domain, case, trailing slash with query string, legacy, keyword, collision and 404.
@@ -130,5 +149,5 @@ The new site still serves your photos from SmugMug's CDN, so **SmugMug must stay
 1. Settle the two remaining content questions above (session length, corporate price).
 2. Add the Search Console export and re-run `npm test`. Review which pages rank and decide on the consolidations.
 3. Deploy to Cloudflare Pages: build command `npm run build`, output directory `dist`, root directory `nevervoid-site`. Run `node scripts/check-live.mjs https://<project>.pages.dev`.
-4. Cutover: add `www.nevervoid.com` and `nevervoid.com` as custom domains in Cloudflare Pages, then update DNS. **This is the only step that changes DNS.** Keep SmugMug active.
+4. Cutover: add `www.nevervoid.com` and `nevervoid.com` as custom domains in Cloudflare Pages, then update DNS. **This is the only step that changes DNS.** SmugMug can be cancelled after cutover and once Search Console shows the new URLs indexed. Download your originals first, as an archive.
 5. Run `node scripts/check-live.mjs https://www.nevervoid.com`. In Search Console, submit `/sitemap.xml`, inspect the headshot, fitness and home URLs, and compare clicks weekly for 8 weeks against the export.
