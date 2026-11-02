@@ -5,22 +5,24 @@ export const esc = (s = '') =>
 export const abs = (p) => SITE.origin + (p === '/' ? '' : encodeURI(p));
 export const href = (p) => encodeURI(p);
 
-// SmugMug size codes and their longest-edge pixel sizes.
-const SIZES = [
-  ['M', 600],
-  ['L', 800],
-  ['XL', 1024],
-  ['X2', 1280],
-  ['X3', 1600],
-];
-export const imgUrl = (im, size = 'L') => `${im.base}/${size}/${im.file}-${size}.${im.ext}`;
+// Self-hosted WebP renditions made by scripts/images.mjs.
+// im.media = { name, width, height, widths: [400, 800, 1600], og }
+// `widths` are longest-edge sizes; srcset needs each file's real pixel width.
+const realWidth = (m, w) => Math.round((m.width * w) / Math.max(m.width, m.height));
+export const imgUrl = (im, w = Infinity) => {
+  const m = im.media;
+  const pick = m.widths.filter((x) => x <= w).at(-1) ?? m.widths[0];
+  return `/img/${m.name}-${pick}.webp`;
+};
+export const imgAbs = (im) => SITE.origin + imgUrl(im);
+// Social previews use a JPEG copy where one exists (some apps ignore WebP).
+export const ogUrl = (im) => (im?.media?.og ? `${SITE.origin}/img/${im.media.name}-og.jpg` : im?.media ? imgAbs(im) : undefined);
 
-export function img(im, { sizes = '(max-width: 760px) 100vw, 50vw', cls = '', eager = false, max = 'X3', alt } = {}) {
-  if (!im) return '';
-  const set = SIZES.slice(0, SIZES.findIndex(([s]) => s === max) + 1)
-    .map(([s, w]) => `${imgUrl(im, s)} ${w}w`)
-    .join(', ');
-  return `<img src="${imgUrl(im, 'XL')}" srcset="${set}" sizes="${sizes}" alt="${esc(alt ?? im.alt)}"${cls ? ` class="${cls}"` : ''} ${
+export function img(im, { sizes = '(max-width: 760px) 100vw, 50vw', cls = '', eager = false, alt } = {}) {
+  if (!im?.media) return '';
+  const m = im.media;
+  const set = m.widths.map((w) => `${imgUrl(im, w)} ${realWidth(m, w)}w`).join(', ');
+  return `<img src="${imgUrl(im, 800)}" srcset="${set}" sizes="${sizes}" width="${m.width}" height="${m.height}" alt="${esc(alt ?? im.alt)}"${cls ? ` class="${cls}"` : ''} ${
     eager ? 'fetchpriority="high"' : 'loading="lazy"'
   } decoding="async">`;
 }
@@ -107,7 +109,6 @@ ${description ? `<meta property="og:description" content="${esc(description)}">`
 <meta name="geo.region" content="IN-KA">
 <meta name="geo.placename" content="${SITE.locality}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="preconnect" href="https://photos.smugmug.com" crossorigin>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,500&family=Inter:wght@400;500;600&display=swap">

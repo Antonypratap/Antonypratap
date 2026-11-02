@@ -20,8 +20,8 @@ export const SITE = {
   streetAddress: 'No 54, ground floor, 10th A Main, 100 Feet Rd, HRBR Layout 1st Block, Balaji Layout, Subbaiahnapalya, Banaswadi',
   postalCode: '560043',
   sameAs: [], // filled from data/site-links.json (links found on the live site)
-  defaultOgImage:
-    'https://photos.smugmug.com/photos/i-LPQ9Jzq/0/MJjrc2RbDnBBvRMRVw6gjgM6S9B7SWCchB6Sx9CZH/L/i-LPQ9Jzq-L.png',
+  // Set by the build from data/media.json (the Nevervoid logo image, i-LPQ9Jzq).
+  defaultOgImage: null,
 };
 
 export const fullAddress = () => `${SITE.streetAddress}, ${SITE.locality}, ${SITE.region} ${SITE.postalCode}`;

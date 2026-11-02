@@ -2,25 +2,25 @@
 // (data/pages.json) so the ranking content survives; layout is new.
 import { SITE, waLink } from '../config.js';
 import { yearsSince } from '../content-fixes.js';
-import { esc, img, href, ctaBand, faqHtml, faqLd, waIcon, crumbs, breadcrumbLd, abs } from '../lib.js';
+import { ogUrl, esc, img, href, ctaBand, faqHtml, faqLd, waIcon, crumbs, breadcrumbLd, abs } from '../lib.js';
 
 const gallery = (ctx, page, n = 24) =>
   `<div class="gallery">${ctx
     .imagesOf(page)
     .slice(0, n)
-    .map((im) => `<a href="${href(ctx.imagePageOf(page, im.id) ?? page)}">${img(im, { sizes: '(max-width: 640px) 100vw, 33vw', max: 'X2' })}</a>`)
+    .map((im) => `<a href="${href(ctx.imagePageOf(page, im.id) ?? page)}">${img(im, { sizes: '(max-width: 640px) 100vw, 33vw' })}</a>`)
     .join('')}</div>`;
 
 const card = (ctx, path, heading, text, { feature = false, image } = {}) => {
   const im = image ? ctx.image(image) : ctx.imagesOf(path)[0];
-  return `<a class="card${feature ? ' feature' : ''}" href="${href(path)}">${im ? img(im, { sizes: feature ? '(max-width: 640px) 100vw, 66vw' : '(max-width: 640px) 100vw, 33vw', max: 'X2' }) : ''}<div class="card-body"><h3>${esc(heading)}</h3><p>${esc(text)}</p><div class="more">Explore →</div></div></a>`;
+  return `<a class="card${feature ? ' feature' : ''}" href="${href(path)}">${im ? img(im, { sizes: feature ? '(max-width: 640px) 100vw, 66vw' : '(max-width: 640px) 100vw, 33vw' }) : ''}<div class="card-body"><h3>${esc(heading)}</h3><p>${esc(text)}</p><div class="more">Explore →</div></div></a>`;
 };
 
 const postCards = (ctx, posts) =>
   `<div class="cards">${posts
     .map((p) => {
       const im = ctx.imagesOf(p.imagePage ?? '')[0];
-      return `<a class="card" href="${href(p.path)}">${im ? img(im, { sizes: '(max-width: 640px) 100vw, 33vw', max: 'X2' }) : ''}<div class="card-body"><span class="eyebrow" style="margin-bottom:8px">${esc(p.category)}</span><h3>${esc(p.title)}</h3><p>${esc(p.description)}</p></div></a>`;
+      return `<a class="card" href="${href(p.path)}">${im ? img(im, { sizes: '(max-width: 640px) 100vw, 33vw' }) : ''}<div class="card-body"><span class="eyebrow" style="margin-bottom:8px">${esc(p.category)}</span><h3>${esc(p.title)}</h3><p>${esc(p.description)}</p></div></a>`;
     })
     .join('')}</div>`;
 
@@ -103,7 +103,7 @@ export function home(ctx) {
 
 <section class="section-tight"><div class="wrap">
   <div class="section-head" style="margin-bottom:24px"><h2>Recent work</h2></div>
-  <div class="strip">${strip.map((im) => `<a href="${href(im.pages[0])}">${img(im, { sizes: '260px', max: 'XL' })}</a>`).join('')}</div>
+  <div class="strip">${strip.map((im) => `<a href="${href(im.pages[0])}">${img(im, { sizes: '260px' })}</a>`).join('')}</div>
 </div></section>
 
 <section class="section alt"><div class="wrap split rev sticky-media">
@@ -126,7 +126,7 @@ ${ctaBand({ heading: 'Book your photography session with confidence.', text: 'Te
     path: '/',
     title: page.title,
     description: page.description,
-    ogImage: page.ogImage,
+    ogImage: ogUrl(heroImg),
     body,
     waTopic: 'professional photography services',
   };
@@ -247,7 +247,7 @@ ${ctaBand({ heading: 'Ready for a headshot that works for you?', text: 'Studio s
     path: P,
     title: page.title,
     description: page.description,
-    ogImage: hero ? `${hero.base}/X2/${hero.file}-X2.${hero.ext}` : page.ogImage,
+    ogImage: ogUrl(hero),
     body,
     waTopic: 'professional headshots',
     ld: [
@@ -369,7 +369,7 @@ ${ctaBand({ heading: 'Show the work you put in.', text: 'Studio in Banaswadi or 
     // The live description is ~600 characters; search engines truncate at ~155.
     description:
       'Gym, fitness and bodybuilding photoshoots in Bangalore. Got a transformation done, back from a bodybuilding contest, or hit a weight-loss goal? Get photos that show your hard work.',
-    ogImage: hero ? `${hero.base}/X2/${hero.file}-X2.${hero.ext}` : page.ogImage,
+    ogImage: ogUrl(hero),
     body,
     waTopic: 'fitness photography',
     waNumber: n,

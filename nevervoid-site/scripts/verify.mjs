@@ -128,7 +128,8 @@ for (const old of oldPages)
     if (r.status !== 200) fail(ip, `image page -> ${r.status}`);
     else if (r.chain.length) {
       imgRedirect++;
-      if (r.final !== old.path) fail(ip, `image page redirected to ${r.final}, not its gallery`);
+      const gallery = ip.slice(0, ip.lastIndexOf('/i-'));
+      if (r.final.toLowerCase() !== gallery.toLowerCase()) fail(ip, `image page redirected to ${r.final}, not its gallery ${gallery}`);
     } else imgOk++;
   }
 // image-size variants, e.g. /Gallery/i-ID/A
@@ -160,7 +161,14 @@ for (const pg of manifest.pages) {
       fail(pg.path, 'invalid JSON-LD: ' + e.message);
     }
   }
+  if (/photos\.smugmug\.com|smugmug\.com\/photos/.test(h)) fail(pg.path, 'still references SmugMug-hosted images');
+  for (const m of h.matchAll(/(?:src|srcset|content)="([^"]*\/img\/[^"]+)"/g))
+    for (const u of m[1].split(',').map((x) => x.trim().split(' ')[0])) {
+      const f = path.join(DIST, decodeURI(new URL(u, ORIGIN).pathname));
+      if (!fs.existsSync(f)) fail(pg.path, `missing image file ${u}`);
+    }
   for (const m of h.matchAll(/<img\b[^>]*>/g)) {
+    if (!/hero-bg/.test(m[0]) && !/ width="\d+" height="\d+"/.test(m[0])) fail(pg.path, 'img without width/height');
     imgs++;
     const alt = /alt="([^"]*)"/.exec(m[0]);
     if (!alt) fail(pg.path, 'img without alt attribute');

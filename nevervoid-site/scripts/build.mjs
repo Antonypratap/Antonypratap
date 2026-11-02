@@ -9,7 +9,7 @@ import path from 'node:path';
 import { marked } from 'marked';
 import { SITE, waLink, fullAddress, mapsLink } from '../src/config.js';
 import { applyFixes, REMOVED } from '../src/content-fixes.js';
-import { layout, esc, img, href, abs, crumbs, breadcrumbLd, ctaBand, imgUrl, waIcon } from '../src/lib.js';
+import { layout, esc, img, href, abs, crumbs, breadcrumbLd, ctaBand, imgAbs, ogUrl, waIcon } from '../src/lib.js';
 import { home, headshots, fitness, postCards } from '../src/templates/featured.js';
 import { resolve as resolveRedirect } from '../src/redirects.js';
 import { GROUPS, ARTICLES, LEGAL, KEYWORD_REDIRECTS, LEGACY, CASE_COLLISIONS } from '../src/site-map.js';
@@ -18,6 +18,10 @@ const ROOT = path.join(import.meta.dirname, '..');
 const DIST = path.join(ROOT, 'dist');
 const read = (p) => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 const images = read('data/images.json');
+// Photos self-hosted by scripts/images.mjs; only these are shown on the site.
+const media = fs.existsSync(path.join(ROOT, 'data/media.json')) ? read('data/media.json') : {};
+for (const [id, m] of Object.entries(media)) if (images[id]) images[id].media = m;
+if (media.LPQ9Jzq) SITE.defaultOgImage = media.LPQ9Jzq.og ? `${SITE.origin}/img/${media.LPQ9Jzq.name}-og.jpg` : `${SITE.origin}/img/${media.LPQ9Jzq.name}-${media.LPQ9Jzq.widths.at(-1)}.webp`;
 const { pages, log: fixLog } = applyFixes(read('data/pages.json'), images);
 let linkRoutes; // set before pages are written
 const BUILD_DATE = process.env.BUILD_DATE ?? new Date().toISOString().slice(0, 10);
@@ -57,7 +61,7 @@ for (const p of pages) {
   for (const ip of p.imagePages ?? []) {
     const id = ip.split('/i-').pop();
     const gallery = ip.slice(0, ip.lastIndexOf('/i-')) || '/';
-    if (!images[id]) continue;
+    if (!images[id]?.media) continue; // not selected: the old URL 301s to its gallery
     imagePageFor.set(`${gallery}|${id}`, ip);
     if (!imagePages.some((x) => x.path === ip)) imagePages.push({ path: ip, id, gallery });
   }
@@ -67,8 +71,8 @@ for (const p of pages) {
 const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const ctx = {
   page: (p) => byPath.get(p),
-  image: (id) => images[id],
-  imagesOf: (p) => (byPath.get(p)?.images ?? []).map((id) => images[id]).filter(Boolean),
+  image: (id) => (images[id]?.media ? images[id] : undefined),
+  imagesOf: (p) => (byPath.get(p)?.images ?? []).map((id) => images[id]).filter((im) => im?.media),
   imagePageOf: (gallery, id) => imagePageFor.get(`${gallery}|${id}`),
   // blocks strictly between the block whose text starts with `start` and the one starting with `end`
   blocksAfter(p, start, end) {
@@ -185,7 +189,7 @@ function blocksHtml(blocks, skipText = new Set()) {
 
 function galleryHtml(p, ims) {
   return `<div class="gallery">${ims
-    .map((im) => `<a href="${href(imagePageFor.get(`${p}|${im.id}`) ?? p)}">${img(im, { sizes: '(max-width: 640px) 100vw, 33vw', max: 'X2' })}</a>`)
+    .map((im) => `<a href="${href(imagePageFor.get(`${p}|${im.id}`) ?? p)}">${img(im, { sizes: '(max-width: 640px) 100vw, 33vw' })}</a>`)
     .join('')}</div>`;
 }
 
@@ -198,7 +202,7 @@ function relatedHtml(p) {
     html += `<section class="section-tight"><div class="wrap"><h2>In this collection</h2><div class="cards">${kids
       .map((k) => {
         const im = ctx.imagesOf(k.path)[0];
-        return `<a class="card" href="${href(k.path)}">${im ? img(im, { sizes: '(max-width: 640px) 100vw, 33vw', max: 'X2' }) : ''}<div class="card-body"><h3>${esc(short(k.title))}</h3></div></a>`;
+        return `<a class="card" href="${href(k.path)}">${im ? img(im, { sizes: '(max-width: 640px) 100vw, 33vw' }) : ''}<div class="card-body"><h3>${esc(short(k.title))}</h3></div></a>`;
       })
       .join('')}</div></div></section>`;
   if (sib.length)
@@ -247,21 +251,21 @@ ${isLegal ? '' : ctaBand({ topic: topicFor(p), number: fitnessy ? SITE.phone : u
       publisher: { '@id': `${SITE.origin}/#business` },
       ...(pg.lastmod ? { dateModified: pg.lastmod } : {}),
       mainEntityOfPage: abs(p),
-      ...(ims[0] ? { image: imgUrl(ims[0], 'X2') } : {}),
+      ...(ims[0] ? { image: imgAbs(ims[0]) } : {}),
     });
   else if (ims.length)
     ld.push({
       '@type': 'ImageGallery',
       name: h1,
       url: abs(p),
-      image: ims.slice(0, 20).map((im) => ({ '@type': 'ImageObject', contentUrl: imgUrl(im, 'X2'), name: im.alt, creator: { '@id': `${SITE.origin}/#business` } })),
+      image: ims.slice(0, 20).map((im) => ({ '@type': 'ImageObject', contentUrl: imgAbs(im), name: im.alt, creator: { '@id': `${SITE.origin}/#business` } })),
     });
   return {
     path: p,
     title: pg.title,
     description: desc.text,
     descSource: desc.source,
-    ogImage: ims[0] ? imgUrl(ims[0], 'X2') : pg.ogImage,
+    ogImage: ogUrl(ims[0]),
     body,
     ld,
     waTopic: topicFor(p),
@@ -286,7 +290,7 @@ function imagePage({ path: p, id, gallery }) {
   const body = `
 <section class="photo-view"><div class="wrap">
   ${crumbs(trail).replace('class="crumbs"', 'class="crumbs" style="color:#bdb4a8"')}
-  ${img(im, { eager: true, sizes: '100vw', max: 'X3' })}
+  ${img(im, { eager: true, sizes: '100vw' })}
   <div class="photo-nav">
     ${prev ? `<a class="btn btn-ghost btn-sm" style="color:#f3eee7" href="${href(prev)}" rel="prev">← Previous</a>` : '<span></span>'}
     <a class="btn btn-light btn-sm" href="${href(gallery)}">Back to ${esc(gName)}</a>
@@ -299,9 +303,9 @@ ${ctaBand({ topic: topicFor(gallery), number: groupOf.get(gallery)?.key === 'fit
     path: p,
     title,
     description,
-    ogImage: imgUrl(im, 'X2'),
+    ogImage: ogUrl(im),
     body,
-    ld: [breadcrumbLd(trail), { '@type': 'ImageObject', contentUrl: imgUrl(im, 'X3'), url: abs(p), name: im.alt, creator: { '@id': `${SITE.origin}/#business` }, copyrightHolder: { '@id': `${SITE.origin}/#business` }, creditText: SITE.name }],
+    ld: [breadcrumbLd(trail), { '@type': 'ImageObject', contentUrl: imgAbs(im), url: abs(p), name: im.alt, creator: { '@id': `${SITE.origin}/#business` }, copyrightHolder: { '@id': `${SITE.origin}/#business` }, creditText: SITE.name }],
     waTopic: topicFor(gallery),
   };
 }
@@ -317,7 +321,7 @@ ${GROUPS.filter((g) => g.hub)
       .slice(0, g.cards ?? 6)
       .map((p) => {
         const im = ctx.imagesOf(p)[0];
-        return `<a class="card" href="${href(p)}">${im ? img(im, { sizes: '(max-width: 640px) 100vw, 33vw', max: 'X2' }) : ''}<div class="card-body"><h3>${esc(short(byPath.get(p).title))}</h3><div class="more">View →</div></div></a>`;
+        return `<a class="card" href="${href(p)}">${im ? img(im, { sizes: '(max-width: 640px) 100vw, 33vw' }) : ''}<div class="card-body"><h3>${esc(short(byPath.get(p).title))}</h3><div class="more">View →</div></div></a>`;
       })
       .join('')}</div>${
       g.paths.filter((p) => byPath.has(p)).length > (g.cards ?? 6)
@@ -357,7 +361,7 @@ function blogIndex() {
 <section class="section-tight"><div class="wrap"><h2>From the archive</h2><div class="cards">${archive
     .map((p) => {
       const im = ctx.imagesOf(p)[0];
-      return `<a class="card" href="${href(p)}">${im ? img(im, { sizes: '(max-width: 640px) 100vw, 33vw', max: 'X2' }) : ''}<div class="card-body"><h3>${esc(short(byPath.get(p).title))}</h3><p>${esc(describe(p).text)}</p></div></a>`;
+      return `<a class="card" href="${href(p)}">${im ? img(im, { sizes: '(max-width: 640px) 100vw, 33vw' }) : ''}<div class="card-body"><h3>${esc(short(byPath.get(p).title))}</h3><p>${esc(describe(p).text)}</p></div></a>`;
     })
     .join('')}</div></div></section>${ctaBand()}`;
   return { path: '/blog', title: 'Photography Journal: Headshot, Fitness & Portrait Guides | Nevervoid Photography', description: 'Guides from a Bangalore photographer: what to wear for headshots, LinkedIn profile photos, preparing for a fitness photoshoot and more.', body, ld: [breadcrumbLd([['/blog', 'Journal']]), { '@type': 'Blog', name: 'The Nevervoid Journal', url: abs('/blog'), publisher: { '@id': `${SITE.origin}/#business` } }], template: 'new' };
@@ -374,7 +378,7 @@ function blogPost(post) {
 ${ims[0] ? `<div class="wrap narrow" style="margin-top:32px">${img(ims[0], { eager: true, sizes: '(max-width: 800px) 100vw, 760px', cls: 'post-cover' })}</div>` : ''}
 <section class="section-tight"><div class="wrap narrow"><div class="prose">${post.html}</div></div></section>
 </article>
-${ims.length > 1 ? `<section class="section-tight"><div class="wrap"><div class="strip">${ims.slice(1, 9).map((im) => `<a href="${href(imagePageFor.get(`${post.imagePage}|${im.id}`) ?? post.imagePage)}">${img(im, { sizes: '260px', max: 'XL' })}</a>`).join('')}</div></div></section>` : ''}
+${ims.length > 1 ? `<section class="section-tight"><div class="wrap"><div class="strip">${ims.slice(1, 9).map((im) => `<a href="${href(imagePageFor.get(`${post.imagePage}|${im.id}`) ?? post.imagePage)}">${img(im, { sizes: '260px' })}</a>`).join('')}</div></div></section>` : ''}
 ${rel.length ? `<section class="section-tight"><div class="wrap"><h2 style="font-size:1.4rem">Related</h2><ul class="chips">${rel.map((r) => `<li><a href="${href(r)}">${esc(short(byPath.get(r).title))}</a></li>`).join('')}</ul></div></section>` : ''}
 ${ctaBand({ topic: fit ? 'fitness photography' : 'professional headshots', number: fit ? SITE.phone : undefined })}`;
   return {
@@ -382,13 +386,13 @@ ${ctaBand({ topic: fit ? 'fitness photography' : 'professional headshots', numbe
     title: `${post.title} | Nevervoid Photography`,
     description: post.description,
     ogType: 'article',
-    ogImage: ims[0] ? imgUrl(ims[0], 'X2') : undefined,
+    ogImage: ogUrl(ims[0]),
     body,
     waTopic: fit ? 'fitness photography' : 'professional headshots',
     waNumber: fit ? SITE.phone : undefined,
     ld: [
       breadcrumbLd(trail),
-      { '@type': 'BlogPosting', headline: post.title, description: post.description, datePublished: post.date, dateModified: post.date, author: { '@type': 'Person', name: post.author }, publisher: { '@id': `${SITE.origin}/#business` }, mainEntityOfPage: abs(post.path), ...(ims[0] ? { image: imgUrl(ims[0], 'X2') } : {}) },
+      { '@type': 'BlogPosting', headline: post.title, description: post.description, datePublished: post.date, dateModified: post.date, author: { '@type': 'Person', name: post.author }, publisher: { '@id': `${SITE.origin}/#business` }, mainEntityOfPage: abs(post.path), ...(ims[0] ? { image: imgAbs(ims[0]) } : {}) },
     ],
     template: 'new',
   };
@@ -488,8 +492,8 @@ const lastmodOf = (p) => (byPath.get(p)?.lastmod ? byPath.get(p).lastmod.slice(0
 const smEntries = out
   .filter((p) => !p.noindex)
   .map((p) => {
-    const ims = (byPath.get(p.path)?.images ?? []).slice(0, 1000).map((id) => images[id]).filter(Boolean);
-    return `<url><loc>${esc(abs(p.path))}</loc><lastmod>${lastmodOf(p.path)}</lastmod>${ims.map((im) => `<image:image><image:loc>${esc(imgUrl(im, 'X3'))}</image:loc></image:image>`).join('')}</url>`;
+    const ims = (byPath.get(p.path)?.images ?? []).map((id) => images[id]).filter((im) => im?.media);
+    return `<url><loc>${esc(abs(p.path))}</loc><lastmod>${lastmodOf(p.path)}</lastmod>${ims.map((im) => `<image:image><image:loc>${esc(imgAbs(im))}</image:loc></image:image>`).join('')}</url>`;
   });
 fs.writeFileSync(
   path.join(DIST, 'sitemap.xml'),

@@ -4,7 +4,9 @@
   "private": true,
   "description": "Nevervoid Photography website: static, SEO-first, preserves every existing nevervoid.com URL",
   "type": "module",
-  "engines": { "node": ">=22.12" },
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
     "extract": "node scripts/extract.mjs",
     "build": "node scripts/build.mjs",
@@ -14,6 +16,7 @@
     "test": "npm run build && npm run verify"
   },
   "dependencies": {
-    "marked": "^15.0.12"
+    "marked": "^15.0.12",
+    "sharp": "^0.34.5"
   }
 }
