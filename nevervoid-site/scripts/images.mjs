@@ -4,7 +4,7 @@
 //
 // Selection (about 800 photos): the owner's own gallery order is kept, and
 // each page contributes its first N photos:
-//   headshot & fitness pages 40 · other service pages 16 · homepage 12
+//   headshot & fitness pages 40 · corporate pages 30 · other service pages 16 · homepage 12
 //   client / event / personal galleries 6 (4 if last updated before 2018)
 // data/popular.json (optional, a list of SmugMug image IDs, e.g. from
 // SmugMug Stats -> Popularity) is always included on top.
@@ -29,9 +29,11 @@ const DRY = process.argv.includes('--dry-run');
 
 // ---------- selection ----------
 const PRIMARY = new Set(['/Headshot-photographer-bangalore', '/Fitness-Photography']);
+const CORPORATE = new Set(['/Corporate-photoshoot', '/Innosolv-Headshots', '/Corporate-event-photography-innosolv', '/Office-spaces']);
 const SERVICE = new Set(GROUPS.filter((g) => !['personal', 'studio'].includes(g.key)).flatMap((g) => g.paths));
 function capFor(p) {
   if (PRIMARY.has(p.path)) return 40;
+  if (CORPORATE.has(p.path)) return 30;
   if (p.path === '/') return 12;
   if (SERVICE.has(p.path)) return 16;
   const year = +(p.lastmod ?? '2099').slice(0, 4);
@@ -39,6 +41,8 @@ function capFor(p) {
 }
 // Always keep the photos the templates name explicitly (heroes, portraits).
 const PINNED = ['Pnw6GqR', 'R2Sg6fk', 'npqHvJ8', 'ctcjcs9', 'LPQ9Jzq'];
+// Client logos: trim the white padding around them so they read at small sizes.
+const TRIM = new Set(['f45Phsp', 'MRhLfFg', 'nzGcRN4', 'F3n3nXx', 'Z22SfjF']);
 const popular = fs.existsSync(path.join(ROOT, 'data/popular.json')) ? read('data/popular.json') : [];
 
 const selected = new Map(); // id -> reason
@@ -94,7 +98,7 @@ async function main() {
       for (const w of media[id].widths) fs.rmSync(path.join(OUT, `${media[id].name}-${w}.webp`), { force: true });
       delete media[id];
     }
-  const todo = [...selected.keys()].filter((id) => !media[id] || !media[id].widths.every((w) => fs.existsSync(path.join(OUT, `${media[id].name}-${w}.webp`))));
+  const todo = [...selected.keys()].filter((id) => !media[id] || (TRIM.has(id) && !media[id].trimmed) || !media[id].widths.every((w) => fs.existsSync(path.join(OUT, `${media[id].name}-${w}.webp`))));
   let done = 0,
     failed = [];
   let bytesIn = 0,
@@ -112,6 +116,7 @@ async function main() {
         }
         bytesIn += got.buf.length;
         const name = nameFor(id);
+        if (TRIM.has(id)) got.buf = await sharp(got.buf, { failOn: 'none' }).flatten({ background: '#ffffff' }).trim({ threshold: 20 }).png().toBuffer();
         const src = sharp(got.buf, { failOn: 'none' }).rotate();
         const meta = await src.metadata();
         const long = Math.max(meta.width, meta.height);
@@ -129,7 +134,7 @@ async function main() {
           bytesOut += data.length;
           if (w === widths.at(-1)) [w0, h0] = [info.width, info.height];
         }
-        media[id] = { name, width: w0, height: h0, widths, source: got.size };
+        media[id] = { name, width: w0, height: h0, widths, source: got.size, ...(TRIM.has(id) ? { trimmed: true } : {}) };
         done++;
         if (done % 50 === 0) {
           console.log(`  ${done}/${todo.length} processed`);

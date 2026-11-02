@@ -29,6 +29,8 @@ export function fixRules(years) {
     { re: /editors with over 8 years of experience/g, to: `editors with over ${years} years of experience` },
     { re: /\b8 years of experience\./g, to: `${years} years of experience.`, paths: ['/Maternity-photo-editing'] },
     { re: /professional photographer for over 10 years/g, to: `professional photographer for over ${years} years` },
+    // ---- corporate hub (owner, 2 Nov 2026: corporate is a highlighted service) ----
+    { re: /^Corporate photoshoot - Nevervoid Photography - Bangalore$/, to: 'Corporate Photoshoot in Bangalore | Team Headshots, Events & Offices - Nevervoid Photography', paths: ['/Corporate-photoshoot'] },
     // ---- delivery times ----
     { re: /You will get your photos the next day via a link/g, to: 'You will get your photos in 2 days via a link', paths: ['/Headshot-photographer-bangalore'] },
     { re: /48-hour delivery/g, to: '2-day delivery', paths: ['/Headshot-photographer-bangalore'] },

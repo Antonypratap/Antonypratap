@@ -81,7 +81,7 @@ Identified from titles, H1s and copy. Confirm with Search Console once it is ava
 - **New URLs:** `/services`, `/contact`, `/blog` (the Journal) and four Journal posts under `/blog/…`.
 
 ### On-page
-- **Titles:** identical to today on 137 pages. The maternity title's years are updated, and `/Covid` is removed. Image pages get unique titles, for example "Chiseled Determination – Studio Fitness Portrait in Bangalore | Gym & Fitness Photoshoot Bangalore - Nevervoid Photography".
+- **Titles:** identical to today on 136 pages. The maternity title's years are updated, `/Corporate-photoshoot` is retitled as the new corporate hub (see below), and `/Covid` is removed. Image pages get unique titles, for example "Chiseled Determination – Studio Fitness Portrait in Bangalore | Gym & Fitness Photoshoot Bangalore - Nevervoid Photography".
 - **One H1 per page.** The H1 is the page's primary keyword phrase, taken from its title. Former extra H1s become H2s.
 - **Body copy:** carried over word for word, with internal links kept. The home, headshot and fitness pages are redesigned around Why, What and How using their existing copy, FAQs, prices and process steps.
 - **Meta descriptions:**
@@ -104,6 +104,16 @@ Identified from titles, H1s and copy. Confirm with Search Console once it is ava
   - The footer links to all key service pages.
 - **Sitemap:** `sitemap.xml` holds 146 indexable URLs with 7,944 image entries (the current sitemap has none). `sitemap-index.xml` still resolves.
 - **robots.txt:** allows all crawlers and points to the sitemap.
+
+### Design priorities (owner, 2 Nov 2026)
+Headshots, Corporate and Fitness are the highlighted services, in that order. They lead the navigation, the homepage (a three-panel hero, then one feature section each), the footer and the services hub.
+
+The corporate hub lives at the existing URL `/Corporate-photoshoot`, which previously had 13 photos and no text. It is now a full Why / What / How page, and its title changes from "Corporate photoshoot - Nevervoid Photography - Bangalore" to "Corporate Photoshoot in Bangalore | Team Headshots, Events & Offices - Nevervoid Photography". The old `/Corporate-Photography` link already redirects there.
+
+The page carries:
+- Service, Offer (₹8,899 one look) and FAQ markup.
+- A client logo strip, from the Clients page.
+- Links to the team headshot, event and office galleries.
 
 ### Pages proposed for consolidation (not done; needs Search Console data and your approval)
 | Page | Proposal | Why it waits |

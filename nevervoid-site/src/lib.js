@@ -33,9 +33,9 @@ export const waIcon = WA_ICON;
 
 export const NAV = [
   ['/Headshot-photographer-bangalore', 'Headshots'],
+  ['/Corporate-photoshoot', 'Corporate'],
   ['/Fitness-Photography', 'Fitness'],
-  ['/Professional-branding-portraits', 'Branding'],
-  ['/services', 'All services'],
+  ['/services', 'Services'],
   ['/blog', 'Journal'],
   ['/About', 'About'],
   ['/contact', 'Contact'],
@@ -145,26 +145,30 @@ function footer() {
         <p><a href="tel:+${SITE.phone}">${SITE.phoneDisplay}</a> · <a href="${waLink('a photoshoot')}" rel="noopener">WhatsApp</a><br><a href="mailto:${SITE.email}">${SITE.email}</a></p>
         <address style="font-style:normal;max-width:36ch"><a href="${mapsLink()}" rel="noopener">${esc(SITE.studioName)}<br>${esc(fullAddress())}</a></address>
       </div>
-      ${col('Professional', [
+      ${col('Headshots', [
         ['/Headshot-photographer-bangalore', 'Headshot photographer Bangalore'],
         ['/Professional-studio-headshots', 'Studio headshots'],
         ['/Headshot-linkedIn-photography', 'LinkedIn headshots'],
-        ['/Studio-corporate-portrait-photography', 'Corporate portraits'],
         ['/Professional-branding-portraits', 'Personal branding'],
       ])}
-      ${col('Fitness & portraits', [
+      ${col('Corporate', [
+        ['/Corporate-photoshoot', 'Corporate photoshoot'],
+        ['/Innosolv-Headshots', 'Team headshots'],
+        ['/Corporate-event-photography-innosolv', 'Corporate events'],
+        ['/Office-spaces', 'Office spaces'],
+      ])}
+      ${col('Fitness', [
         ['/Fitness-Photography', 'Gym & fitness photoshoot'],
         ['/Fitness-bikini-photoshoots', 'Fitness bikini photoshoots'],
-        ['/Portrait-photographer-bangalore', 'Portrait photographer'],
-        ['/Modelling-portfolio-photography', 'Modelling portfolios'],
         ['/Dance-photographer-bangalore', 'Dance photography'],
+        ['/Modelling-portfolio-photography', 'Modelling portfolios'],
       ])}
       ${col('Studio', [
         ['/About', 'About Nevervoid'],
         ['/Reviews', 'Reviews'],
         ['/blog', 'Journal'],
-        ['/contact', 'Contact & booking'],
         ['/services', 'All services'],
+        ['/contact', 'Contact & booking'],
       ])}
     </div>
     <div class="footer-base">

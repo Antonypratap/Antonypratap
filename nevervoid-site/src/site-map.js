@@ -4,9 +4,9 @@
 
 export const GROUPS = [
   {
-    key: 'professional',
-    name: 'Headshots & professional portraits',
-    blurb: 'Corporate, LinkedIn, founder and team headshots, in the studio or on-site anywhere in Bangalore.',
+    key: 'headshots',
+    name: 'Headshots',
+    blurb: 'Corporate, LinkedIn and personal branding headshots: studio sessions in Banaswadi or on-site anywhere in Bangalore.',
     topic: 'professional headshots',
     hub: true,
     cards: 6,
@@ -14,15 +14,26 @@ export const GROUPS = [
       '/Headshot-photographer-bangalore',
       '/Professional-studio-headshots',
       '/Headshot-linkedIn-photography',
-      '/Studio-corporate-portrait-photography',
       '/Professional-branding-portraits',
       '/Professional-Personal-Branding-Portraits',
-      '/Innosolv-Headshots',
-      '/Corporate-photoshoot',
-      '/Corporate-event-photoshoot',
-      '/Corporate-event-photography-innosolv',
       '/Portrait-headshot-photography-reviews',
       '/Professional-photographer-near-me',
+    ],
+  },
+  {
+    key: 'corporate',
+    name: 'Corporate',
+    blurb: 'Team headshots with a portable studio, leadership portraits, corporate events and office spaces.',
+    topic: 'corporate headshot photography',
+    hub: true,
+    cards: 6,
+    paths: [
+      '/Corporate-photoshoot',
+      '/Innosolv-Headshots',
+      '/Studio-corporate-portrait-photography',
+      '/Corporate-event-photography-innosolv',
+      '/Corporate-event-photoshoot',
+      '/Office-spaces',
     ],
   },
   {
@@ -104,7 +115,7 @@ export const GROUPS = [
     topic: 'commercial photography',
     hub: true,
     cards: 3,
-    paths: ['/Food-photography', '/Food-Photography', '/Interiors-architecture-photography', '/Office-spaces'],
+    paths: ['/Food-photography', '/Food-Photography', '/Interiors-architecture-photography'],
   },
   {
     key: 'editing',

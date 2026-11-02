@@ -10,7 +10,7 @@ import { marked } from 'marked';
 import { SITE, waLink, fullAddress, mapsLink } from '../src/config.js';
 import { applyFixes, REMOVED } from '../src/content-fixes.js';
 import { layout, esc, img, href, abs, crumbs, breadcrumbLd, ctaBand, imgAbs, ogUrl, waIcon } from '../src/lib.js';
-import { home, headshots, fitness, postCards } from '../src/templates/featured.js';
+import { home, headshots, corporate, fitness, postCards } from '../src/templates/featured.js';
 import { resolve as resolveRedirect } from '../src/redirects.js';
 import { GROUPS, ARTICLES, LEGAL, KEYWORD_REDIRECTS, LEGACY, CASE_COLLISIONS } from '../src/site-map.js';
 
@@ -417,10 +417,10 @@ function notFound() {
 }
 
 // ---------- assemble ----------
-const FEATURED = { '/': home, '/Headshot-photographer-bangalore': headshots, '/Fitness-Photography': fitness };
+const FEATURED = { '/': home, '/Headshot-photographer-bangalore': headshots, '/Corporate-photoshoot': corporate, '/Fitness-Photography': fitness };
 const out = [];
 for (const p of pages) {
-  if (FEATURED[p.path]) out.push({ ...FEATURED[p.path](ctx), template: 'featured', h1: null, descSource: p.path === '/Fitness-Photography' ? 'shortened (was ~600 chars)' : 'existing' });
+  if (FEATURED[p.path]) out.push({ ...FEATURED[p.path](ctx), template: 'featured', h1: null, descSource: p.path === '/Fitness-Photography' ? 'shortened (was ~600 chars)' : p.path === '/Corporate-photoshoot' ? 'new (was missing)' : 'existing' });
   else if (p.path === '/browse') out.push(browsePage());
   else out.push(genericPage(p.path));
 }
