@@ -1,0 +1,205 @@
+// Information architecture for the migrated site.
+// Every path below already exists on www.nevervoid.com and keeps its URL;
+// groups only decide navigation, breadcrumbs and internal linking.
+
+export const GROUPS = [
+  {
+    key: 'professional',
+    name: 'Headshots & professional portraits',
+    blurb: 'Corporate, LinkedIn, founder and team headshots, in the studio or on-site anywhere in Bangalore.',
+    topic: 'professional headshots',
+    hub: true,
+    cards: 6,
+    paths: [
+      '/Headshot-photographer-bangalore',
+      '/Professional-studio-headshots',
+      '/Headshot-linkedIn-photography',
+      '/Studio-corporate-portrait-photography',
+      '/Professional-branding-portraits',
+      '/Professional-Personal-Branding-Portraits',
+      '/Innosolv-Headshots',
+      '/Corporate-photoshoot',
+      '/Corporate-event-photoshoot',
+      '/Corporate-event-photography-innosolv',
+      '/Portrait-headshot-photography-reviews',
+      '/Professional-photographer-near-me',
+    ],
+  },
+  {
+    key: 'fitness',
+    name: 'Fitness, dance & portfolios',
+    blurb: 'Gym, physique and transformation shoots, trainer branding, dance and model portfolios.',
+    topic: 'fitness photography',
+    hub: true,
+    cards: 6,
+    paths: [
+      '/Fitness-Photography',
+      '/Fitness-bikini-photoshoots',
+      '/Cult-Anniversary',
+      '/Dance-photographer-bangalore',
+      '/Dance-photography',
+      '/Modelling-portfolio-photography',
+      '/Portrait-photographer-bangalore',
+      '/Art/Arangetram-Photography',
+      '/Art/Kalaripayattu-punarjani-kerala',
+    ],
+  },
+  {
+    key: 'family',
+    name: 'Maternity, newborn & family',
+    blurb: 'Studio and outdoor maternity portraits, newborn, baby and family sessions, and festive theme shoots.',
+    topic: 'maternity photography',
+    hub: true,
+    cards: 6,
+    paths: [
+      '/Maternity-Photography',
+      '/Maternity-studio-photography',
+      '/Studio-maternity-photoshoot',
+      '/Studio-maternity-portraits',
+      '/Maternity-Photography-Packages',
+      '/Newborn-Photography',
+      '/Family-photography-studio-bangalore',
+      '/Family-photoshoot-at-home',
+      '/Baby-family-photoshoots',
+      '/Baby-photography',
+      '/Newborn',
+      '/Baby-Shower-Photography',
+      '/Baby-shower-bangalore',
+      '/Baby-Shower-Bangalore',
+      '/Christmas-theme-photoshoots',
+      '/Diwali-theme-photoshoot',
+      '/Chennai-maternity-photoshoots',
+      '/Rent-maternity-gowns',
+      '/Deep-green-maternity',
+    ],
+  },
+  {
+    key: 'weddings',
+    name: 'Weddings, couples & ceremonies',
+    blurb: 'Candid weddings, engagement and pre-wedding couple portraits, and family ceremonies.',
+    topic: 'wedding photography',
+    hub: true,
+    cards: 6,
+    paths: [
+      '/Candid-wedding-photography',
+      '/Couple-photography',
+      '/Candid-Wedding-Photography',
+      '/Prewedding-Pricing-and-Packages',
+      '/Subbu-wedding',
+      '/Upanayanam-Brahmopadesam',
+      '/First-holy-communion',
+      '/Baptism-naming-ceremony',
+      '/House-warming',
+      '/House-Warming',
+      '/Navaratri',
+      '/Baby-Shower-Krishna',
+      '/Baby-shower-Day-1-Vaishali',
+      '/Baby-shower-Day-2-Vaishali',
+    ],
+  },
+  {
+    key: 'commercial',
+    name: 'Commercial',
+    blurb: 'Food, interiors and architecture photography for restaurants, designers and businesses.',
+    topic: 'commercial photography',
+    hub: true,
+    cards: 3,
+    paths: ['/Food-photography', '/Food-Photography', '/Interiors-architecture-photography', '/Office-spaces'],
+  },
+  {
+    key: 'editing',
+    name: 'Photo editing, prints & gifts',
+    blurb: 'Retouching by people, not presets, plus printing, framing and gift sessions.',
+    topic: 'photo editing services',
+    hub: true,
+    cards: 3,
+    paths: [
+      '/Photo-editing-services',
+      '/Photo-Editing-services',
+      '/Creative-photo-editing-service',
+      '/Wedding-photo-editing',
+      '/Wedding-photography-editing',
+      '/Maternity-photo-editing',
+      '/Mat-editing',
+      '/Maternity-photography-creative-tone-editing',
+      '/Online-printing-and-framing-photos',
+      '/Maternity-photo-printing-and-framing-online',
+      '/Maternity-photo-frames',
+      '/Framed',
+      '/Gift-a-photography-session',
+    ],
+  },
+  {
+    key: 'personal',
+    name: 'Personal work',
+    blurb: 'Travel, street, fine art and colour-tone experiments.',
+    topic: 'a photoshoot',
+    hub: true,
+    cards: 3,
+    paths: ['/Travel-Photography', '/Travel', '/Street-Scenes', '/Art', '/Black-and-white', '/Tones', '/Deep-Woods-Green-Tones', '/Red', '/Mobile-Photography'],
+  },
+  {
+    key: 'studio',
+    name: 'About the studio',
+    blurb: '',
+    topic: 'a photoshoot',
+    hub: false,
+    paths: ['/About', '/Reviews', '/Testimonials', '/Clients', '/Press'],
+  },
+];
+
+// Article-style pages: kept at their URLs and listed in the Journal archive.
+export const ARTICLES = [
+  '/Professionals-headshots-bangalore',
+  '/Bangalore-headshots',
+  '/Maternity-photoshoot',
+  '/Cubbon-Park-Photoshoot-Location',
+  '/Photoshoot-location',
+  '/Maternity-lightroom-presets',
+];
+
+export const LEGAL = ['/Privacy-policy', '/Terms-and-conditions', '/Cancelation-and-refunds', '/Covid'];
+
+// SmugMug keyword pages that Google is allowed to crawl (robots.txt allows
+// /keyword for Googlebot). Each goes to its closest service page.
+export const KEYWORD_REDIRECTS = {
+  'baby photography': '/Baby-photography',
+  'babybump photoshoot': '/Maternity-Photography',
+  'bangalore baby photographer': '/Baby-photography',
+  'kids photographer': '/Baby-family-photoshoots',
+  'maternity photographer': '/Maternity-Photography',
+  'maternity photography': '/Maternity-Photography',
+  'pregnancy photoshoot': '/Maternity-Photography',
+  'prenatal and post natal classes': '/Maternity-Photography',
+  'newborn photographer': '/Newborn-Photography',
+  celebrate: '/Elements-celebrate-photoshoot',
+  elements: '/Elements-celebrate-photoshoot',
+  reviews: '/Reviews',
+  nevervoid: '/',
+  photography: '/services',
+  photoshoot: '/services',
+  '2021': '/browse',
+  '4.25.49': '/browse',
+  Screenshot: '/browse',
+};
+
+// Other known legacy URLs.
+export const LEGACY = {
+  // Linked from the live site navigation but returns 404 on SmugMug today.
+  '/Corporate-Photography': '/Corporate-photoshoot',
+  '/search': '/browse',
+  '/keyword': '/browse',
+  '/date': '/browse',
+  '/popular': '/browse',
+  '/sitemap-base.xml.gz': '/sitemap.xml',
+};
+
+// Two pages exist whose paths differ only in letter case. For the all-lowercase
+// form SmugMug redirects to the page below (measured 2026-11-02); we do the same.
+export const CASE_COLLISIONS = {
+  '/food-photography': '/Food-photography',
+  '/house-warming': '/House-warming',
+  '/photo-editing-services': '/Photo-editing-services',
+  '/baby-shower-bangalore': '/Baby-shower-bangalore',
+  '/candid-wedding-photography': '/Candid-wedding-photography',
+};

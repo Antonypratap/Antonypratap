@@ -1,0 +1,507 @@
+// Static build: data/*.json + src/ -> dist/
+//   node scripts/build.mjs
+// Every URL in data/pages.json (the live SmugMug sitemap) is emitted at the
+// exact same path, plus every per-image page (/Gallery/i-XXXX) seen in the
+// rendered crawl. Output uses "file" format (Page.html served at /Page), which
+// Cloudflare Pages and Netlify serve without a trailing slash, as SmugMug did.
+import fs from 'node:fs';
+import path from 'node:path';
+import { marked } from 'marked';
+import { SITE, waLink } from '../src/config.js';
+import { layout, esc, img, href, abs, crumbs, breadcrumbLd, ctaBand, imgUrl, waIcon } from '../src/lib.js';
+import { home, headshots, fitness, postCards } from '../src/templates/featured.js';
+import { resolve as resolveRedirect } from '../src/redirects.js';
+import { GROUPS, ARTICLES, LEGAL, KEYWORD_REDIRECTS, LEGACY, CASE_COLLISIONS } from '../src/site-map.js';
+
+const ROOT = path.join(import.meta.dirname, '..');
+const DIST = path.join(ROOT, 'dist');
+const read = (p) => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
+const pages = read('data/pages.json');
+const images = read('data/images.json');
+let linkRoutes; // set before pages are written
+const BUILD_DATE = process.env.BUILD_DATE ?? new Date().toISOString().slice(0, 10);
+
+const byPath = new Map(pages.map((p) => [p.path, p]));
+const SUFFIX = / - Nevervoid Photography - Bangalore$/;
+export const stem = (t) => t.replace(SUFFIX, '').trim();
+const short = (t) => stem(t).split(' | ')[0].trim();
+
+// ---------- alt text ----------
+const BAD_ALT = /^(untitled photo|screenshot.*|img[_-]?\d+.*|dsc.*|i-[a-z0-9]+|ultimate.*|\d+)$/i;
+function humanize(file) {
+  const s = file
+    .replace(/^i-[A-Za-z0-9]+$/, '')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b(\d+|x\d|copy|final|edit(ed)?)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return s ? s[0].toUpperCase() + s.slice(1) : '';
+}
+const clip = (s, n) => (s.length <= n ? s : s.slice(0, s.lastIndexOf(' ', n)).replace(/[\s,–-]+$/, '') + '…');
+function altFor(im, pagePath) {
+  let a = (im.alt ?? '').split(/\n/)[0].trim().replace(/\s+/g, ' ');
+  if (!a || BAD_ALT.test(a) || (!/\s/.test(a) && /[-_.]/.test(a))) a = humanize(im.file);
+  if (!a || a.split(' ').length < 2) a = `${stem(byPath.get(pagePath)?.title ?? 'Photograph')}: photograph by Nevervoid Photography`;
+  return clip(a, 125);
+}
+for (const im of Object.values(images)) {
+  im.originalAlt = im.alt;
+  im.alt = altFor(im, im.pages[0]);
+}
+
+// ---------- image pages ----------
+const imagePageFor = new Map(); // `${galleryPath}|${id}` -> image page path
+const imagePages = [];
+for (const p of pages) {
+  for (const ip of p.imagePages ?? []) {
+    const id = ip.split('/i-').pop();
+    const gallery = ip.slice(0, ip.lastIndexOf('/i-')) || '/';
+    if (!images[id]) continue;
+    imagePageFor.set(`${gallery}|${id}`, ip);
+    if (!imagePages.some((x) => x.path === ip)) imagePages.push({ path: ip, id, gallery });
+  }
+}
+
+// ---------- content helpers handed to templates ----------
+const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const ctx = {
+  page: (p) => byPath.get(p),
+  image: (id) => images[id],
+  imagesOf: (p) => (byPath.get(p)?.images ?? []).map((id) => images[id]).filter(Boolean),
+  imagePageOf: (gallery, id) => imagePageFor.get(`${gallery}|${id}`),
+  // blocks strictly between the block whose text starts with `start` and the one starting with `end`
+  blocksAfter(p, start, end) {
+    const b = byPath.get(p)?.blocks ?? [];
+    const i = b.findIndex((x) => norm(x.text).startsWith(norm(start)));
+    if (i < 0) return [];
+    const j = end ? b.findIndex((x, k) => k > i && norm(x.text).startsWith(norm(end))) : -1;
+    return b.slice(i + 1, j < 0 ? undefined : j);
+  },
+  // paragraph blocks following a heading until the next heading
+  blocksUntilHeading(p, heading) {
+    const b = byPath.get(p)?.blocks ?? [];
+    const i = b.findIndex((x) => /^h/.test(x.tag) && norm(x.text) === norm(heading));
+    if (i < 0) return [];
+    const out = [];
+    for (const x of b.slice(i + 1)) {
+      if (/^h/.test(x.tag)) break;
+      out.push(x);
+    }
+    return out;
+  },
+  posts: [],
+};
+
+// ---------- blog ----------
+function parseFront(src) {
+  const m = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(src);
+  const fm = {};
+  for (const line of m[1].split('\n')) {
+    const i = line.indexOf(':');
+    fm[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+  }
+  return { fm, md: m[2] };
+}
+const blogDir = path.join(ROOT, 'src/content/blog');
+const posts = fs
+  .readdirSync(blogDir)
+  .filter((f) => f.endsWith('.md'))
+  .map((f) => {
+    const { fm, md } = parseFront(fs.readFileSync(path.join(blogDir, f), 'utf8'));
+    return {
+      path: `/blog/${f.replace(/\.md$/, '')}`,
+      title: fm.title,
+      description: fm.description,
+      date: fm.date,
+      author: fm.author,
+      category: fm.category,
+      imagePage: '/' + fm.image,
+      related: (fm.related ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+      html: marked.parse(md),
+    };
+  })
+  .sort((a, b) => b.date.localeCompare(a.date) || a.title.localeCompare(b.title));
+ctx.posts = posts;
+
+// ---------- routing tables ----------
+const groupOf = new Map();
+for (const g of GROUPS) for (const p of g.paths) if (!groupOf.has(p)) groupOf.set(p, g);
+const children = (p) => pages.filter((x) => x.path !== p && x.path.startsWith(p + '/') && !x.path.slice(p.length + 1).includes('/'));
+const parentOf = (p) => {
+  const i = p.lastIndexOf('/');
+  return i > 0 ? p.slice(0, i) : null;
+};
+
+function trailFor(p) {
+  const t = [];
+  const parent = parentOf(p);
+  if (parent && byPath.has(parent)) t.push(...trailFor(parent));
+  else if (groupOf.has(p) && !ARTICLES.includes(p)) t.push([`/services`, 'Services']);
+  else if (ARTICLES.includes(p)) t.push(['/blog', 'Journal']);
+  t.push([p, short(byPath.get(p)?.title ?? p)]);
+  return t;
+}
+
+function describe(p) {
+  const d = describeRaw(p);
+  if (d.text.length >= 70) return d;
+  const pg = byPath.get(p);
+  const extra = `${stem(pg.title)} by Nevervoid Photography, a professional photographer in Bangalore since ${SITE.foundingYear}.`;
+  return { text: clip(d.text ? `${d.text.replace(/\.?$/, '.')} ${extra}` : extra, 155), source: d.text ? 'extended (was too short)' : d.source };
+}
+function describeRaw(p) {
+  const pg = byPath.get(p);
+  const homeDesc = byPath.get('/').description;
+  if (pg.description && (pg.description !== homeDesc || p === '/')) return { text: pg.description, source: 'existing' };
+  const para = pg.blocks.find((b) => b.tag === 'p' && b.text.length >= 60);
+  if (para) return { text: clip(para.text, 155), source: pg.description ? 'rewritten (was sitewide duplicate)' : 'new (was missing)' };
+  if (pg.description) return { text: pg.description, source: 'existing' };
+  return { text: clip(`${stem(pg.title)} by Nevervoid Photography, a professional photographer in Bangalore since ${SITE.foundingYear}.`, 155), source: 'new (was missing)' };
+}
+
+// ---------- generic page ----------
+function blocksHtml(blocks, skipText = new Set()) {
+  const out = [];
+  let list = null;
+  const kept = blocks.filter((b) => !skipText.has(norm(b.text)));
+  // A heading followed by another heading (or nothing) introduced an
+  // image-only section on SmugMug; without its images it would be empty.
+  const visible = kept.filter((b, i) => !/^h/.test(b.tag) || (kept[i + 1] && !/^h/.test(kept[i + 1].tag)));
+  for (const b of visible) {
+    if (b.tag === 'li') {
+      if (!list) out.push((list = []));
+      list.push(`<li>${b.html}</li>`);
+      continue;
+    }
+    list = null;
+    if (/^h[12]$/.test(b.tag)) out.push(`<h2>${b.html}</h2>`);
+    else if (/^h/.test(b.tag)) out.push(`<h3>${b.html}</h3>`);
+    else if (b.tag === 'blockquote') out.push(`<blockquote>${b.html}</blockquote>`);
+    else out.push(`<p>${b.html}</p>`);
+  }
+  return out.map((x) => (Array.isArray(x) ? `<ul>${x.join('')}</ul>` : x)).join('\n');
+}
+
+function galleryHtml(p, ims) {
+  return `<div class="gallery">${ims
+    .map((im) => `<a href="${href(imagePageFor.get(`${p}|${im.id}`) ?? p)}">${img(im, { sizes: '(max-width: 640px) 100vw, 33vw', max: 'X2' })}</a>`)
+    .join('')}</div>`;
+}
+
+function relatedHtml(p) {
+  const g = groupOf.get(p);
+  const sib = (g?.paths ?? []).filter((x) => x !== p && byPath.has(x)).slice(0, 10);
+  const kids = children(p);
+  let html = '';
+  if (kids.length)
+    html += `<section class="section-tight"><div class="wrap"><h2>In this collection</h2><div class="cards">${kids
+      .map((k) => {
+        const im = ctx.imagesOf(k.path)[0];
+        return `<a class="card" href="${href(k.path)}">${im ? img(im, { sizes: '(max-width: 640px) 100vw, 33vw', max: 'X2' }) : ''}<div class="card-body"><h3>${esc(short(k.title))}</h3></div></a>`;
+      })
+      .join('')}</div></div></section>`;
+  if (sib.length)
+    html += `<section class="section-tight"><div class="wrap"><h2 style="font-size:1.4rem">More ${esc(g.name.toLowerCase())}</h2><ul class="chips">${sib
+      .map((s) => `<li><a href="${href(s)}">${esc(short(byPath.get(s).title))}</a></li>`)
+      .join('')}</ul></div></section>`;
+  return html;
+}
+
+function topicFor(p) {
+  const g = groupOf.get(p);
+  return g?.topic ?? 'a photoshoot';
+}
+
+function genericPage(p) {
+  const pg = byPath.get(p);
+  const h1 = stem(pg.title);
+  const ims = ctx.imagesOf(p);
+  const first = pg.blocks.find((b) => b.tag === 'p' && b.text.length > 30);
+  const skip = new Set([norm(h1), norm(pg.title)]);
+  if (first) skip.add(norm(first.text));
+  const trail = trailFor(p);
+  const isArticle = ARTICLES.includes(p);
+  const isLegal = LEGAL.includes(p);
+  const fitnessy = groupOf.get(p)?.key === 'fitness';
+  const prose = blocksHtml(pg.blocks, skip);
+  const body = `
+<section class="page-hero"><div class="wrap">
+  ${crumbs(trail)}
+  ${isArticle ? '<span class="eyebrow">Journal</span>' : groupOf.get(p) ? `<span class="eyebrow">${esc(groupOf.get(p).name)}</span>` : ''}
+  <h1>${esc(h1)}</h1>
+  ${first ? `<p class="lede">${first.html}</p>` : ''}
+  ${isLegal ? '' : `<div class="actions"><a class="btn btn-primary" href="${waLink(topicFor(p), fitnessy ? SITE.whatsapp.fitness : undefined)}" rel="noopener">${waIcon} Enquire on WhatsApp</a></div>`}
+</div></section>
+${prose ? `<section class="section-tight"><div class="wrap"><div class="prose">${prose}</div></div></section>` : ''}
+${ims.length ? `<section class="section-tight"><div class="wrap">${galleryHtml(p, ims)}</div></section>` : ''}
+${relatedHtml(p)}
+${isLegal ? '' : ctaBand({ topic: topicFor(p), number: fitnessy ? SITE.whatsapp.fitness : undefined })}`;
+  const desc = describe(p);
+  const ld = [breadcrumbLd(trail)];
+  if (isArticle)
+    ld.push({
+      '@type': 'Article',
+      headline: h1,
+      author: { '@type': 'Person', name: SITE.founder },
+      publisher: { '@id': `${SITE.origin}/#business` },
+      ...(pg.lastmod ? { dateModified: pg.lastmod } : {}),
+      mainEntityOfPage: abs(p),
+      ...(ims[0] ? { image: imgUrl(ims[0], 'X2') } : {}),
+    });
+  else if (ims.length)
+    ld.push({
+      '@type': 'ImageGallery',
+      name: h1,
+      url: abs(p),
+      image: ims.slice(0, 20).map((im) => ({ '@type': 'ImageObject', contentUrl: imgUrl(im, 'X2'), name: im.alt, creator: { '@id': `${SITE.origin}/#business` } })),
+    });
+  return {
+    path: p,
+    title: pg.title,
+    description: desc.text,
+    descSource: desc.source,
+    ogImage: ims[0] ? imgUrl(ims[0], 'X2') : pg.ogImage,
+    body,
+    ld,
+    waTopic: topicFor(p),
+    waNumber: fitnessy ? SITE.whatsapp.fitness : undefined,
+    h1,
+    template: isArticle ? 'article' : isLegal ? 'legal' : children(p).length ? 'collection' : 'gallery',
+  };
+}
+
+// ---------- image page ----------
+function imagePage({ path: p, id, gallery }) {
+  const im = images[id];
+  const g = byPath.get(gallery);
+  const gName = short(g.title);
+  const ids = (g.images ?? []).filter((x) => imagePageFor.has(`${gallery}|${x}`));
+  const i = ids.indexOf(id);
+  const prev = i > 0 ? imagePageFor.get(`${gallery}|${ids[i - 1]}`) : null;
+  const next = i >= 0 && i < ids.length - 1 ? imagePageFor.get(`${gallery}|${ids[i + 1]}`) : null;
+  const trail = [...trailFor(gallery), [p, clip(im.alt, 48)]];
+  const title = `${clip(im.alt, 60)} | ${gName} - Nevervoid Photography`;
+  const description = clip(`${im.alt}. From the ${gName} collection by Nevervoid Photography, Bangalore.`, 155);
+  const body = `
+<section class="photo-view"><div class="wrap">
+  ${crumbs(trail).replace('class="crumbs"', 'class="crumbs" style="color:#bdb4a8"')}
+  ${img(im, { eager: true, sizes: '100vw', max: 'X3' })}
+  <div class="photo-nav">
+    ${prev ? `<a class="btn btn-ghost btn-sm" style="color:#f3eee7" href="${href(prev)}" rel="prev">← Previous</a>` : '<span></span>'}
+    <a class="btn btn-light btn-sm" href="${href(gallery)}">Back to ${esc(gName)}</a>
+    ${next ? `<a class="btn btn-ghost btn-sm" style="color:#f3eee7" href="${href(next)}" rel="next">Next →</a>` : '<span></span>'}
+  </div>
+</div></section>
+<section class="section-tight"><div class="wrap narrow"><h1 style="font-size:clamp(1.6rem,3vw,2.2rem)">${esc(im.alt)}</h1><p>From <a href="${href(gallery)}">${esc(gName)}</a> by ${SITE.name}, Bangalore.</p></div></section>
+${ctaBand({ topic: topicFor(gallery), number: groupOf.get(gallery)?.key === 'fitness' ? SITE.whatsapp.fitness : undefined })}`;
+  return {
+    path: p,
+    title,
+    description,
+    ogImage: imgUrl(im, 'X2'),
+    body,
+    ld: [breadcrumbLd(trail), { '@type': 'ImageObject', contentUrl: imgUrl(im, 'X3'), url: abs(p), name: im.alt, creator: { '@id': `${SITE.origin}/#business` }, copyrightHolder: { '@id': `${SITE.origin}/#business` }, creditText: SITE.name }],
+    waTopic: topicFor(gallery),
+  };
+}
+
+// ---------- new pages ----------
+function servicesHub() {
+  const body = `
+<section class="page-hero"><div class="wrap">${crumbs([['/services', 'Services']])}<span class="eyebrow">What we do</span><h1>Photography services in Bangalore</h1><p class="lede">Professional headshots and fitness photography are our specialities. Here is everything else we shoot, edit and print.</p></div></section>
+${GROUPS.filter((g) => g.hub)
+  .map(
+    (g) => `<section class="section-tight" id="${g.key}"><div class="wrap"><div class="section-head" style="margin-bottom:24px"><h2>${esc(g.name)}</h2><p>${esc(g.blurb)}</p></div><div class="cards">${g.paths
+      .filter((p) => byPath.has(p))
+      .slice(0, g.cards ?? 6)
+      .map((p) => {
+        const im = ctx.imagesOf(p)[0];
+        return `<a class="card" href="${href(p)}">${im ? img(im, { sizes: '(max-width: 640px) 100vw, 33vw', max: 'X2' }) : ''}<div class="card-body"><h3>${esc(short(byPath.get(p).title))}</h3><div class="more">View →</div></div></a>`;
+      })
+      .join('')}</div>${
+      g.paths.filter((p) => byPath.has(p)).length > (g.cards ?? 6)
+        ? `<ul class="chips" style="margin-top:20px">${g.paths
+            .filter((p) => byPath.has(p))
+            .slice(g.cards ?? 6)
+            .map((p) => `<li><a href="${href(p)}">${esc(short(byPath.get(p).title))}</a></li>`)
+            .join('')}</ul>`
+        : ''
+    }</div></section>`,
+  )
+  .join('')}
+${ctaBand()}`;
+  return { path: '/services', title: 'Photography Services in Bangalore | Headshots, Fitness, Maternity - Nevervoid Photography', description: 'Professional photography services in Bangalore: corporate and LinkedIn headshots, gym and fitness photoshoots, personal branding, maternity, newborn, family, wedding and photo editing.', body, ld: [breadcrumbLd([['/services', 'Services']])], template: 'new' };
+}
+
+function browsePage() {
+  const listed = new Set(GROUPS.flatMap((g) => g.paths));
+  const rest = pages.filter((p) => p.path !== '/' && !listed.has(p.path) && !p.path.slice(1).includes('/'));
+  const byGroup = GROUPS.map((g) => [g, g.paths.filter((p) => byPath.has(p))]);
+  const body = `
+<section class="page-hero"><div class="wrap">${crumbs([['/browse', 'Portfolio']])}<span class="eyebrow">Portfolio</span><h1>Browse the Nevervoid portfolio</h1><p class="lede">Every gallery, from corporate headshots and fitness shoots to weddings, maternity and travel.</p></div></section>
+<section class="section-tight"><div class="wrap">${byGroup
+    .map(([g, ps]) => `<h2 style="font-size:1.5rem;margin-top:32px">${esc(g.name)}</h2><ul class="chips">${ps.map((p) => `<li><a href="${href(p)}">${esc(short(byPath.get(p).title))}</a></li>`).join('')}</ul>`)
+    .join('')}
+  ${rest.length ? `<h2 style="font-size:1.5rem;margin-top:32px">Client galleries &amp; more</h2><ul class="chips">${rest.map((p) => `<li><a href="${href(p.path)}">${esc(short(p.title))}</a></li>`).join('')}</ul>` : ''}
+</div></section>${ctaBand()}`;
+  const pg = byPath.get('/browse');
+  return { path: '/browse', title: pg.title, description: describe('/browse').text, descSource: describe('/browse').source, body, ld: [breadcrumbLd([['/browse', 'Portfolio']])], h1: 'Browse the Nevervoid portfolio', template: 'portfolio-index' };
+}
+
+function blogIndex() {
+  const archive = ARTICLES.filter((p) => byPath.has(p));
+  const body = `
+<section class="page-hero"><div class="wrap">${crumbs([['/blog', 'Journal']])}<span class="eyebrow">Journal</span><h1>The Nevervoid Journal</h1><p class="lede">Practical guides for headshots, fitness shoots and family portraits, from ${SITE.foundingYear} onwards in Bangalore.</p></div></section>
+<section class="section-tight"><div class="wrap">${postCards(ctx, posts)}</div></section>
+<section class="section-tight"><div class="wrap"><h2>From the archive</h2><div class="cards">${archive
+    .map((p) => {
+      const im = ctx.imagesOf(p)[0];
+      return `<a class="card" href="${href(p)}">${im ? img(im, { sizes: '(max-width: 640px) 100vw, 33vw', max: 'X2' }) : ''}<div class="card-body"><h3>${esc(short(byPath.get(p).title))}</h3><p>${esc(describe(p).text)}</p></div></a>`;
+    })
+    .join('')}</div></div></section>${ctaBand()}`;
+  return { path: '/blog', title: 'Photography Journal: Headshot, Fitness & Portrait Guides | Nevervoid Photography', description: 'Guides from a Bangalore photographer: what to wear for headshots, LinkedIn profile photos, preparing for a fitness photoshoot and more.', body, ld: [breadcrumbLd([['/blog', 'Journal']]), { '@type': 'Blog', name: 'The Nevervoid Journal', url: abs('/blog'), publisher: { '@id': `${SITE.origin}/#business` } }], template: 'new' };
+}
+
+function blogPost(post) {
+  const ims = ctx.imagesOf(post.imagePage);
+  const trail = [['/blog', 'Journal'], [post.path, post.title]];
+  const rel = post.related.filter((r) => byPath.has(r));
+  const fit = post.category === 'Fitness';
+  const body = `
+<article>
+<section class="page-hero"><div class="wrap narrow">${crumbs(trail)}<span class="eyebrow">${esc(post.category)}</span><h1>${esc(post.title)}</h1><p class="meta">By ${esc(post.author)} · <time datetime="${post.date}">${new Date(post.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</time></p></div></section>
+${ims[0] ? `<div class="wrap narrow" style="margin-top:32px">${img(ims[0], { eager: true, sizes: '(max-width: 800px) 100vw, 760px', cls: 'post-cover' })}</div>` : ''}
+<section class="section-tight"><div class="wrap narrow"><div class="prose">${post.html}</div></div></section>
+</article>
+${ims.length > 1 ? `<section class="section-tight"><div class="wrap"><div class="strip">${ims.slice(1, 9).map((im) => `<a href="${href(imagePageFor.get(`${post.imagePage}|${im.id}`) ?? post.imagePage)}">${img(im, { sizes: '260px', max: 'XL' })}</a>`).join('')}</div></div></section>` : ''}
+${rel.length ? `<section class="section-tight"><div class="wrap"><h2 style="font-size:1.4rem">Related</h2><ul class="chips">${rel.map((r) => `<li><a href="${href(r)}">${esc(short(byPath.get(r).title))}</a></li>`).join('')}</ul></div></section>` : ''}
+${ctaBand({ topic: fit ? 'fitness photography' : 'professional headshots', number: fit ? SITE.whatsapp.fitness : undefined })}`;
+  return {
+    path: post.path,
+    title: `${post.title} | Nevervoid Photography`,
+    description: post.description,
+    ogType: 'article',
+    ogImage: ims[0] ? imgUrl(ims[0], 'X2') : undefined,
+    body,
+    waTopic: fit ? 'fitness photography' : 'professional headshots',
+    waNumber: fit ? SITE.whatsapp.fitness : undefined,
+    ld: [
+      breadcrumbLd(trail),
+      { '@type': 'BlogPosting', headline: post.title, description: post.description, datePublished: post.date, dateModified: post.date, author: { '@type': 'Person', name: post.author }, publisher: { '@id': `${SITE.origin}/#business` }, mainEntityOfPage: abs(post.path), ...(ims[0] ? { image: imgUrl(ims[0], 'X2') } : {}) },
+    ],
+    template: 'new',
+  };
+}
+
+function contactPage() {
+  const body = `
+<section class="page-hero"><div class="wrap">${crumbs([['/contact', 'Contact']])}<span class="eyebrow">Book a session</span><h1>Contact Nevervoid Photography</h1><p class="lede">The quickest way to book is WhatsApp. Tell us what the photos are for, your preferred dates, and whether you'd like the studio or on-site.</p></div></section>
+<section class="section-tight"><div class="wrap"><div class="cards">
+  <div class="card"><div class="card-body"><h3>Headshots &amp; general enquiries</h3><p>WhatsApp +91 ${SITE.whatsapp.main.slice(2, 7)} ${SITE.whatsapp.main.slice(7)}</p><p style="margin-top:16px"><a class="btn btn-primary btn-sm" href="${waLink('professional headshots')}" rel="noopener">${waIcon} Chat now</a></p></div></div>
+  <div class="card"><div class="card-body"><h3>Fitness &amp; gym photoshoots</h3><p>WhatsApp +91 ${SITE.whatsapp.fitness.slice(2, 7)} ${SITE.whatsapp.fitness.slice(7)}</p><p style="margin-top:16px"><a class="btn btn-primary btn-sm" href="${waLink('fitness photography', SITE.whatsapp.fitness)}" rel="noopener">${waIcon} Chat now</a></p></div></div>
+  <div class="card"><div class="card-body"><h3>Email</h3><p><a href="mailto:${SITE.email}">${SITE.email}</a></p><p style="margin-top:16px">Studio in Banaswadi, ${SITE.localityAlt}. On-site sessions anywhere in the city.</p></div></div>
+</div></div></section>
+${ctaBand()}`;
+  return { path: '/contact', title: 'Contact & Booking | Nevervoid Photography - Bangalore', description: `Book a headshot, fitness or portrait photoshoot in Bangalore. WhatsApp or email ${SITE.email}. Studio in Banaswadi or on-site.`, body, ld: [breadcrumbLd([['/contact', 'Contact']]), { '@type': 'ContactPage', url: abs('/contact'), about: { '@id': `${SITE.origin}/#business` } }], template: 'new' };
+}
+
+function notFound() {
+  const body = `<section class="page-hero"><div class="wrap"><span class="eyebrow">404</span><h1>This page has moved or no longer exists</h1><p class="lede">Try one of these instead:</p><ul class="chips"><li><a href="/Headshot-photographer-bangalore">Headshot photographer Bangalore</a></li><li><a href="/Fitness-Photography">Fitness photography</a></li><li><a href="/services">All services</a></li><li><a href="/browse">Portfolio</a></li><li><a href="/blog">Journal</a></li><li><a href="/contact">Contact</a></li></ul></div></section>`;
+  return { path: '/404', title: 'Page not found | Nevervoid Photography', description: '', body, noindex: true };
+}
+
+// ---------- assemble ----------
+const FEATURED = { '/': home, '/Headshot-photographer-bangalore': headshots, '/Fitness-Photography': fitness };
+const out = [];
+for (const p of pages) {
+  if (FEATURED[p.path]) out.push({ ...FEATURED[p.path](ctx), template: 'featured', h1: null, descSource: p.path === '/Fitness-Photography' ? 'shortened (was ~600 chars)' : 'existing' });
+  else if (p.path === '/browse') out.push(browsePage());
+  else out.push(genericPage(p.path));
+}
+const newPages = [servicesHub(), blogIndex(), ...posts.map(blogPost), contactPage()];
+out.push(...newPages);
+const imgOut = imagePages.map(imagePage);
+
+{
+  const servedEarly = new Set([...out, ...imgOut].map((p) => p.path));
+  const lowerEarly = {};
+  for (const p of servedEarly) if (!/\/i-[A-Za-z0-9]+$/.test(p) && !(p.toLowerCase() in lowerEarly)) lowerEarly[p.toLowerCase()] = p;
+  Object.assign(lowerEarly, CASE_COLLISIONS);
+  const legacyEarly = { ...LEGACY };
+  for (const [kw, dest] of Object.entries(KEYWORD_REDIRECTS)) legacyEarly[`/keyword/${kw}`] = dest;
+  linkRoutes = { pages: servedEarly, legacy: legacyEarly, lower: lowerEarly };
+}
+fs.rmSync(DIST, { recursive: true, force: true });
+fs.mkdirSync(DIST, { recursive: true });
+// Internal links that would hit a redirect (e.g. a broken link in migrated
+// copy, or a lowercase/trailing-slash href) are rewritten to the final URL.
+const fixLinks = (html) =>
+  html.replace(/href="(\/[^"#?]*)([^"]*)"/g, (m, p, rest) => {
+    let cur = p;
+    try { cur = decodeURI(p); } catch {}
+    for (let i = 0; i < 4; i++) {
+      const r = resolveRedirect(cur, linkRoutes);
+      if (!r) break;
+      cur = decodeURI(r.location);
+    }
+    const out = encodeURI(cur);
+    return out === p ? m : `href="${out}${rest}"`;
+  });
+const fileFor = (p) => path.join(DIST, p === '/' ? 'index.html' : decodeURI(p).slice(1) + '.html');
+const write = (pg) => {
+  const f = fileFor(pg.path);
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, fixLinks(layout(pg)));
+};
+for (const pg of [...out, ...imgOut, notFound()]) write(pg);
+
+// public/ assets
+fs.cpSync(path.join(ROOT, 'public'), DIST, { recursive: true });
+
+// ---------- redirects ----------
+const served = new Set([...out, ...imgOut].map((p) => p.path));
+const lower = {};
+for (const p of served) {
+  if (/\/i-[A-Za-z0-9]+$/.test(p)) continue; // image IDs are case-sensitive; variants fall back to the gallery
+  const k = p.toLowerCase();
+  if (!(k in lower)) lower[k] = p;
+}
+for (const [k, v] of Object.entries(CASE_COLLISIONS)) lower[k] = v; // measured on SmugMug
+const legacy = { ...LEGACY };
+for (const [kw, dest] of Object.entries(KEYWORD_REDIRECTS)) legacy[`/keyword/${kw}`] = dest;
+const STATIC = new Set(['/sitemap.xml']);
+for (const [k, v] of Object.entries(legacy)) if (!served.has(v) && !STATIC.has(v)) throw new Error(`legacy redirect ${k} -> ${v}: destination not built`);
+const routes = { pages: [...served].sort(), legacy, lower };
+fs.writeFileSync(path.join(DIST, '_routes-data.json'), JSON.stringify(routes));
+fs.mkdirSync(path.join(DIST, '..', 'functions'), { recursive: true });
+fs.writeFileSync(
+  path.join(ROOT, 'functions', '_middleware.js'),
+  `// GENERATED by scripts/build.mjs. Do not edit.\n// Cloudflare Pages middleware: 301s for legacy SmugMug URLs, trailing slashes and\n// case variants, using the same resolver the local verifier tests.\n${fs
+    .readFileSync(path.join(ROOT, 'src/redirects.js'), 'utf8')
+    .replace('export function resolve', 'function resolve')}\nconst ROUTES = ${JSON.stringify({ legacy, lower })};\nlet PAGES;\nexport async function onRequest(context) {\n  const url = new URL(context.request.url);\n  if (url.hostname === 'nevervoid.com') { url.hostname = 'www.nevervoid.com'; return Response.redirect(url.toString(), 301); }\n  if (!PAGES) PAGES = new Set(await (await context.env.ASSETS.fetch(new URL('/_routes-data.json', url))).json().then((r) => r.pages));\n  const r = resolve(url.pathname, { pages: PAGES, ...ROUTES });\n  if (r) return Response.redirect(new URL(r.location + url.search, url).toString(), r.status);\n  return context.next();\n}\n`,
+);
+
+// ---------- sitemap + robots ----------
+const lastmodOf = (p) => (byPath.get(p)?.lastmod ? byPath.get(p).lastmod.slice(0, 10) : BUILD_DATE);
+const smEntries = out
+  .filter((p) => !p.noindex)
+  .map((p) => {
+    const ims = (byPath.get(p.path)?.images ?? []).slice(0, 1000).map((id) => images[id]).filter(Boolean);
+    return `<url><loc>${esc(abs(p.path))}</loc><lastmod>${lastmodOf(p.path)}</lastmod>${ims.map((im) => `<image:image><image:loc>${esc(imgUrl(im, 'X3'))}</image:loc></image:image>`).join('')}</url>`;
+  });
+fs.writeFileSync(
+  path.join(DIST, 'sitemap.xml'),
+  `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n${smEntries.join('\n')}\n</urlset>\n`,
+);
+// The old robots.txt advertised /sitemap-index.xml; keep that URL working.
+fs.writeFileSync(path.join(DIST, 'sitemap-index.xml'), `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><sitemap><loc>${SITE.origin}/sitemap.xml</loc><lastmod>${BUILD_DATE}</lastmod></sitemap></sitemapindex>\n`);
+fs.writeFileSync(path.join(DIST, 'robots.txt'), `User-agent: *\nAllow: /\nDisallow: /_routes-data.json\n\nSitemap: ${SITE.origin}/sitemap.xml\n`);
+
+// ---------- migration data for the verifier/report ----------
+const manifest = {
+  built: BUILD_DATE,
+  pages: out.map((p) => ({ path: p.path, title: p.title, description: p.description, descSource: p.descSource ?? 'new', template: p.template, h1: p.h1 ?? null })),
+  imagePages: imgOut.length,
+};
+fs.writeFileSync(path.join(DIST, '_manifest.json'), JSON.stringify(manifest, null, 1));
+console.log(`built ${out.length} pages (${newPages.length} new), ${imgOut.length} image pages, ${Object.keys(legacy).length} legacy redirects, sitemap ${smEntries.length} URLs`);

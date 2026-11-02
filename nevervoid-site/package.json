@@ -1,0 +1,19 @@
+{
+  "name": "nevervoid-site",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nevervoid Photography website: static, SEO-first, preserves every existing nevervoid.com URL",
+  "type": "module",
+  "engines": { "node": ">=22.12" },
+  "scripts": {
+    "extract": "node scripts/extract.mjs",
+    "build": "node scripts/build.mjs",
+    "verify": "node scripts/verify.mjs",
+    "check-live": "node scripts/check-live.mjs",
+    "serve": "node scripts/serve.mjs",
+    "test": "npm run build && npm run verify"
+  },
+  "dependencies": {
+    "marked": "^15.0.12"
+  }
+}
