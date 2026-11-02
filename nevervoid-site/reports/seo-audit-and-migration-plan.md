@@ -55,18 +55,19 @@ Identified from titles, H1s and copy. Confirm with Search Console once it is ava
 7. **Trailing slashes use 302, not 301.** For example, `/Clients/` → `/Clients`. Internal links use the slash version.
 8. **robots.txt blocks every crawler not on SmugMug's allow-list** (`User-agent: * Disallow: /`). That includes newer AI search crawlers.
 9. **Thin or test pages are indexable:** `/Temp`, `/Homepage`, `/Homepage/Fullscreen`, `/Other`, `/Other/My-Smug-Mug`.
-10. **Content inconsistencies to resolve (owner):**
-    - **Headshot delivery** is given as "2 days", "48-hour" and "next day" on the same page.
-    - **Session length** is given as "20 minutes" and "half to one hour".
-    - **Price:** ₹5,899 (studio) next to ₹8,899 ("one look", corporate). Clarify whether these are two different products.
-    - **WhatsApp:** two numbers are in use, +91 98800 00990 (homepage and headshots) and +91 96324 92092 (fitness).
-    - **Outdated copy:** "almost 12 years" since 2008 on the homepage, "8 years experience" in the maternity title, and Covid "safety first" copy on the maternity page.
-    - **No street address** is published, which matters for local SEO and Google Business Profile consistency.
+10. **Content inconsistencies.** Resolved by the owner on 2 Nov 2026 and applied in `src/content-fixes.js`:
+    - **Phone and WhatsApp:** one number everywhere, **+91 98800 00990**. This replaces 96324 92092 (fitness and birthday pages) and 86607 83566 (gown rental).
+    - **Headshot delivery: 2 days.** This replaces "next day" and "48-hour".
+    - **Fitness delivery: 4–5 days.** This replaces "5–7 working days" and "3–4 days".
+    - **Covid content removed.** The "safety first", mask, distance and vaccination lines on the maternity, portrait and baby/family pages are gone, and `/Covid` now redirects (301) to `/`.
+    - **Experience counted from 2008.** The count is computed at build time, 18 years in 2026. The **maternity page title** changes from "…with 8 years experience." to "…with 18 years experience."; this is the only title change on the site.
+    - **Studio address published:** Nevervoid photography creative studio, No 54, ground floor, 10th A Main, 100 Feet Rd, HRBR Layout 1st Block, Balaji Layout, Subbaiahnapalya, Banaswadi, Bengaluru, Karnataka 560043. It appears in the footer, on `/contact` and in the LocalBusiness markup. Make sure your Google Business Profile uses the exact same name, address and phone.
+    - **Still open:** the session length ("20 minutes" vs "half to one hour") and the ₹5,899 studio price vs ₹8,899 corporate "one look" price. Both are shown as published.
 
 ## Migration plan (implemented in this folder; not deployed)
 
 ### URLs
-- **All 139 sitemap URLs are kept exactly**: same path, same letter case, no trailing slash. **No ranking page is deleted, renamed or consolidated.**
+- **138 of the 139 sitemap URLs are kept exactly**: same path, same letter case, no trailing slash. **No ranking page is deleted, renamed or consolidated.** The one removal is `/Covid` (owner request), which gets a 301 to `/`.
 - **All 7,622 image pages captured in the crawl are kept at the same URL.** Any other `/Gallery/i-XXXX`, or a size variant such as `/i-XXXX/A`, gets a 301 to its gallery.
 - **301 redirects (tested):**
   - Trailing slash → no slash, upgraded from SmugMug's 302.
@@ -80,7 +81,7 @@ Identified from titles, H1s and copy. Confirm with Search Console once it is ava
 - **New URLs:** `/services`, `/contact`, `/blog` (the Journal) and four Journal posts under `/blog/…`.
 
 ### On-page
-- **Titles:** identical to today on all 139 pages. Image pages get unique titles, for example "Chiseled Determination – Studio Fitness Portrait in Bangalore | Gym & Fitness Photoshoot Bangalore - Nevervoid Photography".
+- **Titles:** identical to today on 137 pages. The maternity title's years are updated, and `/Covid` is removed. Image pages get unique titles, for example "Chiseled Determination – Studio Fitness Portrait in Bangalore | Gym & Fitness Photoshoot Bangalore - Nevervoid Photography".
 - **One H1 per page.** The H1 is the page's primary keyword phrase, taken from its title. Former extra H1s become H2s.
 - **Body copy:** carried over word for word, with internal links kept. The home, headshot and fitness pages are redesigned around Why, What and How using their existing copy, FAQs, prices and process steps.
 - **Meta descriptions:**
@@ -117,7 +118,7 @@ Identified from titles, H1s and copy. Confirm with Search Console once it is ava
 The new site still serves your photos from SmugMug's CDN, so **SmugMug must stay active** after launch. Before you ever cancel SmugMug, download the originals, self-host them, and re-run the build. Image search traffic also points at `photos.smugmug.com` URLs, so plan that step separately.
 
 ## Verification (run `npm test`)
-- All 139 old URLs return 200 at the identical URL with the identical title.
+- 138 old URLs return 200 at the identical URL with the expected title. `/Covid` returns a 301 to `/`.
 - 24 legacy and keyword URLs return a single 301 to a live page.
 - 551 URL variants (trailing slash, lowercase, UPPERCASE, `.html`) take one 301 to the right page.
 - All 7,743 old image-page links return 200.
@@ -126,7 +127,7 @@ The new site still serves your photos from SmugMug's CDN, so **SmugMug must stay
 - The generated Cloudflare middleware is executed against 8 cases: bare domain, case, trailing slash with query string, legacy, keyword, collision and 404.
 
 ## Launch steps (each needs your go-ahead)
-1. Settle the content questions above (edit `src/config.js` and the page copy).
+1. Settle the two remaining content questions above (session length, corporate price).
 2. Add the Search Console export and re-run `npm test`. Review which pages rank and decide on the consolidations.
 3. Deploy to Cloudflare Pages: build command `npm run build`, output directory `dist`, root directory `nevervoid-site`. Run `node scripts/check-live.mjs https://<project>.pages.dev`.
 4. Cutover: add `www.nevervoid.com` and `nevervoid.com` as custom domains in Cloudflare Pages, then update DNS. **This is the only step that changes DNS.** Keep SmugMug active.

@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { KEYWORD_REDIRECTS, LEGACY } from '../src/site-map.js';
+import { applyFixes, REMOVED } from '../src/content-fixes.js';
 
 const base = (process.argv[2] ?? '').replace(/\/$/, '');
 if (!/^https?:\/\//.test(base)) {
@@ -13,13 +14,13 @@ if (!/^https?:\/\//.test(base)) {
   process.exit(2);
 }
 const ROOT = path.join(import.meta.dirname, '..');
-const pages = JSON.parse(fs.readFileSync(path.join(ROOT, 'data/pages.json'), 'utf8'));
+const pages = applyFixes(JSON.parse(fs.readFileSync(path.join(ROOT, 'data/pages.json'), 'utf8'))).pages;
 const sampleImages = pages.flatMap((p) => (p.imagePages ?? []).slice(0, 2));
 
 const tests = [
   ...pages.map((p) => ({ url: p.path, expect: p.path, hops: 0, title: p.title })),
   ...pages.filter((p) => p.path !== '/').map((p) => ({ url: p.path + '/', expect: p.path, hops: 1 })),
-  ...Object.entries(LEGACY).map(([u, d]) => ({ url: u, expect: d, hops: 1 })),
+  ...Object.entries({ ...LEGACY, ...REMOVED }).map(([u, d]) => ({ url: u, expect: d, hops: 1 })),
   ...Object.entries(KEYWORD_REDIRECTS).map(([k, d]) => ({ url: `/keyword/${encodeURIComponent(k)}`, expect: d, hops: 1 })),
   ...sampleImages.map((u) => ({ url: u, expect: u, hops: 0 })),
 ];

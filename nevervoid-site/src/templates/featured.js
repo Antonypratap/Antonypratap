@@ -1,6 +1,7 @@
 // Hand-designed Why / What / How pages. Copy is taken from the live pages
 // (data/pages.json) so the ranking content survives; layout is new.
 import { SITE, waLink } from '../config.js';
+import { yearsSince } from '../content-fixes.js';
 import { esc, img, href, ctaBand, faqHtml, faqLd, waIcon, crumbs, breadcrumbLd, abs } from '../lib.js';
 
 const gallery = (ctx, page, n = 24) =>
@@ -67,7 +68,7 @@ export function home(ctx) {
     <div><strong>${SITE.foundingYear}</strong><span>Photographing Bangalore since</span></div>
     <div><strong>1000+</strong><span>Couples photographed for maternity</span></div>
     <div><strong>2 days</strong><span>Headshot delivery</span></div>
-    <div><strong>Studio + on-site</strong><span>Banaswadi studio or your location</span></div>
+    <div><strong>${yearsSince()}+ years</strong><span>Studio in Banaswadi, or on-site at your location</span></div>
   </div></div>
 </section>
 
@@ -271,19 +272,19 @@ export function fitness(ctx) {
   const page = ctx.page(P);
   const ims = ctx.imagesOf(P);
   const hero = ctx.image('npqHvJ8') ?? ims[0];
-  const n = SITE.whatsapp.fitness;
+  const n = SITE.phone;
   const steps = [
     ['Book your session', 'Choose a date and time that works for you.'],
     ['Choice of location', 'Studio, or at your gym space?'],
     ['Prep guidance', 'We can let you know some tips on what to wear, bring, and how to prep.'],
     ['Shoot day', 'You show up, we guide every pose and light every frame.'],
-    ['Delivery', 'Edited photos delivered within 5–7 working days.'],
+    ['Delivery', 'Edited photos delivered within 4–5 days.'],
   ];
   const faqs = [
     { q: 'Where do fitness photoshoots happen?', a: '<p>In our studio in Banaswadi, or at your gym anywhere in Bangalore. The studio gives high-contrast, controlled lighting. Your gym adds equipment and context your clients recognise.</p>' },
     { q: 'When should I book a fitness photoshoot?', a: '<p>If you have just come out of a fitness competition and wish to record your body condition and muscle shape, book before your body gets back to the usual normal. Weight-loss champions should also get a photoshoot to celebrate their achievement.</p>' },
     { q: 'What should I bring?', a: '<p>Plan your shoot near your peak condition, bring 2–3 solid-colour outfits, and we will guide your posing throughout. See our <a href="/blog/how-to-prepare-for-a-fitness-photoshoot">fitness photoshoot preparation guide</a>.</p>' },
-    { q: 'How soon will I get my photos?', a: '<p>Edited photos are delivered within 5–7 working days.</p>' },
+    { q: 'How soon will I get my photos?', a: '<p>Edited photos are delivered within 4–5 days.</p>' },
   ];
   const trail = [[P, 'Fitness photography Bangalore']];
   const body = `
@@ -365,8 +366,7 @@ ${ctaBand({ heading: 'Show the work you put in.', text: 'Studio in Banaswadi or 
   return {
     path: P,
     title: page.title,
-    // The live description is ~600 characters and contradicts the page body
-    // (3–4 vs 5–7 days). Search engines truncate at ~155, so the opening is kept.
+    // The live description is ~600 characters; search engines truncate at ~155.
     description:
       'Gym, fitness and bodybuilding photoshoots in Bangalore. Got a transformation done, back from a bodybuilding contest, or hit a weight-loss goal? Get photos that show your hard work.',
     ogImage: hero ? `${hero.base}/X2/${hero.file}-X2.${hero.ext}` : page.ogImage,

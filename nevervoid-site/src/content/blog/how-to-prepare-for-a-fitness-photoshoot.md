@@ -46,6 +46,6 @@ A short pump with bands or light weights just before shooting brings out muscle 
 
 ## 7. After the shoot
 
-Edited photos are delivered within 5–7 working days. Plan your posts or website update for after that.
+Edited photos are delivered within 4–5 days. Plan your posts or website update for after that.
 
 **Want to plan your shoot?** See our [fitness photography portfolio and process](/Fitness-Photography), or message us on WhatsApp with your goal and preferred dates.

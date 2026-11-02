@@ -1,4 +1,4 @@
-import { SITE, waLink } from './config.js';
+import { SITE, waLink, fullAddress, mapsLink } from './config.js';
 
 export const esc = (s = '') =>
   String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -65,7 +65,9 @@ export function businessLd() {
     image: SITE.defaultOgImage,
     logo: SITE.defaultOgImage,
     email: SITE.email,
-    telephone: '+' + SITE.whatsapp.main,
+    telephone: '+' + SITE.phone,
+    alternateName: SITE.studioName,
+    hasMap: mapsLink(),
     founder: { '@type': 'Person', name: SITE.founder },
     foundingDate: String(SITE.foundingYear),
     address: {
@@ -139,7 +141,8 @@ function footer() {
       <div>
         <a class="logo" href="/" style="color:#f3eee7">NEVERVOID<span>PHOTOGRAPHY · BANGALORE</span></a>
         <p style="margin-top:18px;max-width:34ch">Professional photography in Bangalore since ${SITE.foundingYear}: headshots, fitness, personal branding, maternity and family portraits.</p>
-        <p><a href="mailto:${SITE.email}">${SITE.email}</a><br><a href="${waLink('a photoshoot')}" rel="noopener">WhatsApp +91 ${SITE.whatsapp.main.slice(2, 7)} ${SITE.whatsapp.main.slice(7)}</a></p>
+        <p><a href="tel:+${SITE.phone}">${SITE.phoneDisplay}</a> · <a href="${waLink('a photoshoot')}" rel="noopener">WhatsApp</a><br><a href="mailto:${SITE.email}">${SITE.email}</a></p>
+        <address style="font-style:normal;max-width:36ch"><a href="${mapsLink()}" rel="noopener">${esc(SITE.studioName)}<br>${esc(fullAddress())}</a></address>
       </div>
       ${col('Professional', [
         ['/Headshot-photographer-bangalore', 'Headshot photographer Bangalore'],

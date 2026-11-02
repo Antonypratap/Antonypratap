@@ -158,7 +158,7 @@ export const ARTICLES = [
   '/Maternity-lightroom-presets',
 ];
 
-export const LEGAL = ['/Privacy-policy', '/Terms-and-conditions', '/Cancelation-and-refunds', '/Covid'];
+export const LEGAL = ['/Privacy-policy', '/Terms-and-conditions', '/Cancelation-and-refunds'];
 
 // SmugMug keyword pages that Google is allowed to crawl (robots.txt allows
 // /keyword for Googlebot). Each goes to its closest service page.

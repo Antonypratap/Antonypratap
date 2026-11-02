@@ -28,7 +28,8 @@ NODE_USE_ENV_PROXY=1 node scripts/extract.mjs rendered.json                     
 |---|---|
 | `data/pages.json` | Every live page: title, description, copy blocks (with links), image IDs, image-page URLs |
 | `data/images.json` | Every image: SmugMug URL parts, alt text, galleries it appears in |
-| `src/config.js` | Business facts (email, WhatsApp numbers, founder, address). **Confirm before launch.** |
+| `src/config.js` | Business facts: phone/WhatsApp, email, founder, studio address |
+| `src/content-fixes.js` | Owner-approved corrections applied on top of the SmugMug copy (phone, delivery times, years, Covid removal) |
 | `src/site-map.js` | Service groups (navigation and internal links), Journal archive, legacy and keyword redirects |
 | `src/templates/featured.js` | Home, headshot and fitness pages (Why / What / How) |
 | `src/content/blog/*.md` | Journal posts. Add a `.md` file with the same front matter to publish a new post |

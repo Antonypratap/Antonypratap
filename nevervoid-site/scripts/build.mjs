@@ -7,7 +7,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { marked } from 'marked';
-import { SITE, waLink } from '../src/config.js';
+import { SITE, waLink, fullAddress, mapsLink } from '../src/config.js';
+import { applyFixes, REMOVED } from '../src/content-fixes.js';
 import { layout, esc, img, href, abs, crumbs, breadcrumbLd, ctaBand, imgUrl, waIcon } from '../src/lib.js';
 import { home, headshots, fitness, postCards } from '../src/templates/featured.js';
 import { resolve as resolveRedirect } from '../src/redirects.js';
@@ -16,8 +17,8 @@ import { GROUPS, ARTICLES, LEGAL, KEYWORD_REDIRECTS, LEGACY, CASE_COLLISIONS } f
 const ROOT = path.join(import.meta.dirname, '..');
 const DIST = path.join(ROOT, 'dist');
 const read = (p) => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
-const pages = read('data/pages.json');
 const images = read('data/images.json');
+const { pages, log: fixLog } = applyFixes(read('data/pages.json'), images);
 let linkRoutes; // set before pages are written
 const BUILD_DATE = process.env.BUILD_DATE ?? new Date().toISOString().slice(0, 10);
 
@@ -230,12 +231,12 @@ function genericPage(p) {
   ${isArticle ? '<span class="eyebrow">Journal</span>' : groupOf.get(p) ? `<span class="eyebrow">${esc(groupOf.get(p).name)}</span>` : ''}
   <h1>${esc(h1)}</h1>
   ${first ? `<p class="lede">${first.html}</p>` : ''}
-  ${isLegal ? '' : `<div class="actions"><a class="btn btn-primary" href="${waLink(topicFor(p), fitnessy ? SITE.whatsapp.fitness : undefined)}" rel="noopener">${waIcon} Enquire on WhatsApp</a></div>`}
+  ${isLegal ? '' : `<div class="actions"><a class="btn btn-primary" href="${waLink(topicFor(p), fitnessy ? SITE.phone : undefined)}" rel="noopener">${waIcon} Enquire on WhatsApp</a></div>`}
 </div></section>
 ${prose ? `<section class="section-tight"><div class="wrap"><div class="prose">${prose}</div></div></section>` : ''}
 ${ims.length ? `<section class="section-tight"><div class="wrap">${galleryHtml(p, ims)}</div></section>` : ''}
 ${relatedHtml(p)}
-${isLegal ? '' : ctaBand({ topic: topicFor(p), number: fitnessy ? SITE.whatsapp.fitness : undefined })}`;
+${isLegal ? '' : ctaBand({ topic: topicFor(p), number: fitnessy ? SITE.phone : undefined })}`;
   const desc = describe(p);
   const ld = [breadcrumbLd(trail)];
   if (isArticle)
@@ -264,7 +265,7 @@ ${isLegal ? '' : ctaBand({ topic: topicFor(p), number: fitnessy ? SITE.whatsapp.
     body,
     ld,
     waTopic: topicFor(p),
-    waNumber: fitnessy ? SITE.whatsapp.fitness : undefined,
+    waNumber: fitnessy ? SITE.phone : undefined,
     h1,
     template: isArticle ? 'article' : isLegal ? 'legal' : children(p).length ? 'collection' : 'gallery',
   };
@@ -293,7 +294,7 @@ function imagePage({ path: p, id, gallery }) {
   </div>
 </div></section>
 <section class="section-tight"><div class="wrap narrow"><h1 style="font-size:clamp(1.6rem,3vw,2.2rem)">${esc(im.alt)}</h1><p>From <a href="${href(gallery)}">${esc(gName)}</a> by ${SITE.name}, Bangalore.</p></div></section>
-${ctaBand({ topic: topicFor(gallery), number: groupOf.get(gallery)?.key === 'fitness' ? SITE.whatsapp.fitness : undefined })}`;
+${ctaBand({ topic: topicFor(gallery), number: groupOf.get(gallery)?.key === 'fitness' ? SITE.phone : undefined })}`;
   return {
     path: p,
     title,
@@ -375,7 +376,7 @@ ${ims[0] ? `<div class="wrap narrow" style="margin-top:32px">${img(ims[0], { eag
 </article>
 ${ims.length > 1 ? `<section class="section-tight"><div class="wrap"><div class="strip">${ims.slice(1, 9).map((im) => `<a href="${href(imagePageFor.get(`${post.imagePage}|${im.id}`) ?? post.imagePage)}">${img(im, { sizes: '260px', max: 'XL' })}</a>`).join('')}</div></div></section>` : ''}
 ${rel.length ? `<section class="section-tight"><div class="wrap"><h2 style="font-size:1.4rem">Related</h2><ul class="chips">${rel.map((r) => `<li><a href="${href(r)}">${esc(short(byPath.get(r).title))}</a></li>`).join('')}</ul></div></section>` : ''}
-${ctaBand({ topic: fit ? 'fitness photography' : 'professional headshots', number: fit ? SITE.whatsapp.fitness : undefined })}`;
+${ctaBand({ topic: fit ? 'fitness photography' : 'professional headshots', number: fit ? SITE.phone : undefined })}`;
   return {
     path: post.path,
     title: `${post.title} | Nevervoid Photography`,
@@ -384,7 +385,7 @@ ${ctaBand({ topic: fit ? 'fitness photography' : 'professional headshots', numbe
     ogImage: ims[0] ? imgUrl(ims[0], 'X2') : undefined,
     body,
     waTopic: fit ? 'fitness photography' : 'professional headshots',
-    waNumber: fit ? SITE.whatsapp.fitness : undefined,
+    waNumber: fit ? SITE.phone : undefined,
     ld: [
       breadcrumbLd(trail),
       { '@type': 'BlogPosting', headline: post.title, description: post.description, datePublished: post.date, dateModified: post.date, author: { '@type': 'Person', name: post.author }, publisher: { '@id': `${SITE.origin}/#business` }, mainEntityOfPage: abs(post.path), ...(ims[0] ? { image: imgUrl(ims[0], 'X2') } : {}) },
@@ -395,14 +396,15 @@ ${ctaBand({ topic: fit ? 'fitness photography' : 'professional headshots', numbe
 
 function contactPage() {
   const body = `
-<section class="page-hero"><div class="wrap">${crumbs([['/contact', 'Contact']])}<span class="eyebrow">Book a session</span><h1>Contact Nevervoid Photography</h1><p class="lede">The quickest way to book is WhatsApp. Tell us what the photos are for, your preferred dates, and whether you'd like the studio or on-site.</p></div></section>
+<section class="page-hero"><div class="wrap">${crumbs([['/contact', 'Contact']])}<span class="eyebrow">Book a session</span><h1>Contact Nevervoid Photography</h1><p class="lede">The quickest way to book is WhatsApp. Tell us what the photos are for, your preferred dates, and whether you'd like the studio or on-site.</p>
+<div class="actions"><a class="btn btn-primary" href="${waLink('a photoshoot')}" rel="noopener">${waIcon} WhatsApp ${SITE.phoneDisplay}</a><a class="btn btn-ghost" href="tel:+${SITE.phone}">Call ${SITE.phoneDisplay}</a></div></div></section>
 <section class="section-tight"><div class="wrap"><div class="cards">
-  <div class="card"><div class="card-body"><h3>Headshots &amp; general enquiries</h3><p>WhatsApp +91 ${SITE.whatsapp.main.slice(2, 7)} ${SITE.whatsapp.main.slice(7)}</p><p style="margin-top:16px"><a class="btn btn-primary btn-sm" href="${waLink('professional headshots')}" rel="noopener">${waIcon} Chat now</a></p></div></div>
-  <div class="card"><div class="card-body"><h3>Fitness &amp; gym photoshoots</h3><p>WhatsApp +91 ${SITE.whatsapp.fitness.slice(2, 7)} ${SITE.whatsapp.fitness.slice(7)}</p><p style="margin-top:16px"><a class="btn btn-primary btn-sm" href="${waLink('fitness photography', SITE.whatsapp.fitness)}" rel="noopener">${waIcon} Chat now</a></p></div></div>
-  <div class="card"><div class="card-body"><h3>Email</h3><p><a href="mailto:${SITE.email}">${SITE.email}</a></p><p style="margin-top:16px">Studio in Banaswadi, ${SITE.localityAlt}. On-site sessions anywhere in the city.</p></div></div>
+  <div class="card"><div class="card-body"><h2 style="font-size:1.3rem">Phone &amp; WhatsApp</h2><p><a href="tel:+${SITE.phone}">${SITE.phoneDisplay}</a></p><p style="margin-top:12px">Headshots, fitness shoots, portraits and every other enquiry.</p></div></div>
+  <div class="card"><div class="card-body"><h2 style="font-size:1.3rem">Email</h2><p><a href="mailto:${SITE.email}">${SITE.email}</a></p></div></div>
+  <div class="card"><div class="card-body"><h2 style="font-size:1.3rem">Studio</h2><address style="font-style:normal"><strong>${esc(SITE.studioName)}</strong><br>${esc(fullAddress())}</address><p style="margin-top:12px"><a href="${mapsLink()}" rel="noopener">Open in Google Maps →</a></p><p>On-site sessions anywhere in ${SITE.localityAlt}.</p></div></div>
 </div></div></section>
 ${ctaBand()}`;
-  return { path: '/contact', title: 'Contact & Booking | Nevervoid Photography - Bangalore', description: `Book a headshot, fitness or portrait photoshoot in Bangalore. WhatsApp or email ${SITE.email}. Studio in Banaswadi or on-site.`, body, ld: [breadcrumbLd([['/contact', 'Contact']]), { '@type': 'ContactPage', url: abs('/contact'), about: { '@id': `${SITE.origin}/#business` } }], template: 'new' };
+  return { path: '/contact', title: 'Contact & Booking | Nevervoid Photography - Bangalore', description: `Book a headshot, fitness or portrait photoshoot in Bangalore. Call or WhatsApp ${SITE.phoneDisplay}. Studio in HRBR Layout, Banaswadi, Bengaluru 560043.`, body, ld: [breadcrumbLd([['/contact', 'Contact']]), { '@type': 'ContactPage', url: abs('/contact'), about: { '@id': `${SITE.origin}/#business` } }], template: 'new' };
 }
 
 function notFound() {
@@ -427,7 +429,7 @@ const imgOut = imagePages.map(imagePage);
   const lowerEarly = {};
   for (const p of servedEarly) if (!/\/i-[A-Za-z0-9]+$/.test(p) && !(p.toLowerCase() in lowerEarly)) lowerEarly[p.toLowerCase()] = p;
   Object.assign(lowerEarly, CASE_COLLISIONS);
-  const legacyEarly = { ...LEGACY };
+  const legacyEarly = { ...LEGACY, ...REMOVED };
   for (const [kw, dest] of Object.entries(KEYWORD_REDIRECTS)) legacyEarly[`/keyword/${kw}`] = dest;
   linkRoutes = { pages: servedEarly, legacy: legacyEarly, lower: lowerEarly };
 }
@@ -467,7 +469,7 @@ for (const p of served) {
   if (!(k in lower)) lower[k] = p;
 }
 for (const [k, v] of Object.entries(CASE_COLLISIONS)) lower[k] = v; // measured on SmugMug
-const legacy = { ...LEGACY };
+const legacy = { ...LEGACY, ...REMOVED };
 for (const [kw, dest] of Object.entries(KEYWORD_REDIRECTS)) legacy[`/keyword/${kw}`] = dest;
 const STATIC = new Set(['/sitemap.xml']);
 for (const [k, v] of Object.entries(legacy)) if (!served.has(v) && !STATIC.has(v)) throw new Error(`legacy redirect ${k} -> ${v}: destination not built`);
@@ -504,4 +506,5 @@ const manifest = {
   imagePages: imgOut.length,
 };
 fs.writeFileSync(path.join(DIST, '_manifest.json'), JSON.stringify(manifest, null, 1));
+console.log(`content fixes: ${fixLog.length} (${[...new Set(fixLog.map((l) => l.split(' ')[0]))].length} pages)`);
 console.log(`built ${out.length} pages (${newPages.length} new), ${imgOut.length} image pages, ${Object.keys(legacy).length} legacy redirects, sitemap ${smEntries.length} URLs`);
