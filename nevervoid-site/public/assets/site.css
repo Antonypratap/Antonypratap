@@ -1387,3 +1387,65 @@ p {
 .hero-dim img.hero-bg {
   opacity: 0.38;
 }
+
+/* ================= v3 hero: text on solid dark, photo on the right =================
+   Full-bleed photos behind text failed on busy images (e.g. magazine-cover
+   branding visuals). The photo now sits on the right and fades in, so text
+   never overlaps it. On phones the photo sits above the text. */
+.hero {
+  min-height: 0;
+  align-items: center;
+  background: var(--night);
+}
+.hero::after {
+  display: none;
+}
+.hero img.hero-bg {
+  inset: 0 0 0 auto;
+  width: 54%;
+  height: 100%;
+  opacity: 1;
+  object-fit: cover;
+  object-position: center 22%;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 38%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 38%);
+}
+.hero .wrap {
+  padding-top: clamp(56px, 7vw, 104px);
+  padding-bottom: clamp(56px, 7vw, 104px);
+}
+.hero .wrap > * {
+  max-width: min(620px, 54%);
+}
+.hero h1 {
+  font-size: clamp(2.2rem, 4.2vw, 3.6rem);
+  max-width: 14ch;
+}
+.hero-dim img.hero-bg {
+  opacity: 1;
+}
+.hero-right {
+  object-position: center 18%;
+}
+@media (max-width: 860px) {
+  .hero {
+    display: block;
+  }
+  .hero img.hero-bg {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: 62vw;
+    max-height: 440px;
+    min-height: 260px;
+    -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent);
+    mask-image: linear-gradient(180deg, #000 70%, transparent);
+  }
+  .hero .wrap {
+    padding-top: 4px;
+    padding-bottom: 48px;
+  }
+  .hero .wrap > * {
+    max-width: none;
+  }
+}

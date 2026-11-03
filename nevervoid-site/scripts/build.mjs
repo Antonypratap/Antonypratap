@@ -24,6 +24,12 @@ for (const [id, m] of Object.entries(media)) if (images[id]) images[id].media = 
 if (media.LPQ9Jzq) SITE.defaultOgImage = media.LPQ9Jzq.og ? `${SITE.origin}/img/${media.LPQ9Jzq.name}-og.jpg` : `${SITE.origin}/img/${media.LPQ9Jzq.name}-${media.LPQ9Jzq.widths.at(-1)}.webp`;
 const { pages, log: fixLog } = applyFixes(read('data/pages.json'), images);
 let linkRoutes; // set before pages are written
+// Versioned stylesheet name: assets are cached for a year, so every CSS
+// change must get a new URL or browsers keep showing the old styles.
+import crypto from 'node:crypto';
+const cssSource = fs.readFileSync(path.join(ROOT, 'public/assets/site.css'));
+const cssHash = crypto.createHash('sha256').update(cssSource).digest('hex').slice(0, 10);
+SITE.cssHref = `/assets/site.${cssHash}.css`;
 const BUILD_DATE = process.env.BUILD_DATE ?? new Date().toISOString().slice(0, 10);
 
 const byPath = new Map(pages.map((p) => [p.path, p]));
@@ -477,6 +483,7 @@ for (const pg of [...out, ...imgOut, notFound()]) write(pg);
 
 // public/ assets
 fs.cpSync(path.join(ROOT, 'public'), DIST, { recursive: true });
+fs.writeFileSync(path.join(DIST, SITE.cssHref), cssSource);
 
 // ---------- redirects ----------
 const served = new Set([...out, ...imgOut].map((p) => p.path));
