@@ -120,8 +120,8 @@ ${description ? `<meta property="og:description" content="${esc(description)}">`
 <header class="site-header">
   <div class="wrap">
     <a class="logo" href="/">NEVERVOID<span>PHOTOGRAPHY · BANGALORE</span></a>
-    <nav class="nav" aria-label="Main">${navHtml}<a class="btn btn-primary btn-sm" href="${wa}" rel="noopener">Book on WhatsApp</a></nav>
-    <details class="menu"><summary>Menu</summary><nav class="menu-panel" aria-label="Mobile">${navHtml}<a href="${wa}" rel="noopener">Book on WhatsApp</a></nav></details>
+    <nav class="nav" aria-label="Main">${navHtml}<a class="btn btn-primary btn-sm" href="/contact">Book a session</a></nav>
+    <details class="menu"><summary>Menu</summary><nav class="menu-panel" aria-label="Mobile">${navHtml}<a href="/contact">Book a session</a></nav></details>
   </div>
 </header>
 <main id="main">
@@ -142,7 +142,7 @@ function footer() {
       <div>
         <a class="logo" href="/" style="color:#f3eee7">NEVERVOID<span>PHOTOGRAPHY · BANGALORE</span></a>
         <p style="margin-top:18px;max-width:34ch">Professional photography in Bangalore since ${SITE.foundingYear}: headshots, fitness, personal branding, maternity and family portraits.</p>
-        <p><a href="tel:+${SITE.phone}">${SITE.phoneDisplay}</a> · <a href="${waLink('a photoshoot')}" rel="noopener">WhatsApp</a><br><a href="mailto:${SITE.email}">${SITE.email}</a></p>
+        ${iconLinks({ map: true, cls: 'on-dark' })}
         <address style="font-style:normal;max-width:36ch"><a href="${mapsLink()}" rel="noopener">${esc(SITE.studioName)}<br>${esc(fullAddress())}</a></address>
       </div>
       ${col('Headshots', [
@@ -181,15 +181,25 @@ function footer() {
 
 export const CAL_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M8 14h2M14 14h2M8 17h2"/></svg>';
+const ICON = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+export const PHONE_ICON = ICON('<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2Z"/>');
+export const MAIL_ICON = ICON('<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/>');
+export const PIN_ICON = ICON('<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>');
+// Compact round icon buttons for secondary contact channels.
+export function iconLinks({ topic = 'a photoshoot', number, whatsapp = true, phone = true, email = true, map = false, cls = '' } = {}) {
+  const b = (href, label, icon, ext) => `<a class="icon-btn" href="${href}"${ext ? ' rel="noopener"' : ''} aria-label="${label}" title="${label}">${icon}</a>`;
+  return `<span class="icon-links${cls ? ' ' + cls : ''}">${whatsapp ? b(waLink(topic, number), 'Chat on WhatsApp', WA_ICON, true) : ''}${phone ? b(`tel:+${SITE.phone}`, `Call ${SITE.phoneDisplay}`, PHONE_ICON) : ''}${email ? b(`mailto:${SITE.email}`, `Email ${SITE.email}`, MAIL_ICON) : ''}${map ? b(mapsLink(), 'Directions to the studio', PIN_ICON, true) : ''}</span>`;
+}
 // "Book online" button for a Cal.com booking page: kind = 'headshots' | 'fitness'.
 export const bookBtn = (kind, cls = 'btn-light', label = 'Book online') =>
   BOOKING[kind] ? `<a class="btn ${cls}" href="${BOOKING[kind]}" rel="noopener">${CAL_ICON} ${label}</a>` : '';
 export const reserveAction = (kind) => (BOOKING[kind] ? { potentialAction: { '@type': 'ReserveAction', target: { '@type': 'EntryPoint', urlTemplate: BOOKING[kind], actionPlatform: ['https://schema.org/DesktopWebPlatform', 'https://schema.org/MobileWebPlatform'] } } } : {});
 
 export function ctaBand({ heading = 'Ready when you are.', text = 'Tell us what the photos are for, and we will plan the shoot around it.', topic = 'a photoshoot', number, book } = {}) {
+  const primary = book ? bookBtn(book) : `<a class="btn btn-light" href="${waLink(topic, number)}" rel="noopener">${WA_ICON} Chat on WhatsApp</a>`;
   return `<section class="section-tight"><div class="wrap"><div class="cta-band">
   <div><h2>${esc(heading)}</h2><p>${esc(text)}</p></div>
-  <div class="actions" style="margin:0">${book ? bookBtn(book) : ''}<a class="btn ${book ? 'btn-ghost' : 'btn-light'}" href="${waLink(topic, number)}" rel="noopener">${WA_ICON} ${book ? 'WhatsApp' : 'Chat on WhatsApp'}</a><a class="btn btn-ghost" href="mailto:${SITE.email}">Email us</a></div>
+  <div class="actions" style="margin:0">${primary}${iconLinks({ topic, number, whatsapp: !!book, cls: 'on-dark' })}</div>
   </div></div></section>`;
 }
 

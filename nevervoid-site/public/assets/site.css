@@ -1580,3 +1580,98 @@ a.card:has(img):hover h3 {
     max-height: 52px;
   }
 }
+
+/* ================= v5: icon contact buttons ================= */
+.icon-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.15s;
+  flex: 0 0 auto;
+}
+.icon-btn svg {
+  width: 20px;
+  height: 20px;
+}
+a.icon-btn:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+  transform: translateY(-1px);
+}
+.on-dark .icon-btn,
+.hero .icon-btn,
+.hero-x .icon-btn,
+.dark .icon-btn {
+  background: transparent;
+  border-color: rgba(243, 238, 231, 0.35);
+  color: var(--on-night);
+}
+.on-dark a.icon-btn:hover,
+.hero a.icon-btn:hover,
+.hero-x a.icon-btn:hover,
+.dark a.icon-btn:hover {
+  background: var(--on-night);
+  border-color: var(--on-night);
+  color: var(--ink);
+}
+.site-footer .icon-links {
+  margin: 18px 0 14px;
+}
+.site-footer address {
+  font-size: 0.88rem;
+}
+.contact-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+}
+@media (max-width: 760px) {
+  .contact-grid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+}
+.contact-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.contact-list a {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  text-decoration: none;
+  color: var(--ink-2);
+}
+.contact-list strong {
+  display: block;
+  color: var(--ink);
+  font-weight: 600;
+}
+.contact-list a:hover .icon-btn {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+.studio-address {
+  font-style: normal;
+  line-height: 1.7;
+  color: var(--ink-2);
+  margin-bottom: 16px;
+}
+.btn svg {
+  flex: 0 0 auto;
+}

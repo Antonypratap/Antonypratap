@@ -2,7 +2,7 @@
 // (data/pages.json) so the ranking content survives; layout is new.
 import { SITE, waLink } from '../config.js';
 import { yearsSince } from '../content-fixes.js';
-import { bookBtn, reserveAction, ogUrl, imgAbs as imgAbsOf, esc, img, href, ctaBand, faqHtml, faqLd, waIcon, crumbs, breadcrumbLd, abs } from '../lib.js';
+import { iconLinks, bookBtn, reserveAction, ogUrl, imgAbs as imgAbsOf, esc, img, href, ctaBand, faqHtml, faqLd, waIcon, crumbs, breadcrumbLd, abs } from '../lib.js';
 
 const gallery = (ctx, page, n = 24) =>
   `<div class="gallery">${ctx
@@ -63,7 +63,7 @@ function featureBlock(ctx, f) {
     <div class="actions">
       ${f.book ? bookBtn(f.book, f.tone === 'dark' ? 'btn-light' : 'btn-primary') : ''}
       <a class="btn ${f.book ? 'btn-ghost' : f.tone === 'dark' ? 'btn-light' : 'btn-primary'}" href="${href(f.link)}">${esc(f.linkLabel)}</a>
-      <a class="btn btn-ghost" href="${waLink(f.topic)}" rel="noopener">${waIcon} WhatsApp</a>
+      ${iconLinks({ topic: f.topic, phone: false, email: false, cls: f.tone === 'dark' ? 'on-dark' : '' })}
     </div>
   </div>
 </div></section>`;
@@ -92,7 +92,7 @@ export function home(ctx) {
       <h1>Headshot, corporate &amp; fitness photographer in Bangalore</h1>
       <p class="lede">Headshots that open doors, team portraits that show your company at its best, and fitness photos that show the work. In our Banaswadi studio or on-site anywhere in the city.</p>
       <div class="actions">
-        <a class="btn btn-light" href="${waLink('professional headshots')}" rel="noopener">${waIcon} Book on WhatsApp</a>
+        <a class="btn btn-light" href="/contact">Book a session</a>
         <a class="btn btn-ghost" href="/Headshot-photographer-bangalore#pricing">Headshots from ₹5,899</a>
       </div>
       <ul class="hero-facts">
@@ -518,8 +518,8 @@ export function femaleFitness(ctx) {
     <ul class="badges"><li>Studio or your gym</li><li>Every pose guided</li><li>Black &amp; white or colour</li><li>Delivered in 4–5 days</li></ul>
     <div class="actions">
       ${bookBtn('fitness', 'btn-light', 'Book your shoot')}
-      <a class="btn btn-ghost" href="${waLink('female fitness photoshoot')}" rel="noopener">${waIcon} WhatsApp</a>
       <a class="btn btn-ghost" href="#portfolio">See the portfolio</a>
+      ${iconLinks({ topic: 'female fitness photoshoot', email: false, cls: 'on-dark' })}
     </div>
   </div>
 </section>
@@ -698,8 +698,8 @@ export function headshots(ctx) {
     <ul class="badges"><li>2-day delivery</li><li>No watermarks</li><li>Poses assisted</li><li>Comfort prioritised</li><li>Wardrobe guidance</li><li>Expression coaching</li></ul>
     <div class="actions">
       ${bookBtn('headshots', 'btn-light', 'Book a headshot session')}
-      <a class="btn btn-ghost" href="${waLink('professional headshots')}" rel="noopener">${waIcon} WhatsApp</a>
       <a class="btn btn-ghost" href="#pricing">Pricing ₹5,899</a>
+      ${iconLinks({ topic: 'professional headshots', email: false, cls: 'on-dark' })}
     </div>
   </div>
 </section>
@@ -730,7 +730,7 @@ export function headshots(ctx) {
         <li>100% satisfaction guarantee: re-edit if needed</li>
       </ul>
       <p class="meta"><strong>Payment terms:</strong> 50% transfer to book the slot · 40% on location post the shoot · 10% to receive all the photos from us.</p>
-      <div class="actions" style="margin-top:8px">${bookBtn('headshots', 'btn-primary', 'Book your session')}<a class="btn btn-ghost" href="${waLink('professional headshots')}" rel="noopener">${waIcon} Ask on WhatsApp</a></div>
+      <div class="actions" style="margin-top:8px">${bookBtn('headshots', 'btn-primary', 'Book your session')}${iconLinks({ topic: 'professional headshots', email: false })}</div>
     </div>
     <div class="price-card" style="background:var(--paper)">
       <span class="eyebrow">Corporate &amp; team headshots</span>
@@ -833,8 +833,8 @@ export function fitness(ctx) {
     <ul class="badges"><li>Studio or your gym</li><li>High-contrast lighting</li><li>Every pose guided</li><li>Hero &amp; motion shots</li></ul>
     <div class="actions">
       ${bookBtn('fitness', 'btn-light', 'Book a fitness shoot')}
-      <a class="btn btn-ghost" href="${waLink('fitness photography', n)}" rel="noopener">${waIcon} WhatsApp</a>
       <a class="btn btn-ghost" href="#portfolio">See the portfolio</a>
+      ${iconLinks({ topic: 'fitness photography', number: n, email: false, cls: 'on-dark' })}
     </div>
   </div>
 </section>

@@ -9,7 +9,7 @@ import path from 'node:path';
 import { marked } from 'marked';
 import { SITE, waLink, fullAddress, mapsLink } from '../src/config.js';
 import { applyFixes, REMOVED, ALT_OVERRIDES } from '../src/content-fixes.js';
-import { bookBtn, layout, esc, img, href, abs, crumbs, breadcrumbLd, ctaBand, imgAbs, imgUrl, ogUrl, waIcon } from '../src/lib.js';
+import { iconLinks, PIN_ICON, PHONE_ICON as PHONE_ICON_, MAIL_ICON as MAIL_ICON_, bookBtn, layout, esc, img, href, abs, crumbs, breadcrumbLd, ctaBand, imgAbs, imgUrl, ogUrl, waIcon } from '../src/lib.js';
 import { home, headshots, corporate, branding, fitness, femaleFitness, clients, postCards } from '../src/templates/featured.js';
 import { resolve as resolveRedirect } from '../src/redirects.js';
 import { GROUPS, ARTICLES, LEGAL, KEYWORD_REDIRECTS, LEGACY, CASE_COLLISIONS } from '../src/site-map.js';
@@ -250,7 +250,7 @@ function genericPage(p) {
   ${isArticle ? '<span class="eyebrow">Journal</span>' : groupOf.get(p) ? `<span class="eyebrow">${esc(groupOf.get(p).name)}</span>` : ''}
   <h1>${esc(h1)}</h1>
   ${first ? `<p class="lede">${first.html}</p>` : ''}
-  ${isLegal ? '' : `<div class="actions">${bookFor(p) ? bookBtn(bookFor(p), 'btn-primary') : ''}<a class="btn ${bookFor(p) ? 'btn-ghost' : 'btn-primary'}" href="${waLink(topicFor(p), fitnessy ? SITE.phone : undefined)}" rel="noopener">${waIcon} Enquire on WhatsApp</a></div>`}
+  ${isLegal ? '' : `<div class="actions">${bookFor(p) ? `${bookBtn(bookFor(p), 'btn-primary')}${iconLinks({ topic: topicFor(p), email: false })}` : `<a class="btn btn-primary" href="${waLink(topicFor(p))}" rel="noopener">${waIcon} Enquire on WhatsApp</a>${iconLinks({ topic: topicFor(p), whatsapp: false, email: false })}`}</div>`}
 </div></section>
 ${prose ? `<section class="section-tight"><div class="wrap"><div class="prose">${prose}</div></div></section>` : ''}
 ${ims.length ? `<section class="section-tight"><div class="wrap">${galleryHtml(p, ims)}</div></section>` : ''}
@@ -429,16 +429,26 @@ ${ctaBand({ topic: fit ? 'fitness photography' : 'professional headshots', numbe
 
 function contactPage() {
   const body = `
-<section class="page-hero"><div class="wrap">${crumbs([['/contact', 'Contact']])}<span class="eyebrow">Book a session</span><h1>Contact Nevervoid Photography</h1><p class="lede">The quickest way to book is WhatsApp. Tell us what the photos are for, your preferred dates, and whether you'd like the studio or on-site.</p>
-<div class="actions">${bookBtn('headshots', 'btn-primary', 'Book a headshot')}${bookBtn('fitness', 'btn-primary', 'Book a fitness shoot')}<a class="btn btn-ghost" href="${waLink('a photoshoot')}" rel="noopener">${waIcon} WhatsApp ${SITE.phoneDisplay}</a><a class="btn btn-ghost" href="tel:+${SITE.phone}">Call ${SITE.phoneDisplay}</a></div></div></section>
-<section class="section-tight"><div class="wrap"><div class="cards">
-  <div class="card"><div class="card-body"><h2 style="font-size:1.3rem">Book online</h2><p>Pick a date and time that suits you.</p><div class="actions" style="margin-top:14px;flex-direction:column;align-items:flex-start">${bookBtn('headshots', 'btn-primary btn-sm', 'Headshot session')}${bookBtn('fitness', 'btn-primary btn-sm', 'Fitness photoshoot')}</div></div></div>
-  <div class="card"><div class="card-body"><h2 style="font-size:1.3rem">Phone &amp; WhatsApp</h2><p><a href="tel:+${SITE.phone}">${SITE.phoneDisplay}</a></p><p style="margin-top:12px">Headshots, fitness shoots, portraits and every other enquiry.</p></div></div>
-  <div class="card"><div class="card-body"><h2 style="font-size:1.3rem">Email</h2><p><a href="mailto:${SITE.email}">${SITE.email}</a></p></div></div>
-  <div class="card"><div class="card-body"><h2 style="font-size:1.3rem">Studio</h2><address style="font-style:normal"><strong>${esc(SITE.studioName)}</strong><br>${esc(fullAddress())}</address><p style="margin-top:12px"><a href="${mapsLink()}" rel="noopener">Open in Google Maps →</a></p><p>On-site sessions anywhere in ${SITE.localityAlt}.</p></div></div>
-</div></div></section>
-${ctaBand()}`;
-  return { path: '/contact', title: 'Contact & Booking | Nevervoid Photography - Bangalore', description: `Book a headshot, fitness or portrait photoshoot in Bangalore. Call or WhatsApp ${SITE.phoneDisplay}. Studio in HRBR Layout, Banaswadi, Bengaluru 560043.`, body, ld: [breadcrumbLd([['/contact', 'Contact']]), { '@type': 'ContactPage', url: abs('/contact'), about: { '@id': `${SITE.origin}/#business` } }], template: 'new' };
+<section class="page-hero"><div class="wrap">${crumbs([['/contact', 'Contact']])}<span class="eyebrow">Book a session</span><h1>Contact Nevervoid Photography</h1>
+<p class="lede">Book a headshot or fitness shoot online in a minute, or message us about anything else: corporate teams, branding, maternity and more.</p>
+<div class="actions">${bookBtn('headshots', 'btn-primary', 'Book a headshot')}${bookBtn('fitness', 'btn-primary', 'Book a fitness shoot')}</div></div></section>
+<section class="section-tight"><div class="wrap contact-grid">
+  <div>
+    <h2 style="font-size:1.6rem">Get in touch</h2>
+    <ul class="contact-list">
+      <li><a href="${waLink('a photoshoot')}" rel="noopener"><span class="icon-btn" aria-hidden="true">${waIcon}</span><span><strong>WhatsApp</strong>${SITE.phoneDisplay}</span></a></li>
+      <li><a href="tel:+${SITE.phone}"><span class="icon-btn" aria-hidden="true">${PHONE_ICON_}</span><span><strong>Call</strong>${SITE.phoneDisplay}</span></a></li>
+      <li><a href="mailto:${SITE.email}"><span class="icon-btn" aria-hidden="true">${MAIL_ICON_}</span><span><strong>Email</strong>${SITE.email}</span></a></li>
+    </ul>
+  </div>
+  <div>
+    <h2 style="font-size:1.6rem">Studio</h2>
+    <address class="studio-address"><strong>${esc(SITE.studioName)}</strong><br>${esc(fullAddress())}</address>
+    <p><a class="btn btn-ghost btn-sm" href="${mapsLink()}" rel="noopener">${PIN_ICON} Get directions</a></p>
+    <p class="meta">On-site sessions anywhere in ${SITE.localityAlt}.</p>
+  </div>
+</div></section>`;
+  return { path: '/contact', title: 'Contact & Booking | Nevervoid Photography - Bangalore', description: `Book a headshot, fitness or portrait photoshoot in Bangalore online, or call or WhatsApp ${SITE.phoneDisplay}. Studio in HRBR Layout, Banaswadi, Bengaluru 560043.`, body, ld: [breadcrumbLd([['/contact', 'Contact']]), { '@type': 'ContactPage', url: abs('/contact'), about: { '@id': `${SITE.origin}/#business` } }], template: 'new' };
 }
 
 function notFound() {
