@@ -1675,3 +1675,217 @@ a.icon-btn:hover {
 .btn svg {
   flex: 0 0 auto;
 }
+
+/* ================= v6: pinterest, sharing, subscribe ================= */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.gallery .g-item {
+  position: relative;
+  display: block;
+  margin-bottom: 14px;
+  break-inside: avoid;
+}
+.gallery .g-item > a:first-child {
+  margin-bottom: 0;
+}
+.gallery a.pin-btn,
+.pin-btn {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 7px 12px 7px 7px;
+  border-radius: 999px;
+  background: #e60023;
+  color: #fff;
+  font: 600 0.82rem/1 var(--sans);
+  text-decoration: none;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.18s, transform 0.18s;
+  overflow: visible;
+}
+.pin-btn .brand-mark {
+  width: 20px;
+  height: 20px;
+  font-size: 0.75rem;
+  background: #fff;
+  color: #e60023;
+}
+.g-item:hover .pin-btn,
+.g-item:focus-within .pin-btn {
+  opacity: 1;
+  transform: none;
+}
+@media (hover: none) {
+  .gallery a.pin-btn {
+    opacity: 0.92;
+    transform: none;
+    padding: 5px 9px 5px 5px;
+    font-size: 0.74rem;
+  }
+}
+.brand-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font: 700 0.8rem/1 var(--sans);
+  letter-spacing: -0.02em;
+}
+.share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.share-label {
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-right: 6px;
+}
+.share-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.share-btn svg {
+  width: 18px;
+  height: 18px;
+}
+.share-btn .brand-mark {
+  width: auto;
+  height: auto;
+  background: none;
+  color: inherit;
+  font-size: 0.95rem;
+}
+.share-btn:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+.share-btn.copied {
+  background: #1f8f4e;
+  border-color: #1f8f4e;
+  color: #fff;
+}
+.share-native {
+  display: none;
+}
+.can-share .share-native {
+  display: inline-grid;
+}
+.share.on-dark .share-btn {
+  background: transparent;
+  border-color: rgba(243, 238, 231, 0.3);
+  color: var(--on-night);
+}
+.share.on-dark .share-btn:hover {
+  background: var(--on-night);
+  color: var(--ink);
+}
+.share.on-dark .share-label {
+  color: #a9a094;
+}
+.photo-view .share {
+  justify-content: center;
+  margin-top: 16px;
+}
+.share-section {
+  padding: 8px 0 0;
+}
+.subscribe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.subscribe input[type='email'] {
+  flex: 1 1 240px;
+  min-width: 0;
+  padding: 13px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font: inherit;
+  color: var(--ink);
+}
+.subscribe.on-dark input[type='email'] {
+  background: var(--night-2);
+  border-color: #3a352f;
+  color: var(--on-night);
+}
+.subscribe .hp {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+}
+.sub-msg {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.88rem;
+  min-height: 1.2em;
+}
+.footer-subscribe {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  gap: 32px;
+  align-items: center;
+  margin-top: 48px;
+  padding: 28px 0 0;
+  border-top: 1px solid #2c2925;
+}
+.footer-subscribe h2 {
+  font: 500 1.35rem/1.2 var(--serif);
+  color: #f3eee7;
+  letter-spacing: 0;
+  text-transform: none;
+  margin-bottom: 8px;
+}
+.footer-subscribe p {
+  margin: 0;
+}
+@media (max-width: 760px) {
+  .footer-subscribe {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+.subscribe-card {
+  background: #fff;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 28px;
+}
+.subscribe-card h2 {
+  font-size: 1.5rem;
+}
+
+.photo-stage .photo-pin {
+  top: auto;
+  bottom: 0;
+  left: 0;
+  opacity: 1;
+  transform: none;
+}

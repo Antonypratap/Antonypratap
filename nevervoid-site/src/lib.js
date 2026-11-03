@@ -129,6 +129,7 @@ ${body}
 </main>
 ${footer()}
 <a class="wa-float" href="${wa}" rel="noopener" aria-label="Chat on WhatsApp">${WA_ICON}</a>
+<script>(()=>{const d=document;if(navigator.share)d.documentElement.classList.add('can-share');d.addEventListener('click',async(e)=>{const n=e.target.closest('[data-share-native]');if(n){e.preventDefault();try{await navigator.share({title:n.dataset.title,url:n.dataset.url})}catch(_){}return}const c=e.target.closest('[data-copy]');if(c){e.preventDefault();try{await navigator.clipboard.writeText(c.dataset.copy);c.classList.add('copied');c.title='Link copied';setTimeout(()=>{c.classList.remove('copied');c.title='Copy link'},1800)}catch(_){}}});d.addEventListener('submit',async(e)=>{const f=e.target.closest('form[data-subscribe]');if(!f)return;e.preventDefault();const m=f.querySelector('.sub-msg');m.textContent='Subscribing…';try{const r=await fetch(f.action,{method:'POST',body:new FormData(f),headers:{accept:'application/json'}});const j=await r.json();m.textContent=j.message;if(j.ok)f.reset()}catch(_){m.textContent='Something went wrong. Please try again or WhatsApp us.'}})})()</script>
 </body>
 </html>
 `;
@@ -171,6 +172,10 @@ function footer() {
         ['/contact', 'Contact & booking'],
       ])}
     </div>
+    <div class="footer-subscribe">
+      <div><h2>Photoshoot tips &amp; new work</h2><p>Occasional emails with new work, photoshoot tips and seasonal offers. Unsubscribe anytime. See our <a href="/Privacy-policy">privacy policy</a>.</p></div>
+      ${subscribeForm({ source: 'footer', dark: true })}
+    </div>
     <div class="footer-base">
       <span>© ${new Date().getFullYear()} ${SITE.name}, ${SITE.localityAlt}, India. All images and content are protected by copyright.</span>
       <span><a href="/Privacy-policy">Privacy</a> · <a href="/Terms-and-conditions">Terms</a> · <a href="/Cancelation-and-refunds">Cancellation &amp; refunds</a></span>
@@ -201,6 +206,46 @@ export function ctaBand({ heading = 'Ready when you are.', text = 'Tell us what 
   <div><h2>${esc(heading)}</h2><p>${esc(text)}</p></div>
   <div class="actions" style="margin:0">${primary}${iconLinks({ topic, number, whatsapp: !!book, cls: 'on-dark' })}</div>
   </div></div></section>`;
+}
+
+// ---------- sharing ----------
+export const SHARE_ICON = ICON('<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/>');
+export const LINK_ICON = ICON('<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>');
+const brand = (letters, cls) => `<span class="brand-mark ${cls}" aria-hidden="true">${letters}</span>`;
+export const pinUrl = (pageAbs, mediaAbs, description) =>
+  `https://www.pinterest.com/pin/create/button/?url=${encodeURIComponent(pageAbs)}&media=${encodeURIComponent(mediaAbs)}&description=${encodeURIComponent(description)}`;
+export const PIN_MARK = brand('P', 'pinterest');
+// A share row: native share sheet (phones), WhatsApp, Facebook, LinkedIn, X,
+// Pinterest (when there is an image), email and copy-link.
+export function shareRow({ path, title, image, dark = false, label = 'Share' }) {
+  const url = abs(path);
+  const t = `${title}`;
+  const b = (href, name, inner, ext = true) => `<a class="share-btn" href="${esc(href)}"${ext ? ' target="_blank" rel="noopener"' : ''} aria-label="${name}" title="${name}">${inner}</a>`;
+  return `<div class="share${dark ? ' on-dark' : ''}"><span class="share-label">${esc(label)}</span>
+  <a class="share-btn share-native" href="#" data-share-native data-url="${esc(url)}" data-title="${esc(t)}" aria-label="Share" title="Share">${SHARE_ICON}</a>
+  ${b(`https://wa.me/?text=${encodeURIComponent(`${t} ${url}`)}`, 'Share on WhatsApp', WA_ICON)}
+  ${b(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, 'Share on Facebook', brand('f', 'facebook'))}
+  ${b(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`, 'Share on LinkedIn', brand('in', 'linkedin'))}
+  ${b(`https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(t)}`, 'Share on X', brand('X', 'x'))}
+  ${image ? b(pinUrl(url, image, t), 'Save to Pinterest', PIN_MARK) : ''}
+  ${b(`mailto:?subject=${encodeURIComponent(t)}&body=${encodeURIComponent(url)}`, 'Share by email', MAIL_ICON, false)}
+  <a class="share-btn" href="${esc(url)}" data-copy="${esc(url)}" aria-label="Copy link" title="Copy link">${LINK_ICON}</a>
+</div>`;
+}
+
+// ---------- subscribe ----------
+// Posts to functions/api/subscribe.js (Cloudflare KV). Works without
+// JavaScript (redirects to /subscribed); with JS it answers inline.
+export function subscribeForm({ source = 'footer', dark = false } = {}) {
+  const id = `sub-${source}`;
+  return `<form class="subscribe${dark ? ' on-dark' : ''}" action="/api/subscribe" method="post" data-subscribe>
+  <label class="sr-only" for="${id}">Email address</label>
+  <input id="${id}" type="email" name="email" required autocomplete="email" placeholder="Your email address">
+  <input class="hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+  <input type="hidden" name="source" value="${esc(source)}">
+  <button class="btn ${dark ? 'btn-light' : 'btn-primary'}" type="submit">Subscribe</button>
+  <p class="sub-msg" role="status" aria-live="polite"></p>
+</form>`;
 }
 
 export function faqHtml(items) {

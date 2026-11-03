@@ -9,7 +9,7 @@ import path from 'node:path';
 import { marked } from 'marked';
 import { SITE, waLink, fullAddress, mapsLink } from '../src/config.js';
 import { applyFixes, REMOVED, ALT_OVERRIDES } from '../src/content-fixes.js';
-import { iconLinks, PIN_ICON, PHONE_ICON as PHONE_ICON_, MAIL_ICON as MAIL_ICON_, bookBtn, layout, esc, img, href, abs, crumbs, breadcrumbLd, ctaBand, imgAbs, imgUrl, ogUrl, waIcon } from '../src/lib.js';
+import { shareRow, subscribeForm, pinUrl, PIN_MARK, iconLinks, PIN_ICON, PHONE_ICON as PHONE_ICON_, MAIL_ICON as MAIL_ICON_, bookBtn, layout, esc, img, href, abs, crumbs, breadcrumbLd, ctaBand, imgAbs, imgUrl, ogUrl, waIcon } from '../src/lib.js';
 import { home, headshots, corporate, branding, fitness, femaleFitness, clients, postCards } from '../src/templates/featured.js';
 import { resolve as resolveRedirect } from '../src/redirects.js';
 import { GROUPS, ARTICLES, LEGAL, KEYWORD_REDIRECTS, LEGACY, CASE_COLLISIONS } from '../src/site-map.js';
@@ -313,6 +313,7 @@ function imagePage({ path: p, id, gallery }) {
     ${prev ? `<a class="photo-arrow photo-prev" href="${href(prev)}" rel="prev" aria-label="Previous photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a>` : ''}
     ${next ? `<a class="photo-arrow photo-next" href="${href(next)}" rel="next" aria-label="Next photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></a>` : ''}
     <span class="photo-count">${i + 1} / ${n}</span>
+    <a class="pin-btn photo-pin" href="${esc(pinUrl(abs(p), imgAbs(im), `${im.alt} | ${SITE.name}, Bangalore`))}" target="_blank" rel="noopener" aria-label="Save to Pinterest">${PIN_MARK}Save</a>
     <a class="photo-close photo-back" href="${href(gallery)}" aria-label="Back to ${esc(gName)}">✕</a>
   </div>
   ${
@@ -323,6 +324,7 @@ function imagePage({ path: p, id, gallery }) {
       : ''
   }
   <p class="photo-hint">Use ← → keys or swipe to browse · <a href="${href(gallery)}" style="color:#e2b77f">Back to ${esc(gName)}</a></p>
+  ${shareRow({ path: p, title: `${im.alt} | ${gName}`, image: imgAbs(im), dark: true, label: 'Share this photo' })}
   ${next ? `<link rel="prefetch" href="${href(next)}">` : ''}${nextIm?.media ? `<link rel="prefetch" href="${imgUrl(nextIm, 1600)}" as="image">` : ''}
 </div></section>
 <script>(()=>{const q=(s)=>document.querySelector(s),p=q('a[rel=prev]'),n=q('a[rel=next]'),b=q('.photo-back');addEventListener('keydown',(e)=>{if(e.altKey||e.ctrlKey||e.metaKey||e.target.closest('input,textarea,select'))return;if(e.key==='ArrowLeft'&&p)location=p.href;else if(e.key==='ArrowRight'&&n)location=n.href;else if(e.key==='Escape'&&b)location=b.href});let x=null,y=null;const s=q('.photo-stage');s.addEventListener('touchstart',(e)=>{x=e.touches[0].clientX;y=e.touches[0].clientY},{passive:true});s.addEventListener('touchend',(e)=>{if(x===null)return;const dx=e.changedTouches[0].clientX-x,dy=e.changedTouches[0].clientY-y;x=null;if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)){const t=dx>0?p:n;if(t)location=t.href}},{passive:true});const c=q('.filmstrip [aria-current]');if(c)c.scrollIntoView({block:'nearest',inline:'center'})})()</script>
@@ -387,6 +389,7 @@ function blogIndex() {
   const body = `
 <section class="page-hero"><div class="wrap">${crumbs([['/blog', 'Journal']])}<span class="eyebrow">Journal</span><h1>The Nevervoid Journal</h1><p class="lede">Practical guides for headshots, fitness shoots and family portraits, from ${SITE.foundingYear} onwards in Bangalore.</p></div></section>
 <section class="section-tight"><div class="wrap">${postCards(ctx, posts)}</div></section>
+<section class="section-tight"><div class="wrap narrow"><div class="subscribe-card"><h2>Get new guides by email</h2><p>Photoshoot tips, new work and seasonal offers, now and then. Unsubscribe anytime.</p>${subscribeForm({ source: 'journal' })}</div></div></section>
 <section class="section-tight"><div class="wrap"><h2>From the archive</h2><div class="cards">${archive
     .map((p) => {
       const im = ctx.imagesOf(p)[0];
@@ -408,6 +411,7 @@ ${ims[0] ? `<div class="wrap narrow" style="margin-top:32px">${img(ims[0], { eag
 <section class="section-tight"><div class="wrap narrow"><div class="prose">${post.html}</div></div></section>
 </article>
 ${ims.length > 1 ? `<section class="section-tight"><div class="wrap"><div class="strip">${ims.slice(1, 9).map((im) => `<a href="${href(imagePageFor.get(`${post.imagePage}|${im.id}`) ?? post.imagePage)}">${img(im, { sizes: '260px' })}</a>`).join('')}</div></div></section>` : ''}
+<section class="section-tight"><div class="wrap narrow"><div class="subscribe-card"><h2>Get new guides by email</h2><p>Occasional emails with photoshoot tips, new work and seasonal offers. Unsubscribe anytime.</p>${subscribeForm({ source: 'blog-post' })}</div></div></section>
 ${rel.length ? `<section class="section-tight"><div class="wrap"><h2 style="font-size:1.4rem">Related</h2><ul class="chips">${rel.map((r) => `<li><a href="${href(r)}">${esc(short(byPath.get(r).title))}</a></li>`).join('')}</ul></div></section>` : ''}
 ${ctaBand({ topic: fit ? 'fitness photography' : 'professional headshots', number: fit ? SITE.phone : undefined, book: fit ? 'fitness' : post.category === 'Headshots' ? 'headshots' : undefined })}`;
   return {
@@ -451,6 +455,11 @@ function contactPage() {
   return { path: '/contact', title: 'Contact & Booking | Nevervoid Photography - Bangalore', description: `Book a headshot, fitness or portrait photoshoot in Bangalore online, or call or WhatsApp ${SITE.phoneDisplay}. Studio in HRBR Layout, Banaswadi, Bengaluru 560043.`, body, ld: [breadcrumbLd([['/contact', 'Contact']]), { '@type': 'ContactPage', url: abs('/contact'), about: { '@id': `${SITE.origin}/#business` } }], template: 'new' };
 }
 
+function subscribedPage() {
+  const body = `<section class="page-hero"><div class="wrap narrow"><span class="eyebrow">Newsletter</span><h1>Thank you for subscribing</h1><p class="lede">You will hear from us now and then with new work, photoshoot tips and seasonal offers. If something went wrong, please try again below or WhatsApp us.</p>${subscribeForm({ source: 'subscribed-page' })}<p style="margin-top:24px"><a href="/">Back to the homepage →</a></p></div></section>`;
+  return { path: '/subscribed', title: 'Subscribed | Nevervoid Photography', description: 'Thank you for subscribing to Nevervoid Photography: new work, photoshoot tips and seasonal offers from our Bangalore studio.', body, noindex: true, template: 'new', share: false };
+}
+
 function notFound() {
   const body = `<section class="page-hero"><div class="wrap"><span class="eyebrow">404</span><h1>This page has moved or no longer exists</h1><p class="lede">Try one of these instead:</p><ul class="chips"><li><a href="/Headshot-photographer-bangalore">Headshot photographer Bangalore</a></li><li><a href="/Fitness-Photography">Fitness photography</a></li><li><a href="/services">All services</a></li><li><a href="/browse">Portfolio</a></li><li><a href="/blog">Journal</a></li><li><a href="/contact">Contact</a></li></ul></div></section>`;
   return { path: '/404', title: 'Page not found | Nevervoid Photography', description: '', body, noindex: true };
@@ -464,7 +473,7 @@ for (const p of pages) {
   else if (p.path === '/browse') out.push(browsePage());
   else out.push(genericPage(p.path));
 }
-const newPages = [servicesHub(), blogIndex(), ...posts.map(blogPost), contactPage()];
+const newPages = [servicesHub(), blogIndex(), ...posts.map(blogPost), contactPage(), subscribedPage()];
 out.push(...newPages);
 const imgOut = imagePages.map(imagePage);
 
@@ -521,11 +530,35 @@ function uniformCards(html) {
   }
   return out + html.slice(i);
 }
+// "Save" (Pinterest) button on every gallery photo. Plain links, no
+// Pinterest script: pins point at the photo's own page and largest file.
+const decodeEnt = (t) => t.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+function pinButtons(html) {
+  return html.replace(/<div class="gallery">([\s\S]*?)<\/div>/g, (m, inner) =>
+    `<div class="gallery">${inner.replace(/<a href="([^"]+)">(<img\b[^>]*>)<\/a>/g, (mm, h, imgTag) => {
+      const set = /srcset="([^"]+)"/.exec(imgTag)?.[1];
+      const big = set ? set.split(',').map((x) => x.trim().split(' ')[0]).at(-1) : /src="([^"]+)"/.exec(imgTag)?.[1];
+      const alt = decodeEnt(/alt="([^"]*)"/.exec(imgTag)?.[1] ?? '');
+      const url = pinUrl(SITE.origin + h, SITE.origin + big, `${alt} | ${SITE.name}, Bangalore`);
+      return `<span class="g-item"><a href="${h}">${imgTag}</a><a class="pin-btn" href="${esc(url)}" target="_blank" rel="noopener" aria-label="Save to Pinterest">${PIN_MARK}Save</a></span>`;
+    })}</div>`,
+  );
+}
+// Share row before the closing call-to-action on content pages.
+const NO_SHARE = new Set(['/', '/contact', '/subscribed', '/404', '/Privacy-policy', '/Terms-and-conditions', '/Cancelation-and-refunds']);
+function withShare(pg, html) {
+  if (NO_SHARE.has(pg.path) || pg.noindex || pg.share === false || /\/i-[A-Za-z0-9]+$/.test(pg.path)) return html;
+  const i = html.lastIndexOf('<section class="section-tight"><div class="wrap"><div class="cta-band">');
+  if (i < 0) return html;
+  const image = (/<meta property="og:image" content="([^"]+)">/.exec(html) ?? [])[1];
+  const row = `<section class="section-tight share-section"><div class="wrap">${shareRow({ path: pg.path, title: pg.h1 || pg.title, image: image && decodeEnt(image), label: 'Share this page' })}</div></section>\n`;
+  return html.slice(0, i) + row + html.slice(i);
+}
 const fileFor = (p) => path.join(DIST, p === '/' ? 'index.html' : decodeURI(p).slice(1) + '.html');
 const write = (pg) => {
   const f = fileFor(pg.path);
   fs.mkdirSync(path.dirname(f), { recursive: true });
-  fs.writeFileSync(f, uniformCards(fixLinks(layout(pg))));
+  fs.writeFileSync(f, withShare(pg, pinButtons(uniformCards(fixLinks(layout(pg))))));
 };
 for (const pg of [...out, ...imgOut, notFound()]) write(pg);
 

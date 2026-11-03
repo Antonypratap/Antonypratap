@@ -285,4 +285,46 @@ if (failures.length) {
   if (mwFail) process.exit(1);
 }
 
+
+// ---------- 8. newsletter functions (functions/api) with an in-memory KV ----------
+{
+  const { onRequestPost } = await import('../functions/api/subscribe.js');
+  const { onRequestGet } = await import('../functions/api/subscribers.js');
+  const store = new Map();
+  const KV = { get: async (k) => store.get(k) ?? null, put: async (k, v) => void store.set(k, v), list: async ({ prefix }) => ({ keys: [...store.keys()].filter((k) => k.startsWith(prefix)).map((name) => ({ name })), list_complete: true }) };
+  const post = (fields, env, json = true) => {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(fields)) fd.set(k, v);
+    return onRequestPost({ request: new Request('https://www.nevervoid.com/api/subscribe', { method: 'POST', body: fd, headers: json ? { accept: 'application/json' } : {} }), env });
+  };
+  const checks = [];
+  let r = await post({ email: 'Test@Example.com', source: 'footer' }, { SUBSCRIBERS: KV });
+  checks.push(['valid email stored', r.status === 200 && store.has('sub:test@example.com')]);
+  r = await post({ email: 'not-an-email' }, { SUBSCRIBERS: KV });
+  checks.push(['invalid email rejected', r.status === 400]);
+  r = await post({ email: 'bot@spam.com', website: 'http://spam' }, { SUBSCRIBERS: KV });
+  checks.push(['honeypot ignored', r.status === 200 && !store.has('sub:bot@spam.com')]);
+  r = await post({ email: 'a@b.co' }, {});
+  checks.push(['missing KV -> 503', r.status === 503]);
+  r = await post({ email: 'nojs@example.com' }, { SUBSCRIBERS: KV }, false);
+  checks.push(['no-JS form redirects to /subscribed', r.status === 303 && r.headers.get('location').endsWith('/subscribed')]);
+  r = await onRequestGet({ request: new Request('https://x/api/subscribers?token=wrong'), env: { SUBSCRIBERS: KV, EXPORT_TOKEN: 'secret-token' } });
+  checks.push(['export needs token', r.status === 404]);
+  r = await onRequestGet({ request: new Request('https://x/api/subscribers?token=secret-token'), env: { SUBSCRIBERS: KV, EXPORT_TOKEN: 'secret-token' } });
+  const csv = await r.text();
+  checks.push(['export CSV', r.status === 200 && csv.includes('"test@example.com"') && csv.includes('"nojs@example.com"')]);
+  const bad = checks.filter(([, ok]) => !ok);
+  console.log(`newsletter: ${checks.length - bad.length}/${checks.length} cases pass`);
+  if (bad.length) {
+    console.log('NEWSLETTER FAIL: ' + bad.map(([n]) => n).join(', '));
+    process.exitCode = 1;
+  }
+  // Pinterest buttons: one per gallery photo, pointing at the photo page + largest file.
+  const g = fs.readFileSync(path.join(DIST, 'Fitness-Photography.html'), 'utf8');
+  const pins = [...g.matchAll(/class="pin-btn" href="([^"]+)"/g)].map((m) => new URL(m[1].replace(/&amp;/g, '&')));
+  const okPins = pins.length > 10 && pins.every((u) => u.searchParams.get('url')?.startsWith(ORIGIN + '/Fitness-Photography/i-') && /-1600\.webp$|\.webp$/.test(u.searchParams.get('media')) && u.searchParams.get('description'));
+  console.log(`pinterest: ${pins.length} save buttons on the fitness gallery ${okPins ? 'OK' : 'FAIL'}`);
+  if (!okPins) process.exitCode = 1;
+}
+
 if (!process.exitCode) console.log('ALL CHECKS PASSED');
