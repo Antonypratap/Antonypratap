@@ -615,6 +615,51 @@ ${ctaBand({ heading: 'Show the strength you have built.', text: 'Tell us your go
   };
 }
 
+/* ---------------------------------------------------------------- CLIENTS */
+export function clients(ctx) {
+  const P = '/Clients';
+  const page = ctx.page(P);
+  const logos = CLIENT_LOGOS.map(([id, name]) => [ctx.image(id), name]).filter(([im]) => im);
+  const work = [
+    ['Innosolv', 'Team headshots', 'Matching outdoor headshots for the Innosolv team, photographed on-site.', '/Innosolv-Headshots', ctx.image('GX9tjxT')],
+    ['Innosolv', 'Corporate event', 'Candid coverage of an office celebration at Innosolv, Bangalore.', '/Corporate-event-photography-innosolv', ctx.image('PHwkhfF')],
+    ['Walkwater Talent Advisors', 'Founder portrait', "Executive portrait of Harold D'Souza, founder of Walkwater Talent Advisors.", '/Headshot-photographer-bangalore', ctx.image('br92FtZ')],
+    ['Elior India', 'Corporate headshot', 'Business headshot for a professional at Elior India, ready for brand and recruitment use.', '/Headshot-photographer-bangalore', ctx.image('HDsq6mp')],
+  ].filter((w) => w[4]);
+  const trail = [[P, 'Clients']];
+  const body = `
+<section class="page-hero"><div class="wrap">
+  ${crumbs(trail)}
+  <span class="eyebrow">Clients</span>
+  <h1>Clients we are proud to work with</h1>
+  <p class="lede">${esc(page.description)}</p>
+</div></section>
+
+<section class="section-tight"><div class="wrap">
+  <ul class="logo-wall" aria-label="Client logos">
+    ${logos.map(([im, name]) => `<li>${img(im, { sizes: '200px', alt: `${name} logo` })}<span>${esc(name)}</span></li>`).join('')}
+    <li class="logo-wall-cta"><a href="/Corporate-photoshoot"><strong>Your team next?</strong>Corporate photography →</a></li>
+  </ul>
+</div></section>
+
+<section class="section alt"><div class="wrap">
+  <div class="section-head"><span class="eyebrow">Selected client work</span><h2>Headshots, teams and events for Bangalore companies</h2></div>
+  <div class="cards cards-4">${work
+    .map(([client, kind, text, link, im]) => `<a class="card" href="${href(link)}">${img(im, { sizes: '(max-width: 640px) 100vw, 25vw' })}<div class="card-body"><span class="eyebrow" style="margin-bottom:6px">${esc(kind)}</span><h3>${esc(client)}</h3><p>${esc(text)}</p></div></a>`)
+    .join('')}</div>
+</div></section>
+${ctaBand({ heading: 'Photography your company can rely on.', text: 'Team headshots, leadership portraits, events and offices, anywhere in Bangalore.', topic: 'corporate headshot photography' })}`;
+  return {
+    path: P,
+    title: page.title,
+    description: page.description,
+    ogImage: ogUrl(work[0]?.[4]),
+    body,
+    waTopic: 'corporate headshot photography',
+    ld: [breadcrumbLd(trail), { '@type': 'CollectionPage', name: 'Nevervoid Photography clients', url: abs(P), about: { '@id': `${SITE.origin}/#business` } }],
+  };
+}
+
 /* -------------------------------------------------------------- HEADSHOTS */
 export function headshots(ctx) {
   const P = '/Headshot-photographer-bangalore';
