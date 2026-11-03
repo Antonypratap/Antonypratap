@@ -341,6 +341,150 @@ ${ctaBand({ heading: 'Planning headshots for your team?', text: 'Tell us the tea
   };
 }
 
+/* --------------------------------------------------------------- BRANDING */
+export function branding(ctx) {
+  const P = '/Professional-branding-portraits';
+  const page = ctx.page(P);
+  const ims = ctx.imagesOf(P);
+  const byId = (id) => ctx.image(id);
+  const hero = byId('NQ9cP7g') ?? ims[0];
+  const who = [
+    ['Founders & entrepreneurs', 'Portraits that make your company story personal, for your website, pitch decks and press.', byId('zHjSFg8')],
+    ['Speakers & thought leaders', 'Stage-ready images for event listings, speaker profiles and conference promotions.', byId('ngdHTRh')],
+    ['Executives & leaders', 'Executive presence for annual reports, leadership pages and LinkedIn.', byId('NQ9cP7g')],
+    ['Authors & writers', 'Author photos for book jackets, publisher pages and media kits.', byId('4KMSkfZ')],
+    ['Consultants & coaches', 'Approachable, confident portraits that help clients choose you.', byId('mwWw2D8')],
+    ['Women in leadership', 'Portraits that carry authority and warmth in equal measure.', byId('6CbCQg2')],
+  ].filter(([, , im]) => im);
+  const faqs = [
+    { q: 'What is personal branding photography?', a: '<p>Personal branding photography is a planned set of portraits that tells people who you are, what you do and why they should work with you. Unlike a single profile photo, it gives you a consistent library of images for LinkedIn, your website, social media, speaker profiles, publications and marketing.</p>' },
+    { q: 'How is it different from a headshot?', a: '<p>A <a href="/Headshot-photographer-bangalore">professional headshot</a> is one clean, head-and-shoulders image for your profile. A personal branding shoot goes further: more looks, poses and settings, and images designed around your message, so you have the right photo for every place your brand appears.</p>' },
+    { q: 'Who is personal branding photography for?', a: '<p>Founders, entrepreneurs, executives, consultants, coaches, speakers, authors and other professionals in Bangalore who are the face of their work and want to be seen consistently online and in print.</p>' },
+    { q: 'Where does the shoot take place?', a: '<p>At our studio in Banaswadi, Bangalore, or on location: your office, workspace or a setting that suits your story. We plan this together before the shoot.</p>' },
+    { q: 'What should I wear?', a: '<p>Outfits that match how your audience knows you, usually two or three looks from formal to smart casual, in solid colours. We give wardrobe guidance before the shoot; see also <a href="/blog/what-to-wear-for-a-professional-headshot">what to wear for a professional photoshoot</a>.</p>' },
+    { q: 'How much does a personal branding shoot cost?', a: '<p>Each shoot is planned around your brief: the number of looks, locations and visual assets you need. Message us on WhatsApp with what the images are for and we will send a quote.</p>' },
+  ];
+  const trail = [[P, 'Personal branding photography']];
+  const body = `
+<section class="hero hero-dim">
+  ${img(hero, { cls: 'hero-bg hero-right', eager: true, sizes: '100vw', alt: '' })}
+  <div class="wrap">
+    ${crumbs(trail).replace('class="crumbs"', 'class="crumbs" style="color:#cfc7bb"')}
+    <span class="eyebrow">Founders · Executives · Speakers · Authors · Consultants</span>
+    <h1>Personal Branding Photography in Bangalore</h1>
+    <p class="lede">Authentic portraits and visual assets for founders, entrepreneurs, executives, consultants and professionals, created for LinkedIn, websites, social media, speaking and publications.</p>
+    <ul class="badges"><li>Planned around your brand</li><li>Multiple looks &amp; settings</li><li>Posing &amp; expression coaching</li><li>Studio or on location</li></ul>
+    <div class="actions">
+      <a class="btn btn-light" href="${waLink('personal branding photography')}" rel="noopener">${waIcon} Plan your branding shoot</a>
+      <a class="btn btn-ghost" href="#portfolio">See the portfolio</a>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="why"><div class="wrap split">
+  <div>
+    <p class="wwh-label">Why</p>
+    <h2>People buy from people they can see</h2>
+    <p>Before anyone books a call, reads your book or invites you to speak, they look you up. The images they find decide whether you come across as credible, approachable and established, or as one more profile among many.</p>
+    <p>Personal branding photography gives you a consistent set of portraits that carry your message everywhere you appear: your LinkedIn profile and banner, your website's About page, speaker bios, press features, book covers and social posts. One coherent look, instead of a mix of cropped holiday photos and old event shots.</p>
+    <ul class="ticks">
+      <li><strong>Credibility:</strong> professional images signal that you take your work seriously</li>
+      <li><strong>Recognition:</strong> the same look across platforms makes you memorable</li>
+      <li><strong>Connection:</strong> natural expressions make you approachable before the first meeting</li>
+      <li><strong>Ready content:</strong> a library of images for months of posts, pages and press</li>
+    </ul>
+  </div>
+  <div>${img(byId('zHjSFg8') ?? ims[1] ?? hero)}</div>
+</div></section>
+
+<section class="section alt" id="who"><div class="wrap">
+  <div class="section-head"><span class="eyebrow">Who it's for</span><h2>Personal branding portraits for professionals in Bangalore</h2><p>Every brief is different. These are the people we photograph most often, and what the images do for them.</p></div>
+  <div class="cards">${who
+    .map(([t, d, im]) => `<div class="card">${img(im, { sizes: '(max-width: 640px) 100vw, 33vw' })}<div class="card-body"><h3>${esc(t)}</h3><p>${esc(d)}</p></div></div>`)
+    .join('')}</div>
+</div></section>
+
+<section class="section" id="what"><div class="wrap">
+  <div class="section-head"><p class="wwh-label">What</p><h2>What a personal branding shoot includes</h2></div>
+  <div class="split" style="align-items:start">
+    <div>
+      <h3>Portraits with intent</h3>
+      <p>Every frame is planned around how you want to be seen: confident and authoritative, warm and approachable, creative and bold. We direct posture, expression and styling so the images feel like you on your best day.</p>
+      <ul class="ticks">
+        <li>Multiple looks, from formal to smart casual</li>
+        <li>Close portraits, half-length and full-length frames</li>
+        <li>Studio backdrops or your own workspace and city settings</li>
+        <li>Posing and expression coaching throughout</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Visual assets for your brand</h3>
+      <p>Beyond the portraits, we create magazine-cover style visuals that pair your image with your positioning, as you can see in the portfolio below. They are ready to use as LinkedIn banners, speaker cards, social posts and website features.</p>
+      <ul class="ticks">
+        <li>Professionally retouched, high-resolution images</li>
+        <li>Crops for LinkedIn, websites and social media</li>
+        <li>Branded visual layouts around your message</li>
+      </ul>
+    </div>
+  </div>
+  <div class="table-wrap" style="margin-top:48px">
+    <table class="compare">
+      <caption>Headshot or personal branding shoot?</caption>
+      <thead><tr><th></th><th>Professional headshot</th><th>Personal branding shoot</th></tr></thead>
+      <tbody>
+        <tr><th>Best for</th><td>A clean profile photo for LinkedIn and company pages</td><td>A full image library for your website, social media, speaking and press</td></tr>
+        <tr><th>Looks</th><td>One or two outfits</td><td>Several looks, poses and settings</td></tr>
+        <tr><th>Output</th><td>Your best 5 photos advanced-edited</td><td>A set of portraits plus designed visual assets</td></tr>
+        <tr><th>Pricing</th><td>₹5,899 studio session, delivered in 2 days</td><td>Planned around your brief: message us for a quote</td></tr>
+        <tr><th></th><td><a href="/Headshot-photographer-bangalore">Headshot sessions →</a></td><td><a href="${waLink('personal branding photography')}" rel="noopener">Plan a branding shoot →</a></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div></section>
+
+<section class="section dark" id="how"><div class="wrap">
+  <div class="section-head"><p class="wwh-label">How</p><h2>How a personal branding shoot works</h2></div>
+  <ol class="steps">
+    <li><strong>Brand conversation</strong><p>We talk about what you do, who your audience is and where the images will be used.</p></li>
+    <li><strong>Plan the shoot</strong><p>Looks, wardrobe, props and setting: our studio in Banaswadi or a location that tells your story.</p></li>
+    <li><strong>Shoot day</strong><p>A relaxed, guided session. We coach posture and expression so you look natural, not posed.</p></li>
+    <li><strong>Select &amp; retouch</strong><p>You choose your favourites and we retouch them to a polished, consistent finish.</p></li>
+    <li><strong>Visual assets</strong><p>We design branded layouts around your portraits, ready for LinkedIn, your website and social media.</p></li>
+  </ol>
+</div></section>
+
+<section class="section" id="portfolio"><div class="wrap">
+  <div class="section-head"><span class="eyebrow">Portfolio</span><h2>Personal branding portraits by Nevervoid, Bangalore</h2></div>
+  <div class="gallery">${ims.map((im) => `<a href="${href(ctx.imagePageOf(P, im.id) ?? P)}">${img(im, { sizes: '(max-width: 640px) 100vw, 33vw' })}</a>`).join('')}</div>
+  <ul class="chips" style="margin-top:28px">
+    <li><a href="/Headshot-photographer-bangalore">Headshot photographer Bangalore</a></li>
+    <li><a href="/Corporate-photoshoot">Corporate &amp; team photography</a></li>
+    <li><a href="/Portrait-photographer-bangalore">Portrait photographer</a></li>
+    <li><a href="/Modelling-portfolio-photography">Modelling portfolios</a></li>
+    <li><a href="/blog/linkedin-profile-photo-guide">LinkedIn profile photo guide</a></li>
+  </ul>
+</div></section>
+
+<section class="section alt" id="faq"><div class="wrap narrow">
+  <div class="section-head"><span class="eyebrow">FAQs</span><h2>Personal branding photography questions</h2></div>
+  ${faqHtml(faqs)}
+</div></section>
+${ctaBand({ heading: 'Build a brand people recognise.', text: 'Tell us what you do and where the images will be used. We will plan a shoot around your story.', topic: 'personal branding photography' })}`;
+  return {
+    path: P,
+    title: page.title,
+    description: page.description,
+    ogImage: ogUrl(hero),
+    body,
+    waTopic: 'personal branding photography',
+    ld: [
+      breadcrumbLd(trail),
+      { '@type': 'Service', '@id': abs(P) + '#service', name: 'Personal branding photography in Bangalore', serviceType: 'Personal branding photography', provider: { '@id': `${SITE.origin}/#business` }, areaServed: { '@type': 'City', name: SITE.locality } },
+      faqLd(faqs),
+    ],
+  };
+}
+
 /* -------------------------------------------------------------- HEADSHOTS */
 export function headshots(ctx) {
   const P = '/Headshot-photographer-bangalore';
