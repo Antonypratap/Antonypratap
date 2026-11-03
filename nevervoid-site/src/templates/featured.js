@@ -2,7 +2,7 @@
 // (data/pages.json) so the ranking content survives; layout is new.
 import { SITE, waLink } from '../config.js';
 import { yearsSince } from '../content-fixes.js';
-import { ogUrl, esc, img, href, ctaBand, faqHtml, faqLd, waIcon, crumbs, breadcrumbLd, abs } from '../lib.js';
+import { ogUrl, imgAbs as imgAbsOf, esc, img, href, ctaBand, faqHtml, faqLd, waIcon, crumbs, breadcrumbLd, abs } from '../lib.js';
 
 const gallery = (ctx, page, n = 24) =>
   `<div class="gallery">${ctx
@@ -485,6 +485,136 @@ ${ctaBand({ heading: 'Build a brand people recognise.', text: 'Tell us what you 
   };
 }
 
+/* ---------------------------------------------------------- FEMALE FITNESS */
+// URL kept as /Fitness-bikini-photoshoots (indexed); the owner's wording is
+// "female fitness", which is what the page now says everywhere.
+export function femaleFitness(ctx) {
+  const P = '/Fitness-bikini-photoshoots';
+  const page = ctx.page(P);
+  const ims = ctx.imagesOf(P);
+  const byId = (id) => ctx.image(id);
+  const hero = byId('5chvhzC') ?? ims[0];
+  const faqs = [
+    { q: 'Where do female fitness photoshoots take place?', a: '<p>In our studio in Banaswadi, Bangalore, or at your own gym anywhere in the city. The studio gives clean, controlled lighting; your gym adds the equipment and setting your clients and followers recognise.</p>' },
+    { q: 'When is the best time to book?', a: '<p>Plan the shoot near your peak condition, after a competition prep, a transformation or a training block, before your body settles back to normal. For brand and content shoots, choose a week when your training and sleep are consistent.</p>' },
+    { q: 'What should I wear?', a: '<p>Bring 2–3 solid-colour outfits: sports bras and crop tops, shorts or leggings, and one coordinated set if you have it. Avoid busy prints and large logos. See our <a href="/blog/how-to-prepare-for-a-fitness-photoshoot">fitness photoshoot preparation guide</a>.</p>' },
+    { q: 'I have never done a photoshoot. Will I know how to pose?', a: '<p>You do not need any experience. We guide every pose, angle and expression throughout the session, and you can see the photos as we shoot.</p>' },
+    { q: 'Do you provide hair and makeup?', a: '<p>We do not provide makeup and styling at the moment. If you would like it, book a makeup artist for the morning of your shoot.</p>' },
+    { q: 'How soon will I get my photos?', a: '<p>Edited photos are delivered within 4–5 days.</p>' },
+  ];
+  const trail = [['/Fitness-Photography', 'Fitness photography'], [P, 'Female fitness photoshoot']];
+  const gal = (list) => list.map((im) => `<a href="${href(ctx.imagePageOf(P, im.id) ?? P)}">${img(im, { sizes: '(max-width: 640px) 100vw, 33vw' })}</a>`).join('');
+  const body = `
+<section class="hero">
+  ${img(hero, { cls: 'hero-bg', eager: true, sizes: '(max-width: 860px) 100vw, 54vw', alt: '' })}
+  <div class="wrap">
+    ${crumbs(trail).replace('class="crumbs"', 'class="crumbs" style="color:#cfc7bb"')}
+    <span class="eyebrow">Women's fitness · Gym · Studio · Transformation</span>
+    <h1>Female Fitness Photoshoot in Bangalore</h1>
+    <p class="lede">Strong, confident photos of your training and your progress, shot in our Banaswadi studio or at your gym. For athletes, coaches, trainers and every woman proud of the work she has put in.</p>
+    <ul class="badges"><li>Studio or your gym</li><li>Every pose guided</li><li>Black &amp; white or colour</li><li>Delivered in 4–5 days</li></ul>
+    <div class="actions">
+      <a class="btn btn-light" href="${waLink('female fitness photoshoot')}" rel="noopener">${waIcon} Plan your shoot</a>
+      <a class="btn btn-ghost" href="#portfolio">See the portfolio</a>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="why"><div class="wrap split">
+  <div>
+    <p class="wwh-label">Why</p>
+    <h2>Your strength deserves better than a mirror selfie</h2>
+    <p>Months of training, early mornings and discipline show in how you move and how you carry yourself. A professional fitness photoshoot captures that properly, with lighting that shows muscle definition and poses that show strength rather than strain.</p>
+    <p>Whether you are marking a transformation, building your profile as a coach or trainer, or creating content for your fitness brand, you get photos you will be proud to share for years.</p>
+    <ul class="ticks">
+      <li>Celebrate a transformation, weight-loss milestone or competition prep</li>
+      <li>Build your personal brand as a trainer, coach or instructor</li>
+      <li>Fresh, professional content for Instagram, your website and promotions</li>
+    </ul>
+  </div>
+  <div>${img(byId('q5TwjNn') ?? ims[1] ?? hero)}</div>
+</div></section>
+
+<section class="section alt" id="who"><div class="wrap">
+  <div class="section-head"><span class="eyebrow">Who it's for</span><h2>Women's fitness photography for every kind of strong</h2></div>
+  <div class="cards cards-4">
+    <div class="card">${img(byId('bzmvxbW') ?? ims[2])}<div class="card-body"><h3>Athletes &amp; lifters</h3><p>Strength, form and physique: squats, pulls and presses captured at their best.</p></div></div>
+    <div class="card">${img(byId('jbwXNhK') ?? ims[3])}<div class="card-body"><h3>Trainers &amp; coaches</h3><p>Brand photos that show clients who will be training them.</p></div></div>
+    <div class="card">${img(byId('zVvqqRz') ?? ims[4])}<div class="card-body"><h3>Transformations</h3><p>Mark the result of months of work before life gets in the way.</p></div></div>
+    <div class="card">${img(byId('6hZNRSV') ?? ims[5])}<div class="card-body"><h3>Yoga, pilates &amp; wellness</h3><p>Calm, strong portraits for instructors and wellness professionals.</p></div></div>
+  </div>
+</div></section>
+
+<section class="section" id="what"><div class="wrap split rev">
+  <div>
+    <p class="wwh-label">What</p>
+    <h2>What your shoot includes</h2>
+    <p>We create powerful, dynamic images that bring out the best in your physique and personality, in our signature high-contrast style or in colour.</p>
+    <ul class="ticks">
+      <li>Studio or gym-based themes, with high-contrast lighting setups</li>
+      <li>Training shots with real equipment: cables, barbells, dumbbells, battle ropes</li>
+      <li>Hero portraits and motion captures</li>
+      <li>Editorial and minimalist edits, delivered within 4–5 days</li>
+    </ul>
+    <p>Looking for men's or mixed fitness shoots? See <a href="/Fitness-Photography">gym &amp; fitness photography in Bangalore</a>.</p>
+  </div>
+  <div>${img(byId('CDLF4c6') ?? ims[6] ?? hero)}</div>
+</div></section>
+
+<section class="section alt" id="plan"><div class="wrap">
+  <div class="section-head"><span class="eyebrow">Planning your shoot</span><h2>How to prepare for a female fitness photoshoot</h2><p>A little preparation makes a big difference on the day. Here is what we recommend to every client.</p></div>
+  <div class="cards cards-4 plan-cards">
+    <div class="card"><div class="card-body"><h3>1. Time it well</h3><p>Book near your peak condition, after a prep, a transformation or a strong training block. Any diet or water changes should be planned with your own coach.</p></div></div>
+    <div class="card"><div class="card-body"><h3>2. Outfits</h3><p>2–3 solid-colour sets: sports bras or crop tops with shorts or leggings, plus one coordinated set. Skip busy prints and big logos.</p></div></div>
+    <div class="card"><div class="card-body"><h3>3. Hair, skin &amp; makeup</h3><p>Moisturise in the days before. Makeup and styling are not included, so book a makeup artist if you want a polished look.</p></div></div>
+    <div class="card"><div class="card-body"><h3>4. On the day</h3><p>Bring a towel, water and a snack. A light warm-up just before shooting brings out definition. We plan the key shots for while you are warm.</p></div></div>
+  </div>
+</div></section>
+
+<section class="section dark" id="how"><div class="wrap">
+  <div class="section-head"><p class="wwh-label">How</p><h2>How your shoot works</h2></div>
+  <ol class="steps">
+    <li><strong>Book your session</strong><p>Choose a date and time that works for you.</p></li>
+    <li><strong>Choose the location</strong><p>Our studio in Banaswadi, or your own gym anywhere in Bangalore.</p></li>
+    <li><strong>Prep guidance</strong><p>Tips on what to wear, bring and how to prepare.</p></li>
+    <li><strong>Shoot day</strong><p>You show up, we guide every pose and light every frame.</p></li>
+    <li><strong>Delivery</strong><p>Edited photos delivered within 4–5 days.</p></li>
+  </ol>
+</div></section>
+
+<section class="section" id="portfolio"><div class="wrap">
+  <div class="section-head"><span class="eyebrow">Portfolio</span><h2>Female fitness photography in Bangalore</h2></div>
+  <div class="gallery">${gal(ims)}</div>
+  <ul class="chips" style="margin-top:28px">
+    <li><a href="/Fitness-Photography">Gym &amp; fitness photography</a></li>
+    <li><a href="/Cult-Anniversary">Cult anniversary shoot</a></li>
+    <li><a href="/Dance-photographer-bangalore">Dance photography</a></li>
+    <li><a href="/Professional-branding-portraits">Personal branding portraits</a></li>
+    <li><a href="/blog/how-to-prepare-for-a-fitness-photoshoot">Fitness photoshoot preparation guide</a></li>
+  </ul>
+</div></section>
+
+<section class="section alt" id="faq"><div class="wrap narrow">
+  <div class="section-head"><span class="eyebrow">FAQs</span><h2>Female fitness photoshoot questions</h2></div>
+  ${faqHtml(faqs)}
+</div></section>
+${ctaBand({ heading: 'Show the strength you have built.', text: 'Tell us your goal and preferred dates. Studio in Banaswadi, or at your gym anywhere in Bangalore.', topic: 'female fitness photoshoot' })}`;
+  return {
+    path: P,
+    title: page.title,
+    description: "Female fitness photoshoots in Bangalore for athletes, trainers, coaches and transformations. Studio in Banaswadi or at your gym. Guided posing, delivered in 4–5 days.",
+    ogImage: ogUrl(hero),
+    body,
+    waTopic: 'female fitness photoshoot',
+    ld: [
+      breadcrumbLd(trail),
+      { '@type': 'Service', '@id': abs(P) + '#service', name: 'Female fitness photoshoot in Bangalore', serviceType: "Women's fitness photography", provider: { '@id': `${SITE.origin}/#business` }, areaServed: { '@type': 'City', name: SITE.locality } },
+      { '@type': 'ImageGallery', name: 'Female fitness photography in Bangalore', url: abs(P), image: ims.map((im) => ({ '@type': 'ImageObject', contentUrl: imgAbsOf(im), name: im.alt, creator: { '@id': `${SITE.origin}/#business` } })) },
+      faqLd(faqs),
+    ],
+  };
+}
+
 /* -------------------------------------------------------------- HEADSHOTS */
 export function headshots(ctx) {
   const P = '/Headshot-photographer-bangalore';
@@ -705,7 +835,7 @@ export function fitness(ctx) {
   <div class="section-head"><span class="eyebrow">Portfolio</span><h2>Fitness &amp; bodybuilding photography in Bangalore</h2></div>
   ${gallery(ctx, P, 36)}
   <ul class="chips" style="margin-top:28px">
-    <li><a href="/Fitness-bikini-photoshoots">Fitness bikini photoshoots</a></li>
+    <li><a href="/Fitness-bikini-photoshoots">Female fitness photoshoots</a></li>
     <li><a href="/Cult-Anniversary">Cult anniversary shoot</a></li>
     <li><a href="/Dance-photographer-bangalore">Dance photography</a></li>
     <li><a href="/Professional-branding-portraits">Personal branding portraits</a></li>

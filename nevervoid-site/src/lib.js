@@ -159,7 +159,7 @@ function footer() {
       ])}
       ${col('Fitness', [
         ['/Fitness-Photography', 'Gym & fitness photoshoot'],
-        ['/Fitness-bikini-photoshoots', 'Fitness bikini photoshoots'],
+        ['/Fitness-bikini-photoshoots', 'Female fitness photoshoots'],
         ['/Dance-photographer-bangalore', 'Dance photography'],
         ['/Modelling-portfolio-photography', 'Modelling portfolios'],
       ])}

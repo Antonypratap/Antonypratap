@@ -63,7 +63,8 @@ function nameFor(id) {
   const fromFile = im && !/^i-/.test(im.file) ? slug(im.file) : '';
   const fromAlt = im?.alt ? slug(im.alt) : '';
   const base = fromFile.split('-').length >= 3 ? fromFile : fromAlt || fromFile || 'nevervoid-photography';
-  return `${base.replace(/-\d+$/, '')}-${id}`;
+  // Owner: the female fitness gallery must not be labelled "bikini".
+  return `${base.replace(/-\d+$/, '').replace(/fitness-bikini-photoshoots?/g, 'female-fitness-photoshoot').replace(/fitness-bikini-/g, 'female-fitness-').replace(/bikini-fitness-/g, 'female-fitness-').replace(/bikini/g, 'female')}-${id}`;
 }
 
 // ---------- download + convert ----------
@@ -98,6 +99,16 @@ async function main() {
       for (const w of media[id].widths) fs.rmSync(path.join(OUT, `${media[id].name}-${w}.webp`), { force: true });
       delete media[id];
     }
+  // Rename files whose name rule changed (no re-download needed).
+  for (const [id, m] of Object.entries(media)) {
+    const want = nameFor(id);
+    if (m.name === want) continue;
+    for (const ext of [...m.widths.map((w) => `-${w}.webp`), '-og.jpg']) {
+      const from = path.join(OUT, m.name + ext);
+      if (fs.existsSync(from)) fs.renameSync(from, path.join(OUT, want + ext));
+    }
+    m.name = want;
+  }
   const todo = [...selected.keys()].filter((id) => !media[id] || (TRIM.has(id) && !media[id].trimmed) || !media[id].widths.every((w) => fs.existsSync(path.join(OUT, `${media[id].name}-${w}.webp`))));
   let done = 0,
     failed = [];

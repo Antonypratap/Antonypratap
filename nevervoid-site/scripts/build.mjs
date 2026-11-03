@@ -8,9 +8,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { marked } from 'marked';
 import { SITE, waLink, fullAddress, mapsLink } from '../src/config.js';
-import { applyFixes, REMOVED } from '../src/content-fixes.js';
+import { applyFixes, REMOVED, ALT_OVERRIDES } from '../src/content-fixes.js';
 import { layout, esc, img, href, abs, crumbs, breadcrumbLd, ctaBand, imgAbs, imgUrl, ogUrl, waIcon } from '../src/lib.js';
-import { home, headshots, corporate, branding, fitness, postCards } from '../src/templates/featured.js';
+import { home, headshots, corporate, branding, fitness, femaleFitness, postCards } from '../src/templates/featured.js';
 import { resolve as resolveRedirect } from '../src/redirects.js';
 import { GROUPS, ARTICLES, LEGAL, KEYWORD_REDIRECTS, LEGACY, CASE_COLLISIONS } from '../src/site-map.js';
 
@@ -55,9 +55,10 @@ function altFor(im, pagePath) {
   if (!a || a.split(' ').length < 2) a = `${stem(byPath.get(pagePath)?.title ?? 'Photograph')}: photograph by Nevervoid Photography`;
   return clip(a, 125);
 }
-for (const im of Object.values(images)) {
+for (const [id, im] of Object.entries(images)) {
   im.originalAlt = im.alt;
-  im.alt = altFor(im, im.pages[0]);
+  // Owner: "female fitness", never "bikini".
+  im.alt = (ALT_OVERRIDES[id] ?? altFor(im, im.pages[0])).replace(/fitness bikini/gi, 'female fitness').replace(/bikini fitness/gi, 'female fitness').replace(/bikini/gi, 'female');
 }
 
 // ---------- image pages ----------
@@ -437,10 +438,10 @@ function notFound() {
 }
 
 // ---------- assemble ----------
-const FEATURED = { '/': home, '/Headshot-photographer-bangalore': headshots, '/Corporate-photoshoot': corporate, '/Professional-branding-portraits': branding, '/Fitness-Photography': fitness };
+const FEATURED = { '/': home, '/Headshot-photographer-bangalore': headshots, '/Corporate-photoshoot': corporate, '/Professional-branding-portraits': branding, '/Fitness-Photography': fitness, '/Fitness-bikini-photoshoots': femaleFitness };
 const out = [];
 for (const p of pages) {
-  if (FEATURED[p.path]) out.push({ ...FEATURED[p.path](ctx), template: 'featured', h1: null, descSource: p.path === '/Fitness-Photography' ? 'shortened (was ~600 chars)' : p.path === '/Corporate-photoshoot' ? 'new (was missing)' : 'existing' });
+  if (FEATURED[p.path]) out.push({ ...FEATURED[p.path](ctx), template: 'featured', h1: null, descSource: p.path === '/Fitness-Photography' ? 'shortened (was ~600 chars)' : p.path === '/Corporate-photoshoot' || p.path === '/Fitness-bikini-photoshoots' ? 'new (rewritten)' : 'existing' });
   else if (p.path === '/browse') out.push(browsePage());
   else out.push(genericPage(p.path));
 }

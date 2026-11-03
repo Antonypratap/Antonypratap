@@ -1449,3 +1449,7 @@ p {
     max-width: none;
   }
 }
+
+.plan-cards .card-body h3 {
+  font-size: 1.15rem;
+}
