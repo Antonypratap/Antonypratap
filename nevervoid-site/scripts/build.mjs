@@ -12,6 +12,8 @@ import { applyFixes, REMOVED, ALT_OVERRIDES } from '../src/content-fixes.js';
 import { shareRow, subscribeForm, pinUrl, PIN_MARK, iconLinks, PIN_ICON, PHONE_ICON as PHONE_ICON_, MAIL_ICON as MAIL_ICON_, bookBtn, layout, esc, img, href, abs, crumbs, breadcrumbLd, ctaBand, imgAbs, imgUrl, ogUrl, waIcon } from '../src/lib.js';
 import { home, headshots, corporate, branding, fitness, femaleFitness, clients, postCards } from '../src/templates/featured.js';
 import { resolve as resolveRedirect } from '../src/redirects.js';
+import { PAGE_COPY } from '../src/content/page-copy.js';
+import { faqHtml, faqLd } from '../src/lib.js';
 import { GROUPS, ARTICLES, LEGAL, KEYWORD_REDIRECTS, LEGACY, CASE_COLLISIONS } from '../src/site-map.js';
 
 const ROOT = path.join(import.meta.dirname, '..');
@@ -175,8 +177,10 @@ function describeRaw(p) {
 function blocksHtml(blocks, skipText = new Set()) {
   const out = [];
   let list = null;
-  const kept = blocks.filter((b) => !skipText.has(norm(b.text)));
-  // A heading followed by another heading (or nothing) introduced an
+  // SmugMug pages often style whole paragraphs as headings (h3/h4). Anything
+  // longer than a real heading is treated as a paragraph.
+  const kept = blocks.filter((b) => !skipText.has(norm(b.text))).map((b) => (/^h/.test(b.tag) && b.text.length > 90 ? { ...b, tag: 'p' } : b));
+  // A short heading followed by another heading (or nothing) introduced an
   // image-only section on SmugMug; without its images it would be empty.
   const visible = kept.filter((b, i) => !/^h/.test(b.tag) || (kept[i + 1] && !/^h/.test(kept[i + 1].tag)));
   for (const b of visible) {
@@ -244,20 +248,29 @@ function genericPage(p) {
   const isLegal = LEGAL.includes(p);
   const fitnessy = groupOf.get(p)?.key === 'fitness';
   const prose = blocksHtml(pg.blocks, skip);
+  const copy = PAGE_COPY[p];
+  const copyHtml = copy
+    ? copy.sections
+        .map((sec) => `<h2>${esc(sec.h)}</h2>${(sec.p ?? []).map((t) => `<p>${t}</p>`).join('')}${sec.list ? `<ul>${sec.list.map((t) => `<li>${t}</li>`).join('')}</ul>` : ''}`)
+        .join('')
+    : '';
+  const lede = first ? first.html : copy?.lede ?? '';
   const body = `
 <section class="page-hero"><div class="wrap">
   ${crumbs(trail)}
   ${isArticle ? '<span class="eyebrow">Journal</span>' : groupOf.get(p) ? `<span class="eyebrow">${esc(groupOf.get(p).name)}</span>` : ''}
   <h1>${esc(h1)}</h1>
-  ${first ? `<p class="lede">${first.html}</p>` : ''}
+  ${lede ? `<p class="lede">${lede}</p>` : ''}
   ${isLegal ? '' : `<div class="actions">${bookFor(p) ? `${bookBtn(bookFor(p), 'btn-primary')}${iconLinks({ topic: topicFor(p), email: false })}` : `<a class="btn btn-primary" href="${waLink(topicFor(p))}" rel="noopener">${waIcon} Enquire on WhatsApp</a>${iconLinks({ topic: topicFor(p), whatsapp: false, email: false })}`}</div>`}
 </div></section>
-${prose ? `<section class="section-tight"><div class="wrap"><div class="prose">${prose}</div></div></section>` : ''}
+${copyHtml || prose ? `<section class="section-tight"><div class="wrap"><div class="prose">${copyHtml}${prose}</div></div></section>` : ''}
 ${ims.length ? `<section class="section-tight"><div class="wrap">${galleryHtml(p, ims)}</div></section>` : ''}
+${copy?.faqs?.length ? `<section class="section-tight"><div class="wrap narrow"><h2>Questions</h2>${faqHtml(copy.faqs.map((f) => ({ q: f.q, a: `<p>${f.a}</p>` })))}</div></section>` : ''}
 ${relatedHtml(p)}
 ${isLegal ? '' : ctaBand({ topic: topicFor(p), number: fitnessy ? SITE.phone : undefined, book: bookFor(p) })}`;
   const desc = describe(p);
   const ld = [breadcrumbLd(trail)];
+  if (copy?.faqs?.length) ld.push(faqLd(copy.faqs.map((f) => ({ q: f.q, a: f.a }))));
   if (isArticle)
     ld.push({
       '@type': 'Article',
