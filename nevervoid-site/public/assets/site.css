@@ -711,17 +711,127 @@ p {
   background: var(--night);
   padding: 32px 0 48px;
 }
-.photo-view img {
-  margin: 0 auto;
-  max-height: 82vh;
+.photo-view {
+  padding: 20px 0 28px;
+}
+.photo-stage {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+  user-select: none;
+}
+.photo-stage > img {
+  max-height: calc(100vh - 260px);
+  max-height: calc(100svh - 260px);
+  min-height: 280px;
   width: auto;
+  max-width: 100%;
+  object-fit: contain;
   border-radius: 6px;
 }
-.photo-nav {
+.photo-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(20, 18, 16, 0.55);
+  border: 1px solid rgba(243, 238, 231, 0.25);
+  color: #fff;
+  backdrop-filter: blur(6px);
+  transition: background 0.15s, transform 0.15s;
+}
+.photo-arrow:hover,
+.photo-arrow:focus-visible {
+  background: rgba(20, 18, 16, 0.85);
+  color: #fff;
+  transform: translateY(-50%) scale(1.06);
+}
+.photo-arrow svg {
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.photo-prev {
+  left: 0;
+}
+.photo-next {
+  right: 0;
+}
+.photo-count,
+.photo-close {
+  position: absolute;
+  top: 0;
+  font-size: 0.85rem;
+  color: #d9d1c5;
+  background: rgba(20, 18, 16, 0.55);
+  border-radius: 999px;
+  padding: 6px 12px;
+}
+.photo-count {
+  left: 0;
+}
+.photo-close {
+  right: 0;
+  text-decoration: none;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 9px 12px;
+}
+.photo-close:hover {
+  color: #fff;
+}
+.filmstrip {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 20px;
+  gap: 8px;
+  overflow-x: auto;
+  margin-top: 18px;
+  padding: 4px 2px 8px;
+  scrollbar-width: thin;
+}
+.filmstrip a {
+  flex: 0 0 auto;
+  border-radius: 6px;
+  overflow: hidden;
+  opacity: 0.55;
+  outline: 2px solid transparent;
+  transition: opacity 0.15s;
+}
+.filmstrip a:hover,
+.filmstrip a[aria-current] {
+  opacity: 1;
+}
+.filmstrip a[aria-current] {
+  outline-color: #e2b77f;
+}
+.filmstrip img {
+  height: 72px;
+  width: auto;
+  display: block;
+}
+.photo-hint {
+  margin: 10px 0 0;
+  font-size: 0.85rem;
+  color: #8e857a;
+  text-align: center;
+}
+@media (max-width: 760px) {
+  .photo-arrow {
+    width: 44px;
+    height: 44px;
+  }
+  .photo-stage > img {
+    max-height: 70svh;
+  }
 }
 
 /* footer */

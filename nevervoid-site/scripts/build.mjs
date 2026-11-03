@@ -9,7 +9,7 @@ import path from 'node:path';
 import { marked } from 'marked';
 import { SITE, waLink, fullAddress, mapsLink } from '../src/config.js';
 import { applyFixes, REMOVED } from '../src/content-fixes.js';
-import { layout, esc, img, href, abs, crumbs, breadcrumbLd, ctaBand, imgAbs, ogUrl, waIcon } from '../src/lib.js';
+import { layout, esc, img, href, abs, crumbs, breadcrumbLd, ctaBand, imgAbs, imgUrl, ogUrl, waIcon } from '../src/lib.js';
 import { home, headshots, corporate, fitness, postCards } from '../src/templates/featured.js';
 import { resolve as resolveRedirect } from '../src/redirects.js';
 import { GROUPS, ARTICLES, LEGAL, KEYWORD_REDIRECTS, LEGACY, CASE_COLLISIONS } from '../src/site-map.js';
@@ -282,21 +282,35 @@ function imagePage({ path: p, id, gallery }) {
   const gName = short(g.title);
   const ids = (g.images ?? []).filter((x) => imagePageFor.has(`${gallery}|${x}`));
   const i = ids.indexOf(id);
-  const prev = i > 0 ? imagePageFor.get(`${gallery}|${ids[i - 1]}`) : null;
-  const next = i >= 0 && i < ids.length - 1 ? imagePageFor.get(`${gallery}|${ids[i + 1]}`) : null;
+  // Wrap around so the arrows are always there.
+  const n = ids.length;
+  const prev = n > 1 ? imagePageFor.get(`${gallery}|${ids[(i - 1 + n) % n]}`) : null;
+  const next = n > 1 ? imagePageFor.get(`${gallery}|${ids[(i + 1) % n]}`) : null;
+  const nextIm = n > 1 ? images[ids[(i + 1) % n]] : null;
   const trail = [...trailFor(gallery), [p, clip(im.alt, 48)]];
   const title = `${clip(im.alt, 60)} | ${gName} - Nevervoid Photography`;
   const description = clip(`${im.alt}. From the ${gName} collection by Nevervoid Photography, Bangalore.`, 155);
   const body = `
 <section class="photo-view"><div class="wrap">
   ${crumbs(trail).replace('class="crumbs"', 'class="crumbs" style="color:#bdb4a8"')}
-  ${img(im, { eager: true, sizes: '100vw' })}
-  <div class="photo-nav">
-    ${prev ? `<a class="btn btn-ghost btn-sm" style="color:#f3eee7" href="${href(prev)}" rel="prev">← Previous</a>` : '<span></span>'}
-    <a class="btn btn-light btn-sm" href="${href(gallery)}">Back to ${esc(gName)}</a>
-    ${next ? `<a class="btn btn-ghost btn-sm" style="color:#f3eee7" href="${href(next)}" rel="next">Next →</a>` : '<span></span>'}
+  <div class="photo-stage">
+    ${img(im, { eager: true, sizes: '(max-width: 760px) 100vw, 80vw' })}
+    ${prev ? `<a class="photo-arrow photo-prev" href="${href(prev)}" rel="prev" aria-label="Previous photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a>` : ''}
+    ${next ? `<a class="photo-arrow photo-next" href="${href(next)}" rel="next" aria-label="Next photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></a>` : ''}
+    <span class="photo-count">${i + 1} / ${n}</span>
+    <a class="photo-close photo-back" href="${href(gallery)}" aria-label="Back to ${esc(gName)}">✕</a>
   </div>
+  ${
+    n > 1
+      ? `<nav class="filmstrip" aria-label="${esc(gName)} photos">${ids
+          .map((x) => `<a href="${href(imagePageFor.get(`${gallery}|${x}`))}"${x === id ? ' aria-current="true"' : ''}>${img(images[x], { sizes: '96px' })}</a>`)
+          .join('')}</nav>`
+      : ''
+  }
+  <p class="photo-hint">Use ← → keys or swipe to browse · <a href="${href(gallery)}" style="color:#e2b77f">Back to ${esc(gName)}</a></p>
+  ${next ? `<link rel="prefetch" href="${href(next)}">` : ''}${nextIm?.media ? `<link rel="prefetch" href="${imgUrl(nextIm, 1600)}" as="image">` : ''}
 </div></section>
+<script>(()=>{const q=(s)=>document.querySelector(s),p=q('a[rel=prev]'),n=q('a[rel=next]'),b=q('.photo-back');addEventListener('keydown',(e)=>{if(e.altKey||e.ctrlKey||e.metaKey||e.target.closest('input,textarea,select'))return;if(e.key==='ArrowLeft'&&p)location=p.href;else if(e.key==='ArrowRight'&&n)location=n.href;else if(e.key==='Escape'&&b)location=b.href});let x=null,y=null;const s=q('.photo-stage');s.addEventListener('touchstart',(e)=>{x=e.touches[0].clientX;y=e.touches[0].clientY},{passive:true});s.addEventListener('touchend',(e)=>{if(x===null)return;const dx=e.changedTouches[0].clientX-x,dy=e.changedTouches[0].clientY-y;x=null;if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)){const t=dx>0?p:n;if(t)location=t.href}},{passive:true});const c=q('.filmstrip [aria-current]');if(c)c.scrollIntoView({block:'nearest',inline:'center'})})()</script>
 <section class="section-tight"><div class="wrap narrow"><h1 style="font-size:clamp(1.6rem,3vw,2.2rem)">${esc(im.alt)}</h1><p>From <a href="${href(gallery)}">${esc(gName)}</a> by ${SITE.name}, Bangalore.</p></div></section>
 ${ctaBand({ topic: topicFor(gallery), number: groupOf.get(gallery)?.key === 'fitness' ? SITE.phone : undefined })}`;
   return {
