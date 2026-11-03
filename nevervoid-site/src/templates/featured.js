@@ -2,7 +2,7 @@
 // (data/pages.json) so the ranking content survives; layout is new.
 import { SITE, waLink } from '../config.js';
 import { yearsSince } from '../content-fixes.js';
-import { ogUrl, imgAbs as imgAbsOf, esc, img, href, ctaBand, faqHtml, faqLd, waIcon, crumbs, breadcrumbLd, abs } from '../lib.js';
+import { bookBtn, reserveAction, ogUrl, imgAbs as imgAbsOf, esc, img, href, ctaBand, faqHtml, faqLd, waIcon, crumbs, breadcrumbLd, abs } from '../lib.js';
 
 const gallery = (ctx, page, n = 24) =>
   `<div class="gallery">${ctx
@@ -61,7 +61,8 @@ function featureBlock(ctx, f) {
     <ul class="ticks">${f.bullets.map((x) => `<li>${x}</li>`).join('')}</ul>
     <dl class="facts">${f.facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join('')}</dl>
     <div class="actions">
-      <a class="btn ${f.tone === 'dark' ? 'btn-light' : 'btn-primary'}" href="${href(f.link)}">${esc(f.linkLabel)}</a>
+      ${f.book ? bookBtn(f.book, f.tone === 'dark' ? 'btn-light' : 'btn-primary') : ''}
+      <a class="btn ${f.book ? 'btn-ghost' : f.tone === 'dark' ? 'btn-light' : 'btn-primary'}" href="${href(f.link)}">${esc(f.linkLabel)}</a>
       <a class="btn btn-ghost" href="${waLink(f.topic)}" rel="noopener">${waIcon} WhatsApp</a>
     </div>
   </div>
@@ -122,7 +123,8 @@ ${featureBlock(ctx, {
   ],
   facts: [['Studio session', '₹5,899'], ['Delivery', '2 days'], ['Where', 'Banaswadi studio or on-site']],
   link: '/Headshot-photographer-bangalore',
-  linkLabel: 'Headshot sessions & pricing',
+  linkLabel: 'Sessions & pricing',
+  book: 'headshots',
   topic: 'professional headshots',
   images: hs,
 })}
@@ -162,6 +164,7 @@ ${featureBlock(ctx, {
   facts: [['Delivery', '4–5 days'], ['Where', 'Studio or your gym'], ['Style', 'Editorial, high-contrast']],
   link: '/Fitness-Photography',
   linkLabel: 'Fitness photoshoots',
+  book: 'fitness',
   topic: 'fitness photography',
   images: fit,
 })}
@@ -294,7 +297,7 @@ ${logoStrip(ctx, 'Teams and brands we have photographed')}
   </div>
   <div class="split" style="margin-top:48px;align-items:start">
     <div class="price-card"><span class="eyebrow">Corporate headshots</span><div class="price">₹8,899 <small>one look</small></div><p>One style with one set of costumes, such as a shirt and blazer. Two costumes or different looks, team sessions and on-location shoots at your premises are customised packages.</p><a class="btn btn-primary" href="${waLink('corporate headshot photography')}" rel="noopener">${waIcon} Get a quote</a></div>
-    <div class="price-card" style="background:var(--paper)"><span class="eyebrow">Individual headshots</span><div class="price">₹5,899 <small>studio session</small></div><p>Just you? Our studio headshot session includes every photo, your best 5 advanced-edited, and delivery in 2 days.</p><a class="btn btn-ghost" href="/Headshot-photographer-bangalore#pricing">Headshot sessions</a></div>
+    <div class="price-card" style="background:var(--paper)"><span class="eyebrow">Individual headshots</span><div class="price">₹5,899 <small>studio session</small></div><p>Just you? Our studio headshot session includes every photo, your best 5 advanced-edited, and delivery in 2 days.</p><div class="actions" style="margin-top:8px">${bookBtn('headshots', 'btn-primary')}<a class="btn btn-ghost" href="/Headshot-photographer-bangalore#pricing">Headshot sessions</a></div></div>
   </div>
 </div></section>
 
@@ -514,7 +517,8 @@ export function femaleFitness(ctx) {
     <p class="lede">Strong, confident photos of your training and your progress, shot in our Banaswadi studio or at your gym. For athletes, coaches, trainers and every woman proud of the work she has put in.</p>
     <ul class="badges"><li>Studio or your gym</li><li>Every pose guided</li><li>Black &amp; white or colour</li><li>Delivered in 4–5 days</li></ul>
     <div class="actions">
-      <a class="btn btn-light" href="${waLink('female fitness photoshoot')}" rel="noopener">${waIcon} Plan your shoot</a>
+      ${bookBtn('fitness', 'btn-light', 'Book your shoot')}
+      <a class="btn btn-ghost" href="${waLink('female fitness photoshoot')}" rel="noopener">${waIcon} WhatsApp</a>
       <a class="btn btn-ghost" href="#portfolio">See the portfolio</a>
     </div>
   </div>
@@ -598,7 +602,7 @@ export function femaleFitness(ctx) {
   <div class="section-head"><span class="eyebrow">FAQs</span><h2>Female fitness photoshoot questions</h2></div>
   ${faqHtml(faqs)}
 </div></section>
-${ctaBand({ heading: 'Show the strength you have built.', text: 'Tell us your goal and preferred dates. Studio in Banaswadi, or at your gym anywhere in Bangalore.', topic: 'female fitness photoshoot' })}`;
+${ctaBand({ heading: 'Show the strength you have built.', text: 'Tell us your goal and preferred dates. Studio in Banaswadi, or at your gym anywhere in Bangalore.', topic: 'female fitness photoshoot', book: 'fitness' })}`;
   return {
     path: P,
     title: page.title,
@@ -608,7 +612,7 @@ ${ctaBand({ heading: 'Show the strength you have built.', text: 'Tell us your go
     waTopic: 'female fitness photoshoot',
     ld: [
       breadcrumbLd(trail),
-      { '@type': 'Service', '@id': abs(P) + '#service', name: 'Female fitness photoshoot in Bangalore', serviceType: "Women's fitness photography", provider: { '@id': `${SITE.origin}/#business` }, areaServed: { '@type': 'City', name: SITE.locality } },
+      { '@type': 'Service', '@id': abs(P) + '#service', name: 'Female fitness photoshoot in Bangalore', serviceType: "Women's fitness photography", ...reserveAction('fitness'), provider: { '@id': `${SITE.origin}/#business` }, areaServed: { '@type': 'City', name: SITE.locality } },
       { '@type': 'ImageGallery', name: 'Female fitness photography in Bangalore', url: abs(P), image: ims.map((im) => ({ '@type': 'ImageObject', contentUrl: imgAbsOf(im), name: im.alt, creator: { '@id': `${SITE.origin}/#business` } })) },
       faqLd(faqs),
     ],
@@ -693,7 +697,8 @@ export function headshots(ctx) {
     <p class="lede">Rule the game with a great professional portrait headshot. Clean, confident portraits for LinkedIn, founders and teams, at our Bangalore studio or at your office.</p>
     <ul class="badges"><li>2-day delivery</li><li>No watermarks</li><li>Poses assisted</li><li>Comfort prioritised</li><li>Wardrobe guidance</li><li>Expression coaching</li></ul>
     <div class="actions">
-      <a class="btn btn-light" href="${waLink('professional headshots')}" rel="noopener">${waIcon} Book a headshot session</a>
+      ${bookBtn('headshots', 'btn-light', 'Book a headshot session')}
+      <a class="btn btn-ghost" href="${waLink('professional headshots')}" rel="noopener">${waIcon} WhatsApp</a>
       <a class="btn btn-ghost" href="#pricing">Pricing ₹5,899</a>
     </div>
   </div>
@@ -725,7 +730,7 @@ export function headshots(ctx) {
         <li>100% satisfaction guarantee: re-edit if needed</li>
       </ul>
       <p class="meta"><strong>Payment terms:</strong> 50% transfer to book the slot · 40% on location post the shoot · 10% to receive all the photos from us.</p>
-      <a class="btn btn-primary" href="${waLink('professional headshots')}" rel="noopener">${waIcon} Check availability</a>
+      <div class="actions" style="margin-top:8px">${bookBtn('headshots', 'btn-primary', 'Book your session')}<a class="btn btn-ghost" href="${waLink('professional headshots')}" rel="noopener">${waIcon} Ask on WhatsApp</a></div>
     </div>
     <div class="price-card" style="background:var(--paper)">
       <span class="eyebrow">Corporate &amp; team headshots</span>
@@ -771,7 +776,7 @@ export function headshots(ctx) {
   <div class="section-head"><span class="eyebrow">FAQs</span><h2>Frequently asked questions</h2></div>
   ${faqHtml(faqs)}
 </div></section>
-${ctaBand({ heading: 'Ready for a headshot that works for you?', text: 'Studio sessions in Bangalore from ₹5,899, or a portable studio at your office for the whole team.', topic: 'professional headshots' })}`;
+${ctaBand({ heading: 'Ready for a headshot that works for you?', text: 'Studio sessions in Bangalore from ₹5,899, or a portable studio at your office for the whole team.', topic: 'professional headshots', book: 'headshots' })}`;
   return {
     path: P,
     title: page.title,
@@ -789,6 +794,7 @@ ${ctaBand({ heading: 'Ready for a headshot that works for you?', text: 'Studio s
         provider: { '@id': `${SITE.origin}/#business` },
         areaServed: { '@type': 'City', name: SITE.locality },
         offers: { '@type': 'Offer', name: 'Headshot photograph session (studio)', price: '5899', priceCurrency: 'INR', url: abs(P) },
+        ...reserveAction('headshots'),
       },
       faqLd(faqs),
     ],
@@ -826,7 +832,8 @@ export function fitness(ctx) {
     <p class="lede">Studio and on-site gym photoshoots that showcase your dedication. Whether you're a fitness coach, bodybuilder, or simply proud of your transformation, we help you capture it professionally.</p>
     <ul class="badges"><li>Studio or your gym</li><li>High-contrast lighting</li><li>Every pose guided</li><li>Hero &amp; motion shots</li></ul>
     <div class="actions">
-      <a class="btn btn-light" href="${waLink('fitness photography', n)}" rel="noopener">${waIcon} Book a fitness shoot</a>
+      ${bookBtn('fitness', 'btn-light', 'Book a fitness shoot')}
+      <a class="btn btn-ghost" href="${waLink('fitness photography', n)}" rel="noopener">${waIcon} WhatsApp</a>
       <a class="btn btn-ghost" href="#portfolio">See the portfolio</a>
     </div>
   </div>
@@ -891,7 +898,7 @@ export function fitness(ctx) {
   <div class="section-head"><span class="eyebrow">FAQs</span><h2>Fitness photoshoot questions</h2></div>
   ${faqHtml(faqs)}
 </div></section>
-${ctaBand({ heading: 'Show the work you put in.', text: 'Studio in Banaswadi or at your gym anywhere in Bangalore. Tell us your goal and preferred dates.', topic: 'fitness photography', number: n })}`;
+${ctaBand({ heading: 'Show the work you put in.', text: 'Studio in Banaswadi or at your gym anywhere in Bangalore. Tell us your goal and preferred dates.', topic: 'fitness photography', number: n, book: 'fitness' })}`;
   return {
     path: P,
     title: page.title,
@@ -909,6 +916,7 @@ ${ctaBand({ heading: 'Show the work you put in.', text: 'Studio in Banaswadi or 
         '@id': abs(P) + '#service',
         name: 'Gym & fitness photoshoot in Bangalore',
         serviceType: 'Fitness photography',
+        ...reserveAction('fitness'),
         provider: { '@id': `${SITE.origin}/#business` },
         areaServed: { '@type': 'City', name: SITE.locality },
       },

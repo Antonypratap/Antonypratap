@@ -1,4 +1,4 @@
-import { SITE, waLink, fullAddress, mapsLink } from './config.js';
+import { SITE, waLink, fullAddress, mapsLink, BOOKING } from './config.js';
 
 export const esc = (s = '') =>
   String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -179,10 +179,17 @@ function footer() {
 </footer>`;
 }
 
-export function ctaBand({ heading = 'Ready when you are.', text = 'Tell us what the photos are for, and we will plan the shoot around it.', topic = 'a photoshoot', number } = {}) {
+export const CAL_ICON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M8 14h2M14 14h2M8 17h2"/></svg>';
+// "Book online" button for a Cal.com booking page: kind = 'headshots' | 'fitness'.
+export const bookBtn = (kind, cls = 'btn-light', label = 'Book online') =>
+  BOOKING[kind] ? `<a class="btn ${cls}" href="${BOOKING[kind]}" rel="noopener">${CAL_ICON} ${label}</a>` : '';
+export const reserveAction = (kind) => (BOOKING[kind] ? { potentialAction: { '@type': 'ReserveAction', target: { '@type': 'EntryPoint', urlTemplate: BOOKING[kind], actionPlatform: ['https://schema.org/DesktopWebPlatform', 'https://schema.org/MobileWebPlatform'] } } } : {});
+
+export function ctaBand({ heading = 'Ready when you are.', text = 'Tell us what the photos are for, and we will plan the shoot around it.', topic = 'a photoshoot', number, book } = {}) {
   return `<section class="section-tight"><div class="wrap"><div class="cta-band">
   <div><h2>${esc(heading)}</h2><p>${esc(text)}</p></div>
-  <div class="actions" style="margin:0"><a class="btn btn-light" href="${waLink(topic, number)}" rel="noopener">${WA_ICON} Chat on WhatsApp</a><a class="btn btn-ghost" href="mailto:${SITE.email}">Email us</a></div>
+  <div class="actions" style="margin:0">${book ? bookBtn(book) : ''}<a class="btn ${book ? 'btn-ghost' : 'btn-light'}" href="${waLink(topic, number)}" rel="noopener">${WA_ICON} ${book ? 'WhatsApp' : 'Chat on WhatsApp'}</a><a class="btn btn-ghost" href="mailto:${SITE.email}">Email us</a></div>
   </div></div></section>`;
 }
 

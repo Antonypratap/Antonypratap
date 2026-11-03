@@ -28,3 +28,9 @@ export const fullAddress = () => `${SITE.streetAddress}, ${SITE.locality}, ${SIT
 export const mapsLink = () => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${SITE.studioName}, ${fullAddress()}`)}`;
 export const waLink = (topic, number = SITE.phone) =>
   `https://wa.me/${number}?text=${encodeURIComponent(`Hi, I’m interested in ${topic} in Bangalore`)}`;
+
+// Online booking (Cal.com), owner, 3 Nov 2026.
+export const BOOKING = {
+  headshots: 'https://cal.com/antony-pratap/headshot-photography',
+  fitness: 'https://cal.com/antony-pratap/fitness-photography-bangalore',
+};

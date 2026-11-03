@@ -9,7 +9,7 @@ import path from 'node:path';
 import { marked } from 'marked';
 import { SITE, waLink, fullAddress, mapsLink } from '../src/config.js';
 import { applyFixes, REMOVED, ALT_OVERRIDES } from '../src/content-fixes.js';
-import { layout, esc, img, href, abs, crumbs, breadcrumbLd, ctaBand, imgAbs, imgUrl, ogUrl, waIcon } from '../src/lib.js';
+import { bookBtn, layout, esc, img, href, abs, crumbs, breadcrumbLd, ctaBand, imgAbs, imgUrl, ogUrl, waIcon } from '../src/lib.js';
 import { home, headshots, corporate, branding, fitness, femaleFitness, clients, postCards } from '../src/templates/featured.js';
 import { resolve as resolveRedirect } from '../src/redirects.js';
 import { GROUPS, ARTICLES, LEGAL, KEYWORD_REDIRECTS, LEGACY, CASE_COLLISIONS } from '../src/site-map.js';
@@ -219,6 +219,14 @@ function relatedHtml(p) {
   return html;
 }
 
+// Which Cal.com booking page fits a page: headshot pages -> headshots, fitness pages -> fitness.
+function bookFor(p) {
+  const k = groupOf.get(p)?.key;
+  if (k === 'headshots') return 'headshots';
+  if (k === 'fitness' && /fitness|cult/i.test(p)) return 'fitness';
+  return undefined;
+}
+
 function topicFor(p) {
   const g = groupOf.get(p);
   return g?.topic ?? 'a photoshoot';
@@ -242,12 +250,12 @@ function genericPage(p) {
   ${isArticle ? '<span class="eyebrow">Journal</span>' : groupOf.get(p) ? `<span class="eyebrow">${esc(groupOf.get(p).name)}</span>` : ''}
   <h1>${esc(h1)}</h1>
   ${first ? `<p class="lede">${first.html}</p>` : ''}
-  ${isLegal ? '' : `<div class="actions"><a class="btn btn-primary" href="${waLink(topicFor(p), fitnessy ? SITE.phone : undefined)}" rel="noopener">${waIcon} Enquire on WhatsApp</a></div>`}
+  ${isLegal ? '' : `<div class="actions">${bookFor(p) ? bookBtn(bookFor(p), 'btn-primary') : ''}<a class="btn ${bookFor(p) ? 'btn-ghost' : 'btn-primary'}" href="${waLink(topicFor(p), fitnessy ? SITE.phone : undefined)}" rel="noopener">${waIcon} Enquire on WhatsApp</a></div>`}
 </div></section>
 ${prose ? `<section class="section-tight"><div class="wrap"><div class="prose">${prose}</div></div></section>` : ''}
 ${ims.length ? `<section class="section-tight"><div class="wrap">${galleryHtml(p, ims)}</div></section>` : ''}
 ${relatedHtml(p)}
-${isLegal ? '' : ctaBand({ topic: topicFor(p), number: fitnessy ? SITE.phone : undefined })}`;
+${isLegal ? '' : ctaBand({ topic: topicFor(p), number: fitnessy ? SITE.phone : undefined, book: bookFor(p) })}`;
   const desc = describe(p);
   const ld = [breadcrumbLd(trail)];
   if (isArticle)
@@ -319,7 +327,7 @@ function imagePage({ path: p, id, gallery }) {
 </div></section>
 <script>(()=>{const q=(s)=>document.querySelector(s),p=q('a[rel=prev]'),n=q('a[rel=next]'),b=q('.photo-back');addEventListener('keydown',(e)=>{if(e.altKey||e.ctrlKey||e.metaKey||e.target.closest('input,textarea,select'))return;if(e.key==='ArrowLeft'&&p)location=p.href;else if(e.key==='ArrowRight'&&n)location=n.href;else if(e.key==='Escape'&&b)location=b.href});let x=null,y=null;const s=q('.photo-stage');s.addEventListener('touchstart',(e)=>{x=e.touches[0].clientX;y=e.touches[0].clientY},{passive:true});s.addEventListener('touchend',(e)=>{if(x===null)return;const dx=e.changedTouches[0].clientX-x,dy=e.changedTouches[0].clientY-y;x=null;if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)){const t=dx>0?p:n;if(t)location=t.href}},{passive:true});const c=q('.filmstrip [aria-current]');if(c)c.scrollIntoView({block:'nearest',inline:'center'})})()</script>
 <section class="section-tight"><div class="wrap narrow"><h1 style="font-size:clamp(1.6rem,3vw,2.2rem)">${esc(im.alt)}</h1><p>From <a href="${href(gallery)}">${esc(gName)}</a> by ${SITE.name}, Bangalore.</p></div></section>
-${ctaBand({ topic: topicFor(gallery), number: groupOf.get(gallery)?.key === 'fitness' ? SITE.phone : undefined })}`;
+${ctaBand({ topic: topicFor(gallery), number: groupOf.get(gallery)?.key === 'fitness' ? SITE.phone : undefined, book: bookFor(gallery) })}`;
   return {
     path: p,
     title,
@@ -401,7 +409,7 @@ ${ims[0] ? `<div class="wrap narrow" style="margin-top:32px">${img(ims[0], { eag
 </article>
 ${ims.length > 1 ? `<section class="section-tight"><div class="wrap"><div class="strip">${ims.slice(1, 9).map((im) => `<a href="${href(imagePageFor.get(`${post.imagePage}|${im.id}`) ?? post.imagePage)}">${img(im, { sizes: '260px' })}</a>`).join('')}</div></div></section>` : ''}
 ${rel.length ? `<section class="section-tight"><div class="wrap"><h2 style="font-size:1.4rem">Related</h2><ul class="chips">${rel.map((r) => `<li><a href="${href(r)}">${esc(short(byPath.get(r).title))}</a></li>`).join('')}</ul></div></section>` : ''}
-${ctaBand({ topic: fit ? 'fitness photography' : 'professional headshots', number: fit ? SITE.phone : undefined })}`;
+${ctaBand({ topic: fit ? 'fitness photography' : 'professional headshots', number: fit ? SITE.phone : undefined, book: fit ? 'fitness' : post.category === 'Headshots' ? 'headshots' : undefined })}`;
   return {
     path: post.path,
     title: `${post.title} | Nevervoid Photography`,
@@ -422,8 +430,9 @@ ${ctaBand({ topic: fit ? 'fitness photography' : 'professional headshots', numbe
 function contactPage() {
   const body = `
 <section class="page-hero"><div class="wrap">${crumbs([['/contact', 'Contact']])}<span class="eyebrow">Book a session</span><h1>Contact Nevervoid Photography</h1><p class="lede">The quickest way to book is WhatsApp. Tell us what the photos are for, your preferred dates, and whether you'd like the studio or on-site.</p>
-<div class="actions"><a class="btn btn-primary" href="${waLink('a photoshoot')}" rel="noopener">${waIcon} WhatsApp ${SITE.phoneDisplay}</a><a class="btn btn-ghost" href="tel:+${SITE.phone}">Call ${SITE.phoneDisplay}</a></div></div></section>
+<div class="actions">${bookBtn('headshots', 'btn-primary', 'Book a headshot')}${bookBtn('fitness', 'btn-primary', 'Book a fitness shoot')}<a class="btn btn-ghost" href="${waLink('a photoshoot')}" rel="noopener">${waIcon} WhatsApp ${SITE.phoneDisplay}</a><a class="btn btn-ghost" href="tel:+${SITE.phone}">Call ${SITE.phoneDisplay}</a></div></div></section>
 <section class="section-tight"><div class="wrap"><div class="cards">
+  <div class="card"><div class="card-body"><h2 style="font-size:1.3rem">Book online</h2><p>Pick a date and time that suits you.</p><div class="actions" style="margin-top:14px;flex-direction:column;align-items:flex-start">${bookBtn('headshots', 'btn-primary btn-sm', 'Headshot session')}${bookBtn('fitness', 'btn-primary btn-sm', 'Fitness photoshoot')}</div></div></div>
   <div class="card"><div class="card-body"><h2 style="font-size:1.3rem">Phone &amp; WhatsApp</h2><p><a href="tel:+${SITE.phone}">${SITE.phoneDisplay}</a></p><p style="margin-top:12px">Headshots, fitness shoots, portraits and every other enquiry.</p></div></div>
   <div class="card"><div class="card-body"><h2 style="font-size:1.3rem">Email</h2><p><a href="mailto:${SITE.email}">${SITE.email}</a></p></div></div>
   <div class="card"><div class="card-body"><h2 style="font-size:1.3rem">Studio</h2><address style="font-style:normal"><strong>${esc(SITE.studioName)}</strong><br>${esc(fullAddress())}</address><p style="margin-top:12px"><a href="${mapsLink()}" rel="noopener">Open in Google Maps →</a></p><p>On-site sessions anywhere in ${SITE.localityAlt}.</p></div></div>
