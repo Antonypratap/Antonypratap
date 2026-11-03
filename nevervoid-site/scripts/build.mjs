@@ -474,11 +474,39 @@ const fixLinks = (html) =>
     const out = encodeURI(cur);
     return out === p ? m : `href="${out}${rest}"`;
   });
+// Card grids: if every photo in a grid has a similar shape, photos show in
+// full (natural aspect). If shapes are mixed (portrait + landscape), the grid
+// gets "cards-uniform": one consistent portrait frame, so rows stay aligned.
+function uniformCards(html) {
+  let out = '';
+  let i = 0;
+  const open = /<div class="cards([^"]*)">/g;
+  let m;
+  while ((m = open.exec(html))) {
+    let depth = 0;
+    let j = m.index;
+    const tag = /<\/?div\b/g;
+    tag.lastIndex = j;
+    let t;
+    while ((t = tag.exec(html))) {
+      depth += t[0] === '<div' ? 1 : -1;
+      if (depth === 0) break;
+    }
+    const end = t ? t.index : html.length;
+    const block = html.slice(m.index, end);
+    const ratios = [...block.matchAll(/<img\b[^>]*\swidth="(\d+)" height="(\d+)"/g)].map((r) => +r[1] / +r[2]);
+    const mixed = ratios.length > 1 && Math.max(...ratios) / Math.min(...ratios) > 1.15;
+    out += html.slice(i, m.index) + (mixed ? `<div class="cards${m[1]} cards-uniform">` : m[0]);
+    i = m.index + m[0].length;
+    open.lastIndex = i;
+  }
+  return out + html.slice(i);
+}
 const fileFor = (p) => path.join(DIST, p === '/' ? 'index.html' : decodeURI(p).slice(1) + '.html');
 const write = (pg) => {
   const f = fileFor(pg.path);
   fs.mkdirSync(path.dirname(f), { recursive: true });
-  fs.writeFileSync(f, fixLinks(layout(pg)));
+  fs.writeFileSync(f, uniformCards(fixLinks(layout(pg))));
 };
 for (const pg of [...out, ...imgOut, notFound()]) write(pg);
 

@@ -1453,3 +1453,50 @@ p {
 .plan-cards .card-body h3 {
   font-size: 1.15rem;
 }
+
+/* ================= v4: editorial photo cards =================
+   Cards with a photo show the WHOLE photo at its natural shape, with the
+   text set beneath it on the page (no white box). Text-only cards keep
+   their box. */
+.cards {
+  align-items: start;
+}
+.card:has(img) {
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  overflow: visible;
+}
+.card:has(img):hover {
+  transform: none;
+}
+.card:has(img) img {
+  aspect-ratio: auto;
+  height: auto;
+  object-fit: initial;
+  border-radius: 12px;
+  transition: opacity 0.2s ease;
+}
+a.card:has(img):hover img {
+  opacity: 0.9;
+}
+.card:has(img) .card-body {
+  padding: 16px 2px 0;
+}
+.card:has(img) h3 {
+  font-size: 1.25rem;
+}
+a.card:has(img):hover h3 {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
+}
+.mini {
+  aspect-ratio: 2/3;
+}
+
+.cards-uniform .card:has(img) img {
+  aspect-ratio: 4/5;
+  object-fit: cover;
+  object-position: center 30%;
+}

@@ -33,6 +33,9 @@ export function fixRules(years) {
     { re: /^Corporate photoshoot - Nevervoid Photography - Bangalore$/, to: 'Corporate Photoshoot in Bangalore | Team Headshots, Events & Offices - Nevervoid Photography', paths: ['/Corporate-photoshoot'] },
     // ---- female fitness (owner, 3 Nov 2026: "female fitness", not "bikini"; URL kept for SEO) ----
     { re: /^Fitness Bikini Photoshoots - Nevervoid Photography - Bangalore$/, to: "Female Fitness Photoshoot in Bangalore | Women's Gym Photography - Nevervoid Photography", paths: ['/Fitness-bikini-photoshoots'] },
+    // ---- cancellation & refunds (owner, 3 Nov 2026: state the final payment) ----
+    { re: /40% has to be made on location as soon as the photoshoot session is complete\.$/, to: '40% has to be made on location as soon as the photoshoot session is complete. The remaining 10% is paid to receive the edited photos, which completes the project.', paths: ['/Cancelation-and-refunds'] },
+    { re: /^T he photographer/, to: 'The photographer', paths: ['/Cancelation-and-refunds'] },
     // ---- delivery times ----
     { re: /You will get your photos the next day via a link/g, to: 'You will get your photos in 2 days via a link', paths: ['/Headshot-photographer-bangalore'] },
     { re: /48-hour delivery/g, to: '2-day delivery', paths: ['/Headshot-photographer-bangalore'] },
