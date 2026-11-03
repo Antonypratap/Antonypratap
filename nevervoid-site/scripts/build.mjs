@@ -313,7 +313,7 @@ function imagePage({ path: p, id, gallery }) {
     ${prev ? `<a class="photo-arrow photo-prev" href="${href(prev)}" rel="prev" aria-label="Previous photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a>` : ''}
     ${next ? `<a class="photo-arrow photo-next" href="${href(next)}" rel="next" aria-label="Next photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></a>` : ''}
     <span class="photo-count">${i + 1} / ${n}</span>
-    <a class="pin-btn photo-pin" href="${esc(pinUrl(abs(p), imgAbs(im), `${im.alt} | ${SITE.name}, Bangalore`))}" target="_blank" rel="noopener" aria-label="Save to Pinterest">${PIN_MARK}Save</a>
+    <a class="pin-btn photo-pin" href="${esc(pinUrl(abs(p), imgAbs(im), `${im.alt} | ${SITE.name}, Bangalore`))}" target="_blank" rel="noopener">${PIN_MARK}Save<span class="sr-only"> to Pinterest</span></a>
     <a class="photo-close photo-back" href="${href(gallery)}" aria-label="Back to ${esc(gName)}">✕</a>
   </div>
   ${
@@ -540,7 +540,7 @@ function pinButtons(html) {
       const big = set ? set.split(',').map((x) => x.trim().split(' ')[0]).at(-1) : /src="([^"]+)"/.exec(imgTag)?.[1];
       const alt = decodeEnt(/alt="([^"]*)"/.exec(imgTag)?.[1] ?? '');
       const url = pinUrl(SITE.origin + h, SITE.origin + big, `${alt} | ${SITE.name}, Bangalore`);
-      return `<span class="g-item"><a href="${h}">${imgTag}</a><a class="pin-btn" href="${esc(url)}" target="_blank" rel="noopener" aria-label="Save to Pinterest">${PIN_MARK}Save</a></span>`;
+      return `<span class="g-item"><a href="${h}">${imgTag}</a><a class="pin-btn" href="${esc(url)}" target="_blank" rel="noopener">${PIN_MARK}Save<span class="sr-only"> to Pinterest</span></a></span>`;
     })}</div>`,
   );
 }

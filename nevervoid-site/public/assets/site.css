@@ -1,3 +1,29 @@
+/* Self-hosted fonts (SIL Open Font License, see /fonts/LICENSE-*.txt).
+   Variable files: Fraunces (weight + optical size), Inter (weight). */
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(/fonts/fraunces-latin-opsz-normal.woff2) format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: 'Fraunces';
+  font-style: italic;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(/fonts/fraunces-latin-opsz-italic.woff2) format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(/fonts/inter-latin-wght-normal.woff2) format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
 /* Nevervoid Photography: editorial, image-first, fast. No framework. */
 :root {
   --ink: #141210;
@@ -1888,4 +1914,97 @@ a.icon-btn:hover {
   left: 0;
   opacity: 1;
   transform: none;
+}
+
+.social-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+.social-link {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: #e9e2d8;
+  border: 1px solid #3a352f;
+}
+.social-link svg {
+  width: 18px;
+  height: 18px;
+}
+.social-link:hover {
+  background: #e9e2d8;
+  color: var(--ink);
+  text-decoration: none !important;
+}
+.review-link {
+  margin-left: 6px;
+  font-size: 0.88rem;
+  color: #e2b77f !important;
+}
+
+/* ================= a11y: contrast (WCAG AA) ================= */
+:root {
+  --muted: #5f574f;
+}
+.eyebrow {
+  color: var(--accent-ink);
+}
+.hero .eyebrow,
+.hero-x .eyebrow,
+.dark .eyebrow,
+.feature-x.dark .eyebrow,
+.photo-view .eyebrow {
+  color: #e2b77f;
+}
+.wwh-label,
+.section-head .wwh-label {
+  color: var(--accent-ink);
+  opacity: 1;
+}
+.dark .section-head .wwh-label,
+.dark .wwh-label {
+  color: #e2b77f;
+}
+.feature-num {
+  color: var(--accent-ink);
+}
+.hero .crumbs a,
+.hero .crumbs,
+.photo-view .crumbs a,
+.photo-view .crumbs {
+  color: #d9d1c5;
+}
+.site-footer p a,
+.footer-subscribe a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.pin-glyph {
+  width: 16px;
+  height: 16px;
+}
+.gallery a.pin-btn {
+  padding: 7px 12px 7px 10px;
+}
+.site-footer,
+.footer-grid h2 {
+  color: #c9c0b4;
+}
+.footer-grid h2 {
+  color: #a39a8e;
+}
+
+.brand-mark[data-l]::before {
+  content: attr(data-l);
+}
+.feature-x.dark .facts dt {
+  color: #a9a094;
+}
+.site-footer .logo span {
+  color: #a39a8e;
 }

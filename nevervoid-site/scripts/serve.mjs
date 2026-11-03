@@ -5,6 +5,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { resolve } from '../src/redirects.js';
+import zlib from 'node:zlib';
 
 const DIST = path.join(import.meta.dirname, '..', 'dist');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json', '.xml': 'application/xml', '.txt': 'text/plain', '.svg': 'image/svg+xml' };
@@ -29,7 +30,13 @@ export function createServer() {
     for (const c of candidates) {
       const f = path.join(DIST, c);
       if (f.startsWith(DIST) && fs.existsSync(f) && fs.statSync(f).isFile()) {
-        res.writeHead(200, { 'Content-Type': TYPES[path.extname(f)] ?? 'application/octet-stream' });
+        const type = TYPES[path.extname(f)] ?? 'application/octet-stream';
+        // Compress text like Cloudflare does in production.
+        if (/text|javascript|json|xml|svg/.test(type) && /gzip/.test(req.headers['accept-encoding'] ?? '')) {
+          res.writeHead(200, { 'Content-Type': type, 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' });
+          return fs.createReadStream(f).pipe(zlib.createGzip()).pipe(res);
+        }
+        res.writeHead(200, { 'Content-Type': type });
         return fs.createReadStream(f).pipe(res);
       }
     }

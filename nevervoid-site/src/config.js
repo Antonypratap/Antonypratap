@@ -19,7 +19,21 @@ export const SITE = {
   studioName: 'Nevervoid photography creative studio',
   streetAddress: 'No 54, ground floor, 10th A Main, 100 Feet Rd, HRBR Layout 1st Block, Balaji Layout, Subbaiahnapalya, Banaswadi',
   postalCode: '560043',
-  sameAs: [], // filled from data/site-links.json (links found on the live site)
+  // Profiles linked from the live nevervoid.com (found in the crawl).
+  googleBusiness: 'https://g.page/nevervoidphotography',
+  social: [
+    ['Instagram', 'https://www.instagram.com/nevervoidphotography'],
+    ['Instagram (headshots)', 'https://www.instagram.com/headshot.photographer'],
+    ['Facebook', 'https://www.facebook.com/nevervoidphotography'],
+    ['X', 'https://x.com/nevervoid'],
+  ],
+  sameAs: [
+    'https://g.page/nevervoidphotography',
+    'https://www.instagram.com/nevervoidphotography',
+    'https://www.instagram.com/headshot.photographer',
+    'https://www.facebook.com/nevervoidphotography',
+    'https://x.com/nevervoid',
+  ],
   // Set by the build from data/media.json (the Nevervoid logo image, i-LPQ9Jzq).
   defaultOgImage: null,
 };

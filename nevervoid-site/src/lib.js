@@ -109,9 +109,7 @@ ${description ? `<meta property="og:description" content="${esc(description)}">`
 <meta name="geo.region" content="IN-KA">
 <meta name="geo.placename" content="${SITE.locality}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,500&family=Inter:wght@400;500;600&display=swap">
+<link rel="preload" href="/fonts/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="${SITE.cssHref ?? '/assets/site.css'}">
 <script type="application/ld+json">${JSON.stringify(graph).replace(/</g, '\\u003c')}</script>
 </head>
@@ -144,6 +142,9 @@ function footer() {
         <a class="logo" href="/" style="color:#f3eee7">NEVERVOID<span>PHOTOGRAPHY · BANGALORE</span></a>
         <p style="margin-top:18px;max-width:34ch">Professional photography in Bangalore since ${SITE.foundingYear}: headshots, fitness, personal branding, maternity and family portraits.</p>
         ${iconLinks({ map: true, cls: 'on-dark' })}
+        <p class="social-row">${SITE.social
+          .map(([n, u]) => `<a class="social-link" href="${u}" rel="noopener me" aria-label="${esc(n)}" title="${esc(n)}">${n.startsWith('Instagram') ? IG_ICON : n === 'Facebook' ? '<span class="brand-mark" data-l="f" aria-hidden="true"></span>' : '<span class="brand-mark" data-l="X" aria-hidden="true"></span>'}</a>`)
+          .join('')}${SITE.googleBusiness ? `<a class="review-link" href="${SITE.googleBusiness}" rel="noopener">★ Review us on Google</a>` : ''}</p>
         <address style="font-style:normal;max-width:36ch"><a href="${mapsLink()}" rel="noopener">${esc(SITE.studioName)}<br>${esc(fullAddress())}</a></address>
       </div>
       ${col('Headshots', [
@@ -191,6 +192,7 @@ export const PHONE_ICON = ICON('<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 
 export const MAIL_ICON = ICON('<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/>');
 export const PIN_ICON = ICON('<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>');
 // Compact round icon buttons for secondary contact channels.
+export const IG_ICON = ICON('<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/>');
 export function iconLinks({ topic = 'a photoshoot', number, whatsapp = true, phone = true, email = true, map = false, cls = '' } = {}) {
   const b = (href, label, icon, ext) => `<a class="icon-btn" href="${href}"${ext ? ' rel="noopener"' : ''} aria-label="${label}" title="${label}">${icon}</a>`;
   return `<span class="icon-links${cls ? ' ' + cls : ''}">${whatsapp ? b(waLink(topic, number), 'Chat on WhatsApp', WA_ICON, true) : ''}${phone ? b(`tel:+${SITE.phone}`, `Call ${SITE.phoneDisplay}`, PHONE_ICON) : ''}${email ? b(`mailto:${SITE.email}`, `Email ${SITE.email}`, MAIL_ICON) : ''}${map ? b(mapsLink(), 'Directions to the studio', PIN_ICON, true) : ''}</span>`;
@@ -211,10 +213,11 @@ export function ctaBand({ heading = 'Ready when you are.', text = 'Tell us what 
 // ---------- sharing ----------
 export const SHARE_ICON = ICON('<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/>');
 export const LINK_ICON = ICON('<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>');
-const brand = (letters, cls) => `<span class="brand-mark ${cls}" aria-hidden="true">${letters}</span>`;
+// Letter marks are drawn with CSS (data-l) so they are not read as text.
+const brand = (letters, cls) => `<span class="brand-mark ${cls}" data-l="${letters}" aria-hidden="true"></span>`;
 export const pinUrl = (pageAbs, mediaAbs, description) =>
   `https://www.pinterest.com/pin/create/button/?url=${encodeURIComponent(pageAbs)}&media=${encodeURIComponent(mediaAbs)}&description=${encodeURIComponent(description)}`;
-export const PIN_MARK = brand('P', 'pinterest');
+export const PIN_MARK = `<svg class="pin-glyph" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.8V5h6v5.8l2 2.2v2H7v-2Z"/><path d="M8 5h8"/></svg>`;
 // A share row: native share sheet (phones), WhatsApp, Facebook, LinkedIn, X,
 // Pinterest (when there is an image), email and copy-link.
 export function shareRow({ path, title, image, dark = false, label = 'Share' }) {
