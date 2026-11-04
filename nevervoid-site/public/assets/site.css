@@ -2008,3 +2008,11 @@ a.icon-btn:hover {
 .site-footer .logo span {
   color: #a39a8e;
 }
+
+/* Phones: no Save buttons in gallery grids (they cluttered every tile).
+   Tapping a photo opens its page, which has its own Save and share. */
+@media (hover: none) {
+  .gallery a.pin-btn {
+    display: none;
+  }
+}

@@ -63,6 +63,22 @@ for (const [id, im] of Object.entries(images)) {
   im.alt = (ALT_OVERRIDES[id] ?? altFor(im, im.pages[0])).replace(/fitness bikini/gi, 'female fitness').replace(/bikini fitness/gi, 'female fitness').replace(/bikini/gi, 'female');
 }
 
+// ---------- graphics vs photos ----------
+// Galleries are for photographs. Graphics (price lists, process charts,
+// review cards, logos, mockups, screenshots) only show where they are the
+// content. Checked by eye on 4 Nov 2026.
+const NEVER_IN_GALLERIES = new Set(['zsWsPFn', 'vVzb6NJ', 'BFfQXs5', 'SW2FwDC']); // price lists, package collage, process graphic
+const REVIEW_PAGES = new Set(['/Reviews', '/Testimonials', '/Portrait-headshot-photography-reviews']);
+const FRAME_MOCKUPS = new Set(['kDP2mZL', 'mRXnMtG', '7WV2c3D', 'brbbbvc']);
+function allowedOn(im, page) {
+  if (NEVER_IN_GALLERIES.has(im.id)) return false;
+  if (/review|testimonial/i.test(im.file)) return REVIEW_PAGES.has(page);
+  if (/logo/i.test(im.file)) return page === '/Clients';
+  if (/screenshot/i.test(im.file)) return page === '/Press';
+  if (FRAME_MOCKUPS.has(im.id)) return /frame|framing|printing|Framed/i.test(page);
+  return true;
+}
+
 // ---------- image pages ----------
 const imagePageFor = new Map(); // `${galleryPath}|${id}` -> image page path
 const imagePages = [];
@@ -70,7 +86,7 @@ for (const p of pages) {
   for (const ip of p.imagePages ?? []) {
     const id = ip.split('/i-').pop();
     const gallery = ip.slice(0, ip.lastIndexOf('/i-')) || '/';
-    if (!images[id]?.media) continue; // not selected: the old URL 301s to its gallery
+    if (!images[id]?.media || !allowedOn(images[id], gallery)) continue; // not shown here: the old URL 301s to its gallery
     imagePageFor.set(`${gallery}|${id}`, ip);
     if (!imagePages.some((x) => x.path === ip)) imagePages.push({ path: ip, id, gallery });
   }
@@ -81,7 +97,7 @@ const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const ctx = {
   page: (p) => byPath.get(p),
   image: (id) => (images[id]?.media ? images[id] : undefined),
-  imagesOf: (p) => (byPath.get(p)?.images ?? []).map((id) => images[id]).filter((im) => im?.media),
+  imagesOf: (p) => (byPath.get(p)?.images ?? []).map((id) => images[id]).filter((im) => im?.media && allowedOn(im, p)),
   imagePageOf: (gallery, id) => imagePageFor.get(`${gallery}|${id}`),
   // blocks strictly between the block whose text starts with `start` and the one starting with `end`
   blocksAfter(p, start, end) {
