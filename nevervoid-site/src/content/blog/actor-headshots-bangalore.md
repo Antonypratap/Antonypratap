@@ -56,4 +56,4 @@ Actors and models often need both a headshot and a wider portfolio with full-len
 
 ## Book your actor headshots
 
-See what is included in our [headshot photography sessions in Bangalore](/Headshot-photographer-bangalore), including grey and white backgrounds, guided posing and delivery in 2 days. Then book online or message us on WhatsApp to plan your looks.
+See what is included in our [headshot photography sessions in Bangalore](/Headshot-photographer-bangalore), including grey and white backgrounds, guided posing and delivery in {{headshot.delivery}}. Then book online or message us on WhatsApp to plan your looks.

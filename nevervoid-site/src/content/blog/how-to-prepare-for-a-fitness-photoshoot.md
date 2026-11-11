@@ -31,14 +31,14 @@ We shoot at our studio or on-site at your gym. The **studio** gives full lightin
 
 ## 4. Outfits and kit
 
-- Bring **3–4 outfit options**: fitted training wear, a branded set if you have one, and one darker, solid outfit.
+- Bring **4–5 outfits** for your outfit changes: fitted training wear, a branded set if you have one, and one darker, solid outfit.
 - Solid colours photograph better than heavy patterns. Check for pilling and loose threads.
 - Bring your own props if they're part of your story: gloves, a belt, bands, a yoga mat.
-- Bring a towel, water, a snack, and a comfortable layer to wear between sets.
+- Also bring {{fitness.bringKit}} (our studio checklist), plus a comfortable layer to wear between sets.
 
 ## 5. Grooming and skin
 
-Trim or style hair a few days before. Moisturise in the days before the shoot, but skip heavy oil on the day unless we have discussed the look. A light sheen is easier to control under studio lights.
+Trim or style hair a few days before. Moisturise in the days before the shoot, and bring body oil and a water spray on the day: a controlled sheen helps show definition under studio lights.
 
 ## 6. Warm up on set
 
@@ -47,5 +47,7 @@ A short pump with bands or light weights just before shooting brings out muscle 
 ## 7. After the shoot
 
 Edited photos are delivered within 4–5 days. Plan your posts or website update for after that.
+
+Our {{fitness.name}} package is {{fitness.priceText}} for a {{fitness.durationAdj}} session: every photo is supplied, and you choose your best {{fitness.edited}} for professional editing.
 
 **Want to plan your shoot?** See our [fitness photography portfolio and process](/Fitness-Photography), or message us on WhatsApp with your goal and preferred dates.

@@ -327,4 +327,53 @@ if (failures.length) {
   if (!okPins) process.exitCode = 1;
 }
 
+
+// ---------- 9. package consistency (src/packages.js is the source of truth) ----------
+{
+  const { PACKAGES } = await import('../src/packages.js');
+  const H = PACKAGES.headshot;
+  const F = PACKAGES.fitness;
+  const textOf = (f) => {
+    let h = fs.readFileSync(f, 'utf8');
+    h = h.slice(h.indexOf('<main'), h.indexOf('</main>')).replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/g, '');
+    return h.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ');
+  };
+  // Outdated headshot/fitness package statements that must never come back.
+  const STALE = [
+    [/delivered in 2 days|delivery in 2 days|2-day delivery|\b2 days headshot|Delivery 2 days\b/i, 'headshot delivery "2 days" (approved: 2–3 days)'],
+    [/best 5 (?:photos )?(?:you choose will be |are )?advanced[- ]edited/i, 'headshot "best 5 advanced-edited" without the 2 additional office-background photos'],
+    [/half to one hour|\(20 minutes\)|20-minute session/i, 'headshot duration (approved: 15–20 minutes)'],
+    [/2[–-]3 solid-colour (?:outfits|sets)|3[–-]4 outfit options/i, 'fitness outfits (approved: 4–5 outfit changes)'],
+    [/skip heavy oil/i, 'fitness "skip oil" (approved bring list includes body oil)'],
+    [/48-hour delivery|next day via a link/i, 'headshot delivery (approved: 2–3 days)'],
+  ];
+  const problems = [];
+  const files = fs.readdirSync(DIST, { recursive: true }).filter((f) => f.endsWith('.html') && !/\/i-[A-Za-z0-9]+\.html$/.test(f));
+  for (const f of files) {
+    const t = textOf(path.join(DIST, f));
+    for (const [re, why] of STALE) if (re.test(t)) problems.push(`${f}: ${why}: "${t.match(re)[0]}"`);
+  }
+  // The key pages must state the approved facts.
+  const must = {
+    'Headshot-photographer-bangalore.html': [H.priceText, H.duration, H.delivery, `Plus ${H.officeBackground} additional photos with digitally edited office backgrounds`, 'Up to 2 outfit changes', 'space to change'],
+    'Fitness-Photography.html': [F.priceText, '1-hour session', `best ${F.edited} photos`, F.outfits, 'Body oil', 'Water spray', 'assistant'],
+    'Fitness-bikini-photoshoots.html': [F.priceText, F.outfits],
+    'index.html': [H.priceText, H.delivery, F.priceText],
+  };
+  for (const [f, needles] of Object.entries(must)) {
+    const t = textOf(path.join(DIST, f));
+    for (const n of needles) if (!t.includes(n)) problems.push(`${f}: missing approved fact "${n}"`);
+  }
+  // Structured data prices must match.
+  for (const [f, pkg] of [['Headshot-photographer-bangalore.html', H], ['Fitness-Photography.html', F]]) {
+    const prices = [...fs.readFileSync(path.join(DIST, f), 'utf8').matchAll(/"name":"([^"]+)","(?:description":"[^"]*","price|price)":"(\d+)"/g)].filter((m) => m[1] === pkg.name).map((m) => +m[2]);
+    if (!prices.length || prices.some((p) => p !== pkg.price)) problems.push(`${f}: structured-data Offer price ${prices} != ${pkg.price}`);
+  }
+  console.log(`packages: ${files.length} pages scanned, ${problems.length} inconsistencies`);
+  if (problems.length) {
+    console.log(problems.join('\n'));
+    process.exitCode = 1;
+  }
+}
+
 if (!process.exitCode) console.log('ALL CHECKS PASSED');

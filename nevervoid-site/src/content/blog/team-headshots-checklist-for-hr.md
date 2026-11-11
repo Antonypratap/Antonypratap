@@ -53,7 +53,7 @@ Send a short note a week before, and a reminder the day before:
 
 - **Selections:** each person picks their favourites, and we retouch them to a consistent finish.
 - **File naming:** ask for files named by employee name, to save hours of sorting.
-- **New joiners:** keep a note of the background, lighting and crop, so future hires can be photographed to match. Individuals can also book a [studio headshot session](/Headshot-photographer-bangalore) for ₹5,899 on the same grey or white background.
+- **New joiners:** keep a note of the background, lighting and crop, so future hires can be photographed to match. Individuals can also book a [studio headshot session](/Headshot-photographer-bangalore) for {{headshot.priceText}} on the same grey or white background.
 
 ## See a real team shoot
 

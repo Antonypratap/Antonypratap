@@ -2,6 +2,9 @@
 // (data/pages.json) so the ranking content survives; layout is new.
 import { SITE, waLink } from '../config.js';
 import { yearsSince } from '../content-fixes.js';
+import { PACKAGES, listText } from '../packages.js';
+const HS_PKG = PACKAGES.headshot;
+const FIT_PKG = PACKAGES.fitness;
 import { iconLinks, bookBtn, reserveAction, ogUrl, imgAbs as imgAbsOf, esc, img, href, ctaBand, faqHtml, faqLd, waIcon, crumbs, breadcrumbLd, abs } from '../lib.js';
 
 const gallery = (ctx, page, n = 24) =>
@@ -93,11 +96,11 @@ export function home(ctx) {
       <p class="lede">Headshots that open doors, team portraits that show your company at its best, and fitness photos that show the work. In our Banaswadi studio or on-site anywhere in the city.</p>
       <div class="actions">
         <a class="btn btn-light" href="/contact">Book a session</a>
-        <a class="btn btn-ghost" href="/Headshot-photographer-bangalore#pricing">Headshots from ₹5,899</a>
+        <a class="btn btn-ghost" href="/Headshot-photographer-bangalore#pricing">Headshots from ${HS_PKG.priceText}</a>
       </div>
       <ul class="hero-facts">
         <li><strong>${yearsSince()}+ yrs</strong>behind the camera</li>
-        <li><strong>2 days</strong>headshot delivery</li>
+        <li><strong>${HS_PKG.delivery}</strong>headshot delivery</li>
         <li><strong>Studio + on-site</strong>anywhere in Bangalore</li>
       </ul>
     </div>
@@ -119,9 +122,9 @@ ${featureBlock(ctx, {
     'For LinkedIn, founders, doctors, lawyers, consultants, actors and creators',
     'Grey and white backgrounds, standing and sitting poses',
     'Posing and expression coaching, so camera-shy is fine',
-    'Every photo from the session; your best 5 advanced-edited',
+    `Every photo from the session; ${HS_PKG.deliverablesShort}`,
   ],
-  facts: [['Studio session', '₹5,899'], ['Delivery', '2 days'], ['Where', 'Banaswadi studio or on-site']],
+  facts: [['Studio session', HS_PKG.priceText], ['Delivery', HS_PKG.delivery], ['Where', HS_PKG.location]],
   link: '/Headshot-photographer-bangalore',
   linkLabel: 'Sessions & pricing',
   book: 'headshots',
@@ -159,9 +162,9 @@ ${featureBlock(ctx, {
     'Physique, transformation and competition shoots',
     'Trainer, coach and gym brand content',
     'High-contrast lighting, hero shots and motion captures',
-    'Every pose guided, every frame lit',
+    `${FIT_PKG.edited} professionally edited photos of your choice, with ${FIT_PKG.posing}`,
   ],
-  facts: [['Delivery', '4–5 days'], ['Where', 'Studio or your gym'], ['Style', 'Editorial, high-contrast']],
+  facts: [['Studio session', FIT_PKG.priceText], ['Session', FIT_PKG.duration], ['Edited photos', String(FIT_PKG.edited)]],
   link: '/Fitness-Photography',
   linkLabel: 'Fitness photoshoots',
   book: 'fitness',
@@ -297,7 +300,7 @@ ${logoStrip(ctx, 'Teams and brands we have photographed')}
   </div>
   <div class="split" style="margin-top:48px;align-items:start">
     <div class="price-card"><span class="eyebrow">Corporate headshots</span><div class="price">₹8,899 <small>one look</small></div><p>One style with one set of costumes, such as a shirt and blazer. Two costumes or different looks, team sessions and on-location shoots at your premises are customised packages.</p><a class="btn btn-primary" href="${waLink('corporate headshot photography')}" rel="noopener">${waIcon} Get a quote</a></div>
-    <div class="price-card" style="background:var(--paper)"><span class="eyebrow">Individual headshots</span><div class="price">₹5,899 <small>studio session</small></div><p>Just you? Our studio headshot session includes every photo, your best 5 advanced-edited, and delivery in 2 days.</p><div class="actions" style="margin-top:8px">${bookBtn('headshots', 'btn-primary')}<a class="btn btn-ghost" href="/Headshot-photographer-bangalore#pricing">Headshot sessions</a></div></div>
+    <div class="price-card" style="background:var(--paper)"><span class="eyebrow">Individual headshots</span><div class="price">${HS_PKG.priceText} <small>studio session</small></div><p>Just you? Our studio headshot session includes every photo, ${HS_PKG.deliverables}, and delivery in ${HS_PKG.delivery}.</p><div class="actions" style="margin-top:8px">${bookBtn('headshots', 'btn-primary')}<a class="btn btn-ghost" href="/Headshot-photographer-bangalore#pricing">Headshot sessions</a></div></div>
   </div>
 </div></section>
 
@@ -436,9 +439,9 @@ export function branding(ctx) {
       <thead><tr><th></th><th>Professional headshot</th><th>Personal branding shoot</th></tr></thead>
       <tbody>
         <tr><th>Best for</th><td>A clean profile photo for LinkedIn and company pages</td><td>A full image library for your website, social media, speaking and press</td></tr>
-        <tr><th>Looks</th><td>One or two outfits</td><td>Several looks, poses and settings</td></tr>
-        <tr><th>Output</th><td>Your best 5 photos advanced-edited</td><td>A set of portraits plus designed visual assets</td></tr>
-        <tr><th>Pricing</th><td>₹5,899 studio session, delivered in 2 days</td><td>Planned around your brief: message us for a quote</td></tr>
+        <tr><th>Looks</th><td>Up to 2 outfit changes</td><td>Several looks, poses and settings</td></tr>
+        <tr><th>Output</th><td>${HS_PKG.deliverablesShort} (${HS_PKG.totalDelivered} images)</td><td>A set of portraits plus designed visual assets</td></tr>
+        <tr><th>Pricing</th><td>${HS_PKG.priceText} studio session, delivered in ${HS_PKG.delivery}</td><td>Planned around your brief: message us for a quote</td></tr>
         <tr><th></th><td><a href="/Headshot-photographer-bangalore">Headshot sessions →</a></td><td><a href="${waLink('personal branding photography')}" rel="noopener">Plan a branding shoot →</a></td></tr>
       </tbody>
     </table>
@@ -500,8 +503,9 @@ export function femaleFitness(ctx) {
   const faqs = [
     { q: 'Where do female fitness photoshoots take place?', a: '<p>In our studio in Banaswadi, Bangalore, or at your own gym anywhere in the city. The studio gives clean, controlled lighting; your gym adds the equipment and setting your clients and followers recognise.</p>' },
     { q: 'When is the best time to book?', a: '<p>Plan the shoot near your peak condition, after a competition prep, a transformation or a training block, before your body settles back to normal. For brand and content shoots, choose a week when your training and sleep are consistent.</p>' },
-    { q: 'What should I wear?', a: '<p>Bring 2–3 solid-colour outfits: sports bras and crop tops, shorts or leggings, and one coordinated set if you have it. Avoid busy prints and large logos. See our <a href="/blog/how-to-prepare-for-a-fitness-photoshoot">fitness photoshoot preparation guide</a>.</p>' },
-    { q: 'I have never done a photoshoot. Will I know how to pose?', a: '<p>You do not need any experience. We guide every pose, angle and expression throughout the session, and you can see the photos as we shoot.</p>' },
+    { q: 'How much does a female fitness photoshoot cost?', a: `<p>Our ${FIT_PKG.name} package is ${FIT_PKG.priceText} for a ${FIT_PKG.durationAdj} session at ${FIT_PKG.location}: every photo from the session, your best ${FIT_PKG.edited} professionally edited, and ${FIT_PKG.outfits}. <a href="/Fitness-Photography#package">See the full package</a>.</p>` },
+    { q: 'What should I wear?', a: '<p>Bring 4–5 outfits for your outfit changes: sports bras and crop tops, shorts or leggings, and one coordinated set if you have it. Avoid busy prints and large logos. See our <a href="/blog/how-to-prepare-for-a-fitness-photoshoot">fitness photoshoot preparation guide</a>.</p>' },
+    { q: 'I have never done a photoshoot. Will I know how to pose?', a: `<p>You do not need any experience. You get ${FIT_PKG.posing} throughout the session, and you can see the photos as we shoot.</p>` },
     { q: 'Do you provide hair and makeup?', a: '<p>We do not provide makeup and styling at the moment. If you would like it, book a makeup artist for the morning of your shoot.</p>' },
     { q: 'How soon will I get my photos?', a: '<p>Edited photos are delivered within 4–5 days.</p>' },
   ];
@@ -515,7 +519,7 @@ export function femaleFitness(ctx) {
     <span class="eyebrow">Women's fitness · Gym · Studio · Transformation</span>
     <h1>Female Fitness Photoshoot in Bangalore</h1>
     <p class="lede">Strong, confident photos of your training and your progress, shot in our Banaswadi studio or at your gym. For athletes, coaches, trainers and every woman proud of the work she has put in.</p>
-    <ul class="badges"><li>Studio or your gym</li><li>Every pose guided</li><li>Black &amp; white or colour</li><li>Delivered in 4–5 days</li></ul>
+    <ul class="badges"><li>${FIT_PKG.priceText} studio session</li><li>Posing guidance</li><li>Black &amp; white or colour</li><li>Delivered in 4–5 days</li></ul>
     <div class="actions">
       ${bookBtn('fitness', 'btn-light', 'Book your shoot')}
       <a class="btn btn-ghost" href="#portfolio">See the portfolio</a>
@@ -559,6 +563,7 @@ export function femaleFitness(ctx) {
       <li>Training shots with real equipment: cables, barbells, dumbbells, battle ropes</li>
       <li>Hero portraits and motion captures</li>
       <li>Editorial and minimalist edits, delivered within 4–5 days</li>
+      <li>${FIT_PKG.priceText} studio package: a ${FIT_PKG.durationAdj} session, every photo supplied, your best ${FIT_PKG.edited} professionally edited, ${FIT_PKG.outfits}</li>
     </ul>
     <p>Looking for men's or mixed fitness shoots? See <a href="/Fitness-Photography">gym &amp; fitness photography in Bangalore</a>.</p>
   </div>
@@ -569,9 +574,9 @@ export function femaleFitness(ctx) {
   <div class="section-head"><span class="eyebrow">Planning your shoot</span><h2>How to prepare for a female fitness photoshoot</h2><p>A little preparation makes a big difference on the day. Here is what we recommend to every client.</p></div>
   <div class="cards cards-4 plan-cards">
     <div class="card"><div class="card-body"><h3>1. Time it well</h3><p>Book near your peak condition, after a prep, a transformation or a strong training block. Any diet or water changes should be planned with your own coach.</p></div></div>
-    <div class="card"><div class="card-body"><h3>2. Outfits</h3><p>2–3 solid-colour sets: sports bras or crop tops with shorts or leggings, plus one coordinated set. Skip busy prints and big logos.</p></div></div>
+    <div class="card"><div class="card-body"><h3>2. Outfits</h3><p>4–5 outfits for your outfit changes: sports bras or crop tops with shorts or leggings, plus one coordinated set. Skip busy prints and big logos.</p></div></div>
     <div class="card"><div class="card-body"><h3>3. Hair, skin &amp; makeup</h3><p>Moisturise in the days before. Makeup and styling are not included, so book a makeup artist if you want a polished look.</p></div></div>
-    <div class="card"><div class="card-body"><h3>4. On the day</h3><p>Bring a towel, water and a snack. A light warm-up just before shooting brings out definition. We plan the key shots for while you are warm.</p></div></div>
+    <div class="card"><div class="card-body"><h3>4. On the day</h3><p>Bring ${listText(FIT_PKG.bringKit)}. A light warm-up just before shooting brings out definition. We plan the key shots for while you are warm.</p></div></div>
   </div>
 </div></section>
 
@@ -581,7 +586,7 @@ export function femaleFitness(ctx) {
     <li><strong>Book your session</strong><p>Choose a date and time that works for you.</p></li>
     <li><strong>Choose the location</strong><p>Our studio in Banaswadi, or your own gym anywhere in Bangalore.</p></li>
     <li><strong>Prep guidance</strong><p>Tips on what to wear, bring and how to prepare.</p></li>
-    <li><strong>Shoot day</strong><p>You show up, we guide every pose and light every frame.</p></li>
+    <li><strong>Shoot day</strong><p>A ${FIT_PKG.durationAdj} session with ${FIT_PKG.posing}, under a studio lighting setup.</p></li>
     <li><strong>Delivery</strong><p>Edited photos delivered within 4–5 days.</p></li>
   </ol>
 </div></section>
@@ -612,7 +617,7 @@ ${ctaBand({ heading: 'Show the strength you have built.', text: 'Tell us your go
     waTopic: 'female fitness photoshoot',
     ld: [
       breadcrumbLd(trail),
-      { '@type': 'Service', '@id': abs(P) + '#service', name: 'Female fitness photoshoot in Bangalore', serviceType: "Women's fitness photography", ...reserveAction('fitness'), provider: { '@id': `${SITE.origin}/#business` }, areaServed: { '@type': 'City', name: SITE.locality } },
+      { '@type': 'Service', '@id': abs(P) + '#service', name: 'Female fitness photoshoot in Bangalore', serviceType: "Women's fitness photography", ...reserveAction('fitness'), offers: { '@type': 'Offer', name: FIT_PKG.name, price: String(FIT_PKG.price), priceCurrency: 'INR', url: abs('/Fitness-Photography') }, provider: { '@id': `${SITE.origin}/#business` }, areaServed: { '@type': 'City', name: SITE.locality } },
       { '@type': 'ImageGallery', name: 'Female fitness photography in Bangalore', url: abs(P), image: ims.map((im) => ({ '@type': 'ImageObject', contentUrl: imgAbsOf(im), name: im.alt, creator: { '@id': `${SITE.origin}/#business` } })) },
       faqLd(faqs),
     ],
@@ -695,10 +700,10 @@ export function headshots(ctx) {
     <span class="eyebrow">Corporate &amp; LinkedIn headshots · Studio or on-site</span>
     <h1>Headshot Photographer in Bangalore</h1>
     <p class="lede">Rule the game with a great professional portrait headshot. Clean, confident portraits for LinkedIn, founders and teams, at our Bangalore studio or at your office.</p>
-    <ul class="badges"><li>2-day delivery</li><li>No watermarks</li><li>Poses assisted</li><li>Comfort prioritised</li><li>Wardrobe guidance</li><li>Expression coaching</li></ul>
+    <ul class="badges"><li>Delivery in ${HS_PKG.delivery}</li><li>No watermarks</li><li>Poses assisted</li><li>Comfort prioritised</li><li>Wardrobe guidance</li><li>Expression coaching</li></ul>
     <div class="actions">
       ${bookBtn('headshots', 'btn-light', 'Book a headshot session')}
-      <a class="btn btn-ghost" href="#pricing">Pricing ₹5,899</a>
+      <a class="btn btn-ghost" href="#pricing">Pricing ${HS_PKG.priceText}</a>
       ${iconLinks({ topic: 'professional headshots', email: false, cls: 'on-dark' })}
     </div>
   </div>
@@ -718,17 +723,16 @@ export function headshots(ctx) {
   <div class="section-head"><p class="wwh-label">What</p><h2>Headshot photograph session</h2><p>Who it's for: professionals updating their LinkedIn, founders and leadership teams, doctors, lawyers and consultants, and actors and creators.</p></div>
   <div class="split" id="pricing" style="align-items:start">
     <div class="price-card">
-      <span class="eyebrow">Studio session</span>
-      <div class="price">₹5,899 <small>all-inclusive, no hidden fees</small></div>
+      <span class="eyebrow">${HS_PKG.name} · ${HS_PKG.location}</span>
+      <div class="price">${HS_PKG.priceText} <small>all-inclusive, no hidden fees</small></div>
       <ul class="ticks">
-        <li>All photos from the session will be given to you</li>
+        ${HS_PKG.includes.map((x) => `<li>${x}</li>`).join('')}
         <li>Pictures with grey and white backgrounds</li>
         <li>Standing and sitting poses</li>
-        <li>The best 5 photos you choose will be advanced edited</li>
-        <li>Delivery in 2 days</li>
         <li>Poses will be assisted, and posing help is included</li>
         <li>100% satisfaction guarantee: re-edit if needed</li>
       </ul>
+      <p class="meta"><strong>Bring:</strong> ${listText(HS_PKG.bring)}.</p>
       <p class="meta"><strong>Payment terms:</strong> 50% transfer to book the slot · 40% on location post the shoot · 10% to receive all the photos from us.</p>
       <div class="actions" style="margin-top:8px">${bookBtn('headshots', 'btn-primary', 'Book your session')}${iconLinks({ topic: 'professional headshots', email: false })}</div>
     </div>
@@ -776,7 +780,7 @@ export function headshots(ctx) {
   <div class="section-head"><span class="eyebrow">FAQs</span><h2>Frequently asked questions</h2></div>
   ${faqHtml(faqs)}
 </div></section>
-${ctaBand({ heading: 'Ready for a headshot that works for you?', text: 'Studio sessions in Bangalore from ₹5,899, or a portable studio at your office for the whole team.', topic: 'professional headshots', book: 'headshots' })}`;
+${ctaBand({ heading: 'Ready for a headshot that works for you?', text: `Studio sessions in Bangalore from ${HS_PKG.priceText}, or a portable studio at your office for the whole team.`, topic: 'professional headshots', book: 'headshots' })}`;
   return {
     path: P,
     title: page.title,
@@ -793,7 +797,7 @@ ${ctaBand({ heading: 'Ready for a headshot that works for you?', text: 'Studio s
         serviceType: 'Headshot photography',
         provider: { '@id': `${SITE.origin}/#business` },
         areaServed: { '@type': 'City', name: SITE.locality },
-        offers: { '@type': 'Offer', name: 'Headshot photograph session (studio)', price: '5899', priceCurrency: 'INR', url: abs(P) },
+        offers: { '@type': 'Offer', name: HS_PKG.name, description: `${HS_PKG.durationAdj} studio session at ${HS_PKG.location}: every photo supplied, ${HS_PKG.deliverables}, ${HS_PKG.outfits}, delivered in ${HS_PKG.delivery}.`, price: String(HS_PKG.price), priceCurrency: 'INR', url: abs(P) },
         ...reserveAction('headshots'),
       },
       faqLd(faqs),
@@ -812,13 +816,14 @@ export function fitness(ctx) {
     ['Book your session', 'Choose a date and time that works for you.'],
     ['Choice of location', 'Studio, or at your gym space?'],
     ['Prep guidance', 'We can let you know some tips on what to wear, bring, and how to prep.'],
-    ['Shoot day', 'You show up, we guide every pose and light every frame.'],
+    ['Shoot day', `A ${FIT_PKG.durationAdj} session with ${FIT_PKG.posing}, under a studio lighting setup.`],
     ['Delivery', 'Edited photos delivered within 4–5 days.'],
   ];
   const faqs = [
+    { q: 'How much does a fitness photoshoot cost?', a: `<p>The ${FIT_PKG.name} package is ${FIT_PKG.priceText} for a ${FIT_PKG.durationAdj} session at ${FIT_PKG.location}. Every photo from the session is supplied, and you choose your best ${FIT_PKG.edited} for professional editing, with ${FIT_PKG.outfits}. <a href="#package">See what is included</a>.</p>` },
     { q: 'Where do fitness photoshoots happen?', a: '<p>In our studio in Banaswadi, or at your gym anywhere in Bangalore. The studio gives high-contrast, controlled lighting. Your gym adds equipment and context your clients recognise.</p>' },
     { q: 'When should I book a fitness photoshoot?', a: '<p>If you have just come out of a fitness competition and wish to record your body condition and muscle shape, book before your body gets back to the usual normal. Weight-loss champions should also get a photoshoot to celebrate their achievement.</p>' },
-    { q: 'What should I bring?', a: '<p>Plan your shoot near your peak condition, bring 2–3 solid-colour outfits, and we will guide your posing throughout. See our <a href="/blog/how-to-prepare-for-a-fitness-photoshoot">fitness photoshoot preparation guide</a>.</p>' },
+    { q: 'What should I bring?', a: `<p>Plan your shoot near your peak condition and bring ${listText(FIT_PKG.bring)}, with outfits for ${FIT_PKG.outfits}. You get ${FIT_PKG.posing}. See our <a href="/blog/how-to-prepare-for-a-fitness-photoshoot">fitness photoshoot preparation guide</a>.</p>` },
     { q: 'How soon will I get my photos?', a: '<p>Edited photos are delivered within 4–5 days.</p>' },
   ];
   const trail = [[P, 'Fitness photography Bangalore']];
@@ -830,7 +835,7 @@ export function fitness(ctx) {
     <span class="eyebrow">Gym · Fitness · Bodybuilding · Transformation</span>
     <h1>Gym &amp; Fitness Photoshoot in Bangalore</h1>
     <p class="lede">Studio and on-site gym photoshoots that showcase your dedication. Whether you're a fitness coach, bodybuilder, or simply proud of your transformation, we help you capture it professionally.</p>
-    <ul class="badges"><li>Studio or your gym</li><li>High-contrast lighting</li><li>Every pose guided</li><li>Hero &amp; motion shots</li></ul>
+    <ul class="badges"><li>${FIT_PKG.priceText} studio session</li><li>High-contrast lighting</li><li>Posing guidance</li><li>Hero &amp; motion shots</li></ul>
     <div class="actions">
       ${bookBtn('fitness', 'btn-light', 'Book a fitness shoot')}
       <a class="btn btn-ghost" href="#portfolio">See the portfolio</a>
@@ -878,6 +883,20 @@ export function fitness(ctx) {
   <div>${img(ims[5] ?? hero)}</div>
 </div></section>
 
+<section class="section" id="package"><div class="wrap split" style="align-items:start">
+  <div class="price-card">
+    <span class="eyebrow">${FIT_PKG.name} · ${FIT_PKG.location}</span>
+    <div class="price">${FIT_PKG.priceText} <small>${FIT_PKG.durationAdj} studio session</small></div>
+    <ul class="ticks">${FIT_PKG.includes.map((x) => `<li>${x}</li>`).join('')}</ul>
+    <div class="actions" style="margin-top:8px">${bookBtn('fitness', 'btn-primary', 'Book your session')}${iconLinks({ topic: 'fitness photography', number: n, email: false })}</div>
+  </div>
+  <div class="price-card" style="background:var(--paper)">
+    <span class="eyebrow">What to bring</span>
+    <ul class="ticks">${FIT_PKG.bring.map((x) => `<li>${x[0].toUpperCase() + x.slice(1)}</li>`).join('')}</ul>
+    <p class="meta">Preparing? Read <a href="/blog/how-to-prepare-for-a-fitness-photoshoot">how to prepare for a fitness photoshoot</a>.</p>
+  </div>
+</div></section>
+
 <section class="section dark" id="how"><div class="wrap">
   <div class="section-head"><p class="wwh-label">How</p><h2>What to expect: how your fitness shoot works</h2></div>
   <ol class="steps">${steps.map(([t, d]) => `<li><strong>${esc(t)}</strong><p>${esc(d)}</p></li>`).join('')}</ol>
@@ -917,6 +936,7 @@ ${ctaBand({ heading: 'Show the work you put in.', text: 'Studio in Banaswadi or 
         name: 'Gym & fitness photoshoot in Bangalore',
         serviceType: 'Fitness photography',
         ...reserveAction('fitness'),
+        offers: { '@type': 'Offer', name: FIT_PKG.name, description: `${FIT_PKG.durationAdj} studio session at ${FIT_PKG.location}: every photo supplied, best ${FIT_PKG.edited} professionally edited, ${FIT_PKG.outfits}.`, price: String(FIT_PKG.price), priceCurrency: 'INR', url: abs(P) },
         provider: { '@id': `${SITE.origin}/#business` },
         areaServed: { '@type': 'City', name: SITE.locality },
       },

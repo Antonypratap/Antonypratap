@@ -46,7 +46,7 @@ You do not need to remember any of this. We guide every pose and expression duri
 
 ## Seeing the photos as you go
 
-Reviewing images during the session helps you relax, because you can see what is working. Our [studio headshot sessions](/Professional-studio-headshots) include all photos from the session, and your best 5 are advanced-edited, so there is no pressure to get one perfect frame.
+Reviewing images during the session helps you relax, because you can see what is working. Our [studio headshot sessions](/Professional-studio-headshots) include every photo from the session, with {{headshot.deliverables}}, so there is no pressure to get one perfect frame.
 
 ## A note on retouching
 

@@ -13,6 +13,7 @@ import { shareRow, subscribeForm, pinUrl, PIN_MARK, iconLinks, PIN_ICON, PHONE_I
 import { home, headshots, corporate, branding, fitness, femaleFitness, clients, postCards } from '../src/templates/featured.js';
 import { resolve as resolveRedirect } from '../src/redirects.js';
 import { PAGE_COPY } from '../src/content/page-copy.js';
+import { fillPackageTokens } from '../src/packages.js';
 import { faqHtml, faqLd } from '../src/lib.js';
 import { GROUPS, ARTICLES, LEGAL, KEYWORD_REDIRECTS, LEGACY, CASE_COLLISIONS } from '../src/site-map.js';
 
@@ -137,7 +138,7 @@ const posts = fs
   .readdirSync(blogDir)
   .filter((f) => f.endsWith('.md'))
   .map((f) => {
-    const { fm, md } = parseFront(fs.readFileSync(path.join(blogDir, f), 'utf8'));
+    const { fm, md } = parseFront(fillPackageTokens(fs.readFileSync(path.join(blogDir, f), 'utf8'), f));
     return {
       path: `/blog/${f.replace(/\.md$/, '')}`,
       title: fm.title,

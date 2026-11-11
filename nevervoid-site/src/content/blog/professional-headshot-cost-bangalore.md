@@ -1,6 +1,6 @@
 ---
 title: How Much Does a Professional Headshot Cost in Bangalore?
-description: What you actually pay for a professional headshot in Bangalore, what changes the price, and what our ₹5,899 studio session includes, explained plainly.
+description: What you actually pay for a professional headshot in Bangalore, what changes the price, and what our {{headshot.priceText}} studio session includes, explained plainly.
 date: 2026-11-04
 author: Antony Pratap
 category: Headshots
@@ -23,14 +23,19 @@ When you compare photographers, the headline price rarely tells the whole story.
 
 ## What our studio headshot session includes
 
-Our individual studio session at Banaswadi, Bangalore costs **₹5,899, all-inclusive with no hidden fees**. It includes:
+Our individual studio session at Banaswadi, Bangalore costs **{{headshot.priceText}}, all-inclusive with no hidden fees**. It includes:
 
-- All photos from the session, given to you
+- A {{headshot.durationAdj}} session at our studio
+- Every photo from the session is supplied
 - Grey and white backgrounds
 - Standing and sitting poses
 - Posing and expression coaching throughout
-- Your **best 5 photos advanced-edited**
-- **Delivery in 2 days**
+- **{{headshot.retouched}} professionally retouched photos** of your choice
+- **Plus {{headshot.officeBackground}} additional photos with digitally edited office backgrounds**, for {{headshot.totalDelivered}} professionally delivered images in total
+- Up to 2 outfit changes, with a space to change at the studio
+- **Delivery in {{headshot.delivery}}**
+
+Bring {{headshot.bring}}.
 
 You can see the full details and sample work on our [headshot photography in Bangalore](/Headshot-photographer-bangalore) page.
 

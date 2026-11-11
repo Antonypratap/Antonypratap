@@ -2,12 +2,15 @@
 // SmugMug. Each page targets its own search intent and links up to its main
 // service page, so the pages support (rather than compete with) the main
 // headshot, corporate and fitness pages.
-// Facts used are the owner's published ones only: studio in Banaswadi,
-// on-site across Bangalore, Rs 5,899 headshot session with 2-day delivery,
-// Rs 8,899 corporate single look, 4–5 day fitness delivery, guided posing.
+// Package facts (price, duration, deliverables, delivery) come from
+// src/packages.js, the approved source of truth. Other facts: studio in
+// Banaswadi, on-site across Bangalore, Rs 8,899 corporate single look.
 //
 // Shape: { lede?, sections: [{ h, p: [..], list?: [..] }], faqs?: [{ q, a }] }
 // (p, list and a may contain inline HTML links.)
+
+import { PACKAGES } from '../packages.js';
+const HSP = PACKAGES.headshot;
 
 const HS = '<a href="/Headshot-photographer-bangalore">headshot photography in Bangalore</a>';
 const CORP = '<a href="/Corporate-photoshoot">corporate photography</a>';
@@ -21,7 +24,7 @@ export const PAGE_COPY = {
         h: 'Why choose a studio headshot',
         p: [
           'A studio gives full control over light and background, so every frame is sharp, evenly lit and free of distractions. It is the most dependable choice when your photo has to work everywhere: LinkedIn, company websites, speaker bios, press releases and ID badges.',
-          `Our studio session is the same one described on our ${HS} page: all photos from the session, grey and white backgrounds, standing and sitting poses, posing and expression coaching, and your best 5 photos advanced-edited, delivered in 2 days.`,
+          `Our studio session is the same one described on our ${HS} page: every photo from the session, grey and white backgrounds, standing and sitting poses, posing and expression coaching, and ${HSP.deliverables}, delivered in ${HSP.delivery}.`,
         ],
       },
       {
@@ -35,7 +38,7 @@ export const PAGE_COPY = {
       },
     ],
     faqs: [
-      { q: 'How much does a studio headshot cost?', a: 'A studio headshot session is ₹5,899, all-inclusive. See <a href="/Headshot-photographer-bangalore#pricing">what is included</a>.' },
+      { q: 'How much does a studio headshot cost?', a: `A studio headshot session is ${HSP.priceText}, all-inclusive. See <a href="/Headshot-photographer-bangalore#pricing">what is included</a>.` },
       { q: 'What should I wear?', a: 'Solid colours and well-fitted clothes, with one or two options. Read <a href="/blog/what-to-wear-for-a-professional-headshot">what to wear for a professional headshot</a>.' },
     ],
   },
@@ -58,7 +61,7 @@ export const PAGE_COPY = {
       },
     ],
     faqs: [
-      { q: 'How soon will I get my LinkedIn photo?', a: 'Studio headshot sessions are delivered in 2 days.' },
+      { q: 'How soon will I get my LinkedIn photo?', a: `Studio headshot sessions are delivered in ${HSP.delivery}.` },
       { q: 'Any tips for a better LinkedIn photo?', a: 'Read our <a href="/blog/linkedin-profile-photo-guide">LinkedIn profile photo guide</a> on framing, expression and backgrounds.' },
     ],
   },
@@ -107,7 +110,7 @@ export const PAGE_COPY = {
       {
         h: 'Studio or on-site',
         p: [
-          `Individuals can book a studio headshot session for ₹5,899 (see ${HS}). For teams, a corporate single look is ₹8,899 and on-location shoots at your premises are customised; see ${CORP}.`,
+          `Individuals can book a studio headshot session for ${HSP.priceText} (see ${HS}). For teams, a corporate single look is ₹8,899 and on-location shoots at your premises are customised; see ${CORP}.`,
         ],
       },
     ],

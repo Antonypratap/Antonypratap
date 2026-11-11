@@ -46,7 +46,7 @@ Read our full guide: [what to wear for a professional headshot](/blog/what-to-we
 
 ## What our headshot session includes
 
-An individual studio session is ₹5,899 and includes all photos from the session, grey and white backgrounds, guided posing, and your best 5 photos advanced-edited, delivered in 2 days. For practices and firms that need several people photographed, we quote a customised package. See [headshot photography in Bangalore](/Headshot-photographer-bangalore) for details.
+An individual studio session is {{headshot.priceText}} for a {{headshot.durationAdj}} session and includes every photo from the session, grey and white backgrounds, guided posing, {{headshot.outfits}}, and {{headshot.deliverables}}, delivered in {{headshot.delivery}}. For practices and firms that need several people photographed, we quote a customised package. See [headshot photography in Bangalore](/Headshot-photographer-bangalore) for details.
 
 ## Ready for a headshot that builds trust?
 

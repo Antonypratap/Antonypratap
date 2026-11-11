@@ -4,11 +4,13 @@
 //
 // Owner decisions, 2 November 2026:
 //   - one phone / WhatsApp number everywhere: 98800 00990
-//   - headshot delivery: 2 days
-//   - fitness delivery: 4–5 days
+//   - headshot package facts: see src/packages.js (approved 11 Nov 2026)
+//   - fitness delivery: 4–5 days (owner, 2 Nov 2026; not in the 11 Nov package sheet)
 //   - remove all Covid content (the /Covid page redirects to the homepage)
 //   - experience counted from 2008 (computed at build time)
 import { SITE } from './config.js';
+import { PACKAGES } from './packages.js';
+const HSP = PACKAGES.headshot;
 
 export const yearsSince = (date = new Date()) => date.getFullYear() - SITE.foundingYear;
 
@@ -37,8 +39,13 @@ export function fixRules(years) {
     { re: /40% has to be made on location as soon as the photoshoot session is complete\.$/, to: '40% has to be made on location as soon as the photoshoot session is complete. The remaining 10% is paid to receive the edited photos, which completes the project.', paths: ['/Cancelation-and-refunds'] },
     { re: /^T he photographer/, to: 'The photographer', paths: ['/Cancelation-and-refunds'] },
     // ---- delivery times ----
-    { re: /You will get your photos the next day via a link/g, to: 'You will get your photos in 2 days via a link', paths: ['/Headshot-photographer-bangalore'] },
-    { re: /48-hour delivery/g, to: '2-day delivery', paths: ['/Headshot-photographer-bangalore'] },
+    // ---- headshot package (approved 11 Nov 2026, src/packages.js) ----
+    { re: /You will get your photos the next day via a link/g, to: `You will get your photos in ${HSP.delivery} via a link`, paths: ['/Headshot-photographer-bangalore'] },
+    { re: /20-minute session\. 48-hour delivery\./g, to: `${HSP.duration} session. ${HSP.delivery} delivery.`, paths: ['/Headshot-photographer-bangalore'] },
+    { re: /within the estimated time \(20 minutes\)/g, to: `within the estimated time (${HSP.duration})`, paths: ['/Headshot-photographer-bangalore'] },
+    { re: /The shoot time usually depends on the number of looks and how quickly you get into your confident mode\. Mostly it should take about half to one hour\./g, to: `The studio session takes ${HSP.duration}, with ${HSP.outfits}.`, paths: ['/Headshot-photographer-bangalore'] },
+    { re: /a 20-minute session with posing guidance, 5 retouched photos delivered in 2 days\./g, to: `a ${HSP.duration} session with posing guidance; ${HSP.deliverables}, delivered in ${HSP.delivery}.`, paths: ['/Headshot-photographer-bangalore'] },
+    { re: /and bring 2–3 options\./g, to: 'and bring 2 outfits.', paths: ['/Headshot-photographer-bangalore'] },
     { re: /delivered within 5[–-]7 working days/g, to: 'delivered within 4–5 days', paths: ['/Fitness-Photography'] },
     { re: /delivered in 3-4 days/g, to: 'delivered in 4–5 days', paths: ['/Fitness-Photography'] },
   ];
