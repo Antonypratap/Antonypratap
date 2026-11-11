@@ -2195,3 +2195,15 @@ a.icon-btn:hover {
     grid-template-columns: 1fr;
   }
 }
+
+.xmas-price {
+  border-top: 4px solid var(--xmas-red);
+}
+.xmas-price .price {
+  color: var(--xmas-red-ink);
+}
+.xmas-deadline {
+  font-weight: 600;
+  color: var(--xmas-green);
+  margin: 10px 0 0;
+}

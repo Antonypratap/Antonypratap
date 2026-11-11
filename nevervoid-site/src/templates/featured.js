@@ -5,6 +5,7 @@ import { yearsSince } from '../content-fixes.js';
 import { PACKAGES, listText } from '../packages.js';
 const HS_PKG = PACKAGES.headshot;
 const FIT_PKG = PACKAGES.fitness;
+const XM_PKG = PACKAGES.christmas;
 import { iconLinks, bookBtn, reserveAction, ogUrl, imgAbs as imgAbsOf, esc, img, href, ctaBand, faqHtml, faqLd, waIcon, crumbs, breadcrumbLd, abs } from '../lib.js';
 
 const gallery = (ctx, page, n = 24) =>
@@ -950,7 +951,7 @@ export { postCards };
 /* -------------------------------------------------------------- CHRISTMAS */
 // Seasonal landing page. Festive styling is scoped to .xmas so no other page
 // changes. No price or dates are stated (none approved); visitors are sent
-// to WhatsApp for this season's slots.
+// to WhatsApp to pick a date. Package facts come from src/packages.js.
 export function christmas(ctx) {
   const P = '/christmas-photoshoot-bangalore';
   const G = '/Christmas-theme-photoshoots';
@@ -962,8 +963,9 @@ export function christmas(ctx) {
     { q: 'Where does the Christmas photoshoot take place?', a: `<p>At our studio, ${esc(SITE.studioName)}, in Banaswadi, Bangalore. The Christmas backdrop, tree and lights are all set up there, so you just walk in and start.</p>` },
     { q: 'What should we wear?', a: '<p>Come in full red, full green or full white. Everyone can wear the same colour, or mix the three. Plain fabrics photograph best, so avoid big logos and busy prints.</p>' },
     { q: 'Do we need to bring Santa hats or props?', a: '<p>No. We have Santa red hats for everyone and the full Christmas set. Bring a favourite toy or ornament if you would like it in the photos.</p>' },
-    { q: 'Who can be in the photos?', a: '<p>Kids, couples, parents, grandparents and the whole family. We photograph individual portraits and group photos in the same session.</p>' },
-    { q: 'How do we book, and what does it cost?', a: `<p>Message us on <a href="${waLink(topic)}" rel="noopener">WhatsApp</a> or call ${SITE.phoneDisplay}, and we will share this season's available slots and price.</p>` },
+    { q: 'Who can be in the photos?', a: `<p>${XM_PKG.who}. We photograph individual portraits and group photos in the same session.</p>` },
+    { q: 'How much does a Christmas photoshoot cost?', a: `<p>${XM_PKG.priceText} for a ${XM_PKG.durationAdj} session. You get ${XM_PKG.edited} edited photos, all the photos from your shoot and an album from your shoot.</p>` },
+    { q: 'Until when can we book?', a: `<p>Christmas sessions run until ${XM_PKG.lastDate}. Message us on <a href="${waLink(topic)}" rel="noopener">WhatsApp</a> or call ${SITE.phoneDisplay} to pick your date.</p>` },
   ];
   const trail = [['/services', 'Services'], [P, 'Christmas photoshoot']];
   const gal = ims.map((im) => `<a href="${href(ctx.imagePageOf(G, im.id) ?? G)}">${img(im, { sizes: '(max-width: 640px) 50vw, 20vw' })}</a>`).join('');
@@ -976,7 +978,7 @@ export function christmas(ctx) {
     <span class="eyebrow">Christmas · Family · Kids · Couples</span>
     <h1>Christmas Photoshoot in Bangalore</h1>
     <p class="lede">Festive portraits of you and your family in our Banaswadi studio. We have the Christmas backdrop, the Santa hats and the lights. All you have to do is come in full red, green or white.</p>
-    <ul class="badges"><li>Christmas backdrop &amp; tree</li><li>Santa red hats</li><li>Fairy-light portraits</li><li>Kids &amp; families</li></ul>
+    <ul class="badges"><li>${XM_PKG.priceText} · ${XM_PKG.duration}</li><li>${XM_PKG.edited} edited photos + album</li><li>Santa red hats &amp; lights</li><li>Until ${XM_PKG.lastDate}</li></ul>
     <div class="actions">
       <a class="btn btn-xmas" href="${waLink(topic)}" rel="noopener">${waIcon} Book on WhatsApp</a>
       <a class="btn btn-ghost" href="#portfolio">See the photos</a>
@@ -1009,7 +1011,23 @@ export function christmas(ctx) {
   </div>
 </div></section>
 
-<section class="section" id="wear"><div class="wrap">
+<section class="section" id="package"><div class="wrap split" style="align-items:start">
+  <div class="price-card xmas-price">
+    <span class="eyebrow">${XM_PKG.name} · ${XM_PKG.location}</span>
+    <div class="price">${XM_PKG.priceText} <small>${XM_PKG.durationAdj} session</small></div>
+    <ul class="ticks">${XM_PKG.includes.map((x) => `<li>${x}</li>`).join('')}</ul>
+    <p class="xmas-deadline">Sessions until ${XM_PKG.lastDate}. Pick your date.</p>
+    <div class="actions" style="margin-top:8px"><a class="btn btn-xmas" href="${waLink(topic)}" rel="noopener">${waIcon} Pick your date</a>${iconLinks({ topic, whatsapp: false, email: false })}</div>
+  </div>
+  <div>
+    <span class="eyebrow">The package</span>
+    <h2>Festive portraits, ready to share and keep</h2>
+    <p>One ${XM_PKG.durationAdj} studio session for ${XM_PKG.who.toLowerCase()}. You take home every photo from the shoot, ${XM_PKG.edited} of them fully edited, and an album to keep.</p>
+    <p>Slots fill up in the weeks before Christmas, and sessions run only until ${XM_PKG.lastDate}, so book early.</p>
+  </div>
+</div></section>
+
+<section class="section alt" id="wear"><div class="wrap">
   <div class="section-head"><span class="eyebrow">What to wear</span><h2>Come in full red, green or white</h2><p>One colour, head to toe. Everyone in the same colour, or mix the three, and the photos look festive straight away.</p></div>
   <ul class="xmas-swatches">
     <li class="sw-red"><strong>Full red</strong><span>The classic Santa look. Red dresses, shirts and sweaters.</span></li>
@@ -1022,11 +1040,11 @@ export function christmas(ctx) {
 <section class="section dark xmas-dark" id="how"><div class="wrap">
   <div class="section-head"><p class="wwh-label">How</p><h2>How your Christmas photoshoot works</h2></div>
   <ol class="steps">
-    <li><strong>Book a slot</strong><p>Message us on WhatsApp for this season's dates and times.</p></li>
+    <li><strong>Pick your date</strong><p>Message us on WhatsApp. Sessions run until ${XM_PKG.lastDate}.</p></li>
     <li><strong>Dress in red, green or white</strong><p>Full red, full green or full white. Mix them across the family if you like.</p></li>
     <li><strong>Come to the studio</strong><p>The backdrop, Santa hats and lights are ready at our Banaswadi studio.</p></li>
     <li><strong>We light and shoot</strong><p>We use the lights to make warm, festive portraits of you and your family.</p></li>
-    <li><strong>Your festive portraits</strong><p>We edit your photos and send them to you, ready to share and print.</p></li>
+    <li><strong>Your festive portraits</strong><p>All your photos, ${XM_PKG.edited} edited, and an album from your shoot.</p></li>
   </ol>
 </div></section>
 
@@ -1045,18 +1063,18 @@ export function christmas(ctx) {
   <div class="section-head"><span class="eyebrow">FAQs</span><h2>Christmas photoshoot questions</h2></div>
   ${faqHtml(faqs)}
 </div></section>
-${ctaBand({ heading: 'Make this Christmas one to remember.', text: 'Message us for this season’s slots. Come in full red, green or white; we have the backdrop, the Santa hats and the lights.', topic })}
+${ctaBand({ heading: 'Make this Christmas one to remember.', text: `${XM_PKG.priceText} for a ${XM_PKG.durationAdj} session, ${XM_PKG.edited} edited photos and an album. Sessions until ${XM_PKG.lastDate}: pick your date.`, topic })}
 </div>`;
   return {
     path: P,
     title: 'Christmas Photoshoot in Bangalore | Festive Family Portraits - Nevervoid Photography',
-    description: 'Christmas photoshoot in Bangalore for families and kids. Christmas backdrop, Santa red hats and fairy lights at our Banaswadi studio. Just come in red, green or white.',
+    description: `Christmas photoshoot in Bangalore: ${XM_PKG.priceText} for 30 minutes, ${XM_PKG.edited} edited photos, all photos and an album. Santa hats, backdrop and lights. Until ${XM_PKG.lastDate}.`,
     ogImage: ogUrl(hero),
     body,
     waTopic: topic,
     ld: [
       breadcrumbLd(trail),
-      { '@type': 'Service', '@id': abs(P) + '#service', name: 'Christmas photoshoot in Bangalore', serviceType: 'Christmas family photography', description: 'Festive studio portraits for families and kids, with a Christmas backdrop, Santa hats and lights.', provider: { '@id': `${SITE.origin}/#business` }, areaServed: { '@type': 'City', name: SITE.locality } },
+      { '@type': 'Service', '@id': abs(P) + '#service', name: 'Christmas photoshoot in Bangalore', serviceType: 'Christmas family photography', description: 'Festive studio portraits for families and kids, with a Christmas backdrop, Santa hats and lights.', offers: { '@type': 'Offer', name: XM_PKG.name, price: String(XM_PKG.price), priceCurrency: 'INR', priceValidUntil: XM_PKG.lastDateIso, url: abs(P), description: XM_PKG.includes.slice(0, 4).join(', ') }, provider: { '@id': `${SITE.origin}/#business` }, areaServed: { '@type': 'City', name: SITE.locality } },
       { '@type': 'ImageGallery', name: 'Christmas photoshoots in Bangalore', url: abs(P), image: ims.map((im) => ({ '@type': 'ImageObject', contentUrl: imgAbsOf(im), name: im.alt, creator: { '@id': `${SITE.origin}/#business` } })) },
       faqLd(faqs),
     ],

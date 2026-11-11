@@ -51,6 +51,26 @@ export const PACKAGES = {
       'Studio lighting setup, with an assistant available',
     ],
   },
+  christmas: {
+    name: 'Christmas Photoshoot',
+    price: 6899,
+    priceText: '₹6,899',
+    duration: '30 minutes',
+    durationAdj: '30-minute',
+    edited: 20,
+    lastDate: '24 December',
+    lastDateIso: '2026-12-24',
+    location: 'Nevervoid Studio, Bengaluru',
+    who: 'Kids, siblings, couples and families',
+    includes: [
+      '30-minute session',
+      '20 edited photos',
+      'All photos from your shoot',
+      'An album from your shoot',
+      'Christmas backdrop, Santa red hats and lights',
+      'Kids, siblings, couples and families',
+    ],
+  },
 };
 
 // "outfits, gym gear …, and tissues and snacks"
