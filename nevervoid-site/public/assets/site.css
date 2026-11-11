@@ -2288,3 +2288,22 @@ a.icon-btn:hover {
     justify-content: center;
   }
 }
+
+/* ================= Content protection: no text selection, image drag or long-press save ================= */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+input,
+textarea,
+select,
+[contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+img {
+  -webkit-user-drag: none;
+  user-drag: none;
+  pointer-events: auto;
+}
