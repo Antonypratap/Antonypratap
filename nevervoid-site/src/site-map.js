@@ -83,6 +83,8 @@ export const GROUPS = [
       '/Rent-maternity-gowns',
       '/Deep-green-maternity',
     ],
+    // Seasonal landing pages built by the site (not SmugMug galleries).
+    extra: [['/christmas-photoshoot-bangalore', 'Christmas photoshoot in Bangalore']],
   },
   {
     key: 'weddings',

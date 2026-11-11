@@ -10,7 +10,7 @@ import { marked } from 'marked';
 import { SITE, waLink, fullAddress, mapsLink } from '../src/config.js';
 import { applyFixes, REMOVED, ALT_OVERRIDES } from '../src/content-fixes.js';
 import { shareRow, subscribeForm, pinUrl, PIN_MARK, iconLinks, PIN_ICON, PHONE_ICON as PHONE_ICON_, MAIL_ICON as MAIL_ICON_, bookBtn, layout, esc, img, href, abs, crumbs, breadcrumbLd, ctaBand, imgAbs, imgUrl, ogUrl, waIcon } from '../src/lib.js';
-import { home, headshots, corporate, branding, fitness, femaleFitness, clients, postCards } from '../src/templates/featured.js';
+import { home, headshots, corporate, branding, fitness, femaleFitness, clients, christmas, postCards } from '../src/templates/featured.js';
 import { resolve as resolveRedirect } from '../src/redirects.js';
 import { PAGE_COPY } from '../src/content/page-copy.js';
 import { fillPackageTokens } from '../src/packages.js';
@@ -392,7 +392,7 @@ ${GROUPS.filter((g) => g.hub)
             .map((p) => `<li><a href="${href(p)}">${esc(short(byPath.get(p).title))}</a></li>`)
             .join('')}</ul>`
         : ''
-    }</div></section>`,
+    }${g.extra ? `<ul class="chips" style="margin-top:12px">${g.extra.map(([u, t]) => `<li><a href="${href(u)}">${esc(t)}</a></li>`).join('')}</ul>` : ''}</div></section>`,
   )
   .join('')}
 ${ctaBand()}`;
@@ -503,7 +503,7 @@ for (const p of pages) {
   else if (p.path === '/browse') out.push(browsePage());
   else out.push(genericPage(p.path));
 }
-const newPages = [servicesHub(), blogIndex(), ...posts.map(blogPost), contactPage(), subscribedPage()];
+const newPages = [servicesHub(), { ...christmas(ctx), template: 'new' }, blogIndex(), ...posts.map(blogPost), contactPage(), subscribedPage()];
 out.push(...newPages);
 const imgOut = imagePages.map(imagePage);
 

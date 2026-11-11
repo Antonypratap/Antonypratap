@@ -946,3 +946,119 @@ ${ctaBand({ heading: 'Show the work you put in.', text: 'Studio in Banaswadi or 
 }
 
 export { postCards };
+
+/* -------------------------------------------------------------- CHRISTMAS */
+// Seasonal landing page. Festive styling is scoped to .xmas so no other page
+// changes. No price or dates are stated (none approved); visitors are sent
+// to WhatsApp for this season's slots.
+export function christmas(ctx) {
+  const P = '/christmas-photoshoot-bangalore';
+  const G = '/Christmas-theme-photoshoots';
+  const ims = ctx.imagesOf(G);
+  const byId = (id) => ctx.image(id);
+  const hero = byId('Gh9BHdv') ?? ims[0];
+  const topic = 'a Christmas photoshoot';
+  const faqs = [
+    { q: 'Where does the Christmas photoshoot take place?', a: `<p>At our studio, ${esc(SITE.studioName)}, in Banaswadi, Bangalore. The Christmas backdrop, tree and lights are all set up there, so you just walk in and start.</p>` },
+    { q: 'What should we wear?', a: '<p>Come in full red, full green or full white. Everyone can wear the same colour, or mix the three. Plain fabrics photograph best, so avoid big logos and busy prints.</p>' },
+    { q: 'Do we need to bring Santa hats or props?', a: '<p>No. We have Santa red hats for everyone and the full Christmas set. Bring a favourite toy or ornament if you would like it in the photos.</p>' },
+    { q: 'Who can be in the photos?', a: '<p>Kids, couples, parents, grandparents and the whole family. We photograph individual portraits and group photos in the same session.</p>' },
+    { q: 'How do we book, and what does it cost?', a: `<p>Message us on <a href="${waLink(topic)}" rel="noopener">WhatsApp</a> or call ${SITE.phoneDisplay}, and we will share this season's available slots and price.</p>` },
+  ];
+  const trail = [['/services', 'Services'], [P, 'Christmas photoshoot']];
+  const gal = ims.map((im) => `<a href="${href(ctx.imagePageOf(G, im.id) ?? G)}">${img(im, { sizes: '(max-width: 640px) 50vw, 20vw' })}</a>`).join('');
+  const body = `<div class="xmas">
+<section class="hero xmas-hero">
+  ${img(hero, { cls: 'hero-bg', eager: true, sizes: '(max-width: 860px) 100vw, 54vw', alt: '' })}
+  <div class="xmas-lights" aria-hidden="true"></div>
+  <div class="wrap">
+    ${crumbs(trail).replace('class="crumbs"', 'class="crumbs" style="color:#d9cfc0"')}
+    <span class="eyebrow">Christmas · Family · Kids · Couples</span>
+    <h1>Christmas Photoshoot in Bangalore</h1>
+    <p class="lede">Festive portraits of you and your family in our Banaswadi studio. We have the Christmas backdrop, the Santa hats and the lights. All you have to do is come in full red, green or white.</p>
+    <ul class="badges"><li>Christmas backdrop &amp; tree</li><li>Santa red hats</li><li>Fairy-light portraits</li><li>Kids &amp; families</li></ul>
+    <div class="actions">
+      <a class="btn btn-xmas" href="${waLink(topic)}" rel="noopener">${waIcon} Book on WhatsApp</a>
+      <a class="btn btn-ghost" href="#portfolio">See the photos</a>
+      ${iconLinks({ topic, whatsapp: false, email: false, map: true, cls: 'on-dark' })}
+    </div>
+  </div>
+</section>
+
+<section class="section" id="why"><div class="wrap split">
+  <div>
+    <p class="wwh-label">Why</p>
+    <h2>A family portrait you will bring out every December</h2>
+    <p>Christmas photos on a phone rarely capture the moment: the light is flat, someone is always missing, and the background is the living room. A studio session gives you warm, glowing portraits with everyone in the frame.</p>
+    <ul class="ticks">
+      <li>Holiday cards, WhatsApp greetings and family albums</li>
+      <li>A yearly tradition to watch the kids grow</li>
+      <li>Framed prints for grandparents and family abroad</li>
+    </ul>
+  </div>
+  <div>${img(byId('t26PDgX') ?? ims[1] ?? hero)}</div>
+</div></section>
+
+<section class="section alt" id="what"><div class="wrap">
+  <div class="section-head"><p class="wwh-label">What</p><h2>We set the scene. You bring the smiles.</h2><p>Everything Christmas is ready in the studio before you arrive.</p></div>
+  <div class="xmas-props">
+    <div><span class="xmas-icon" aria-hidden="true">🎄</span><h3>Christmas backdrop</h3><p>A decorated tree, stars and stockings, set against a warm studio backdrop.</p></div>
+    <div><span class="xmas-icon" aria-hidden="true">🎅</span><h3>Santa red hats</h3><p>Hats for everyone, from the smallest kid to the grandparents.</p></div>
+    <div><span class="xmas-icon" aria-hidden="true">✨</span><h3>Lights</h3><p>Strings of warm fairy lights and studio lighting for that soft festive glow.</p></div>
+    <div><span class="xmas-icon" aria-hidden="true">📸</span><h3>Festive portraits</h3><p>Family groups, couples and individual portraits of each child.</p></div>
+  </div>
+</div></section>
+
+<section class="section" id="wear"><div class="wrap">
+  <div class="section-head"><span class="eyebrow">What to wear</span><h2>Come in full red, green or white</h2><p>One colour, head to toe. Everyone in the same colour, or mix the three, and the photos look festive straight away.</p></div>
+  <ul class="xmas-swatches">
+    <li class="sw-red"><strong>Full red</strong><span>The classic Santa look. Red dresses, shirts and sweaters.</span></li>
+    <li class="sw-green"><strong>Full green</strong><span>Rich and warm against the tree and lights.</span></li>
+    <li class="sw-white"><strong>Full white</strong><span>Soft and snowy, beautiful for babies and families.</span></li>
+  </ul>
+  <p class="xmas-note">Plain fabrics photograph best. Skip big logos and busy prints.</p>
+</div></section>
+
+<section class="section dark xmas-dark" id="how"><div class="wrap">
+  <div class="section-head"><p class="wwh-label">How</p><h2>How your Christmas photoshoot works</h2></div>
+  <ol class="steps">
+    <li><strong>Book a slot</strong><p>Message us on WhatsApp for this season's dates and times.</p></li>
+    <li><strong>Dress in red, green or white</strong><p>Full red, full green or full white. Mix them across the family if you like.</p></li>
+    <li><strong>Come to the studio</strong><p>The backdrop, Santa hats and lights are ready at our Banaswadi studio.</p></li>
+    <li><strong>We light and shoot</strong><p>We use the lights to make warm, festive portraits of you and your family.</p></li>
+    <li><strong>Your festive portraits</strong><p>We edit your photos and send them to you, ready to share and print.</p></li>
+  </ol>
+</div></section>
+
+<section class="section" id="portfolio"><div class="wrap">
+  <div class="section-head"><span class="eyebrow">Portfolio</span><h2>Christmas portraits from our studio</h2></div>
+  <div class="gallery xmas-gallery">${gal}</div>
+  <ul class="chips" style="margin-top:28px">
+    <li><a href="${G}">Christmas theme gallery</a></li>
+    <li><a href="/Family-photography-studio-bangalore">Family photography studio</a></li>
+    <li><a href="/Diwali-theme-photoshoot">Diwali theme photoshoot</a></li>
+    <li><a href="/Baby-photography">Baby photography</a></li>
+  </ul>
+</div></section>
+
+<section class="section alt" id="faq"><div class="wrap narrow">
+  <div class="section-head"><span class="eyebrow">FAQs</span><h2>Christmas photoshoot questions</h2></div>
+  ${faqHtml(faqs)}
+</div></section>
+${ctaBand({ heading: 'Make this Christmas one to remember.', text: 'Message us for this season’s slots. Come in full red, green or white; we have the backdrop, the Santa hats and the lights.', topic })}
+</div>`;
+  return {
+    path: P,
+    title: 'Christmas Photoshoot in Bangalore | Festive Family Portraits - Nevervoid Photography',
+    description: 'Christmas photoshoot in Bangalore for families and kids. Christmas backdrop, Santa red hats and fairy lights at our Banaswadi studio. Just come in red, green or white.',
+    ogImage: ogUrl(hero),
+    body,
+    waTopic: topic,
+    ld: [
+      breadcrumbLd(trail),
+      { '@type': 'Service', '@id': abs(P) + '#service', name: 'Christmas photoshoot in Bangalore', serviceType: 'Christmas family photography', description: 'Festive studio portraits for families and kids, with a Christmas backdrop, Santa hats and lights.', provider: { '@id': `${SITE.origin}/#business` }, areaServed: { '@type': 'City', name: SITE.locality } },
+      { '@type': 'ImageGallery', name: 'Christmas photoshoots in Bangalore', url: abs(P), image: ims.map((im) => ({ '@type': 'ImageObject', contentUrl: imgAbsOf(im), name: im.alt, creator: { '@id': `${SITE.origin}/#business` } })) },
+      faqLd(faqs),
+    ],
+  };
+}

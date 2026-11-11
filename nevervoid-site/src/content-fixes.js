@@ -88,6 +88,12 @@ export function applyFixes(pages, images = {}, years = yearsSince()) {
 // Hand-written alt text (written from the photos themselves), replacing
 // filename-derived text. Keyed by SmugMug image ID.
 export const ALT_OVERRIDES = {
+  // /Christmas-theme-photoshoots
+  BtpmQdr: 'Girl in a red dress beside a decorated Christmas tree and fairy lights, Christmas photoshoot in Bangalore',
+  '8x7Lwrg': 'Girl in a red velvet dress and Santa hat looking up at a lit Christmas tree, festive studio portrait',
+  t26PDgX: 'Two sisters in red dresses and Santa hats holding ornaments by the Christmas tree, Bangalore studio',
+  Gh9BHdv: 'Mother and two daughters in red with Santa hats in front of a Christmas tree, family Christmas photoshoot',
+  '4wzwMkR': 'Little boy in red with a Santa hat sitting by gift boxes, a reindeer and Christmas lights',
   // /Fitness-bikini-photoshoots (female fitness)
   z8dWgjw: 'Woman training on a cable rope pulldown in a Bangalore gym, black and white female fitness photoshoot',
   FjMm74W: 'Female athlete holding cable rope handles, showing toned arms, gym fitness portrait',

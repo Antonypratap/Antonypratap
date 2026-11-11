@@ -17,6 +17,18 @@ const CORP = '<a href="/Corporate-photoshoot">corporate photography</a>';
 const FIT = '<a href="/Fitness-Photography">gym &amp; fitness photoshoots</a>';
 
 export const PAGE_COPY = {
+  '/Christmas-theme-photoshoots': {
+    lede: 'Festive Christmas portraits of kids and families at our studio in Banaswadi, Bangalore.',
+    sections: [
+      {
+        h: 'Book a Christmas photoshoot',
+        p: [
+          'We have the Christmas backdrop, Santa red hats and lights ready in the studio. All you have to do is come in full red, green or white, and we make festive portraits of you and your family.',
+          'See how it works, what to wear and how to book on our <a href="/christmas-photoshoot-bangalore">Christmas photoshoot in Bangalore</a> page.',
+        ],
+      },
+    ],
+  },
   '/Professional-studio-headshots': {
     lede: 'Clean, consistent studio headshots on grey or white backgrounds, photographed under controlled light at our studio in Banaswadi, Bangalore.',
     sections: [
