@@ -2207,3 +2207,84 @@ a.icon-btn:hover {
   color: var(--xmas-green);
   margin: 10px 0 0;
 }
+
+/* ================= Homepage Christmas campaign (scoped to .xmas-promo) ================= */
+.xmas-promo {
+  --xmas-red: #b3202c;
+  --xmas-red-ink: #8e1621;
+  --xmas-gold: #e6c27a;
+  position: relative;
+  color: var(--on-night);
+  background: radial-gradient(110% 120% at 85% 0%, #1d5a40 0%, #14402e 45%, #0c2a1e 100%);
+  overflow: hidden;
+}
+.xmas-promo::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 26px;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 60%, #ffe7a3 0 3px, rgba(255, 214, 120, 0.5) 4px, transparent 9px) 0 0 / 40px 26px repeat-x,
+    radial-gradient(circle at 50% 60%, #ff8a8a 0 3px, rgba(255, 90, 90, 0.45) 4px, transparent 9px) 20px 5px / 40px 26px repeat-x;
+  opacity: 0.85;
+}
+.xmas-promo-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(28px, 5vw, 72px);
+  align-items: center;
+  padding-top: clamp(48px, 6vw, 84px);
+  padding-bottom: clamp(48px, 6vw, 84px);
+}
+.xmas-promo-img img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  object-position: center 30%;
+  border-radius: var(--radius);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(230, 194, 122, 0.35);
+}
+.xmas-promo .eyebrow {
+  color: var(--xmas-gold);
+}
+.xmas-promo h2 {
+  color: #fff;
+  font-size: clamp(2rem, 3.6vw, 3.1rem);
+  max-width: 16ch;
+  margin: 0 0 16px;
+}
+.xmas-promo-copy p {
+  color: #e4ddd2;
+  font-size: clamp(1.02rem, 1.4vw, 1.15rem);
+  max-width: 50ch;
+}
+.xmas-promo .btn-xmas {
+  background: var(--xmas-red);
+  border-color: var(--xmas-red);
+  color: #fff;
+}
+.xmas-promo .btn-xmas:hover {
+  background: var(--xmas-red-ink);
+  border-color: var(--xmas-red-ink);
+}
+.xmas-promo .xmas-promo-note {
+  font-size: 0.92rem;
+  color: var(--xmas-gold);
+  margin-top: 14px;
+}
+@media (max-width: 860px) {
+  .xmas-promo-grid {
+    grid-template-columns: 1fr;
+  }
+  .xmas-promo-img img {
+    aspect-ratio: 4 / 3;
+    object-position: center 35%;
+  }
+  .xmas-promo .btn-xmas {
+    width: 100%;
+    justify-content: center;
+  }
+}

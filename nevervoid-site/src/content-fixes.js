@@ -32,6 +32,9 @@ export function fixRules(years) {
     { re: /\b8 years of experience\./g, to: `${years} years of experience.`, paths: ['/Maternity-photo-editing'] },
     { re: /professional photographer for over 10 years/g, to: `professional photographer for over ${years} years` },
     // ---- corporate hub (owner, 2 Nov 2026: corporate is a highlighted service) ----
+    // Homepage positioning (GEO fix 01): headshots, corporate, fitness as the three specialisations.
+    { re: /^Professional photographer in Bangalore for Fitness, Corporate Headshots, Maternity$/, to: 'Professional Photographer in Bangalore for Headshots, Corporate & Fitness | Nevervoid', paths: ['/'] },
+    { re: /^Bangalore based professional photography and photo-editing services for you\. Over 18 years of experience\. Creating beautiful memories\.$/, to: 'Nevervoid Photography, Banaswadi, Bangalore: professional headshots, corporate team photography and fitness photography. Founded by Antony Pratap in 2008.', paths: ['/'] },
     { re: /^Corporate photoshoot - Nevervoid Photography - Bangalore$/, to: 'Corporate Photoshoot in Bangalore | Team Headshots, Events & Offices - Nevervoid Photography', paths: ['/Corporate-photoshoot'] },
     // ---- female fitness (owner, 3 Nov 2026: "female fitness", not "bikini"; URL kept for SEO) ----
     { re: /^Fitness Bikini Photoshoots - Nevervoid Photography - Bangalore$/, to: "Female Fitness Photoshoot in Bangalore | Women's Gym Photography - Nevervoid Photography", paths: ['/Fitness-bikini-photoshoots'] },

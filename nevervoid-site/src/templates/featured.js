@@ -73,6 +73,34 @@ function featureBlock(ctx, f) {
 </div></section>`;
 }
 
+// Direct answers about the business (homepage "About Nevervoid" section and
+// its FAQPage data). Facts only from the site's verified business details.
+const ABOUT_QA = [
+  ['What is Nevervoid Photography?', `Nevervoid Photography is a Bangalore-based photography studio specialising in professional headshots, corporate team photography and fitness photography. It was founded in ${SITE.foundingYear} by ${SITE.founder}, who has ${yearsSince()}+ years of photography experience.`],
+  ['Where is Nevervoid located?', `The studio is in Banaswadi, Bangalore (${esc(SITE.streetAddress)}, ${SITE.locality} ${SITE.postalCode}). We also photograph on location at offices and gyms across Bangalore.`],
+  ['Does Nevervoid offer LinkedIn headshots in Bangalore?', `Yes. Professional headshots for LinkedIn, founders, executives and personal branding, with studio sessions from ${HS_PKG.priceText}. See <a href="/Headshot-photographer-bangalore">headshot photography in Bangalore</a>.`],
+  ['Does Nevervoid photograph corporate teams at offices?', 'Yes. We bring a portable studio setup to your office for team and employee headshots and leadership portraits, so the whole team matches. See <a href="/Corporate-photoshoot">corporate photography</a>.'],
+  ['Does Nevervoid offer fitness photography?', `Yes. Fitness photography for personal trainers, athletes and bodybuilders, including physique shoots and fitness portfolios, with a studio package at ${FIT_PKG.priceText}. See <a href="/Fitness-Photography">fitness photography</a>.`],
+  ['How do I enquire or book?', `Book a headshot or fitness session online, or message us on <a href="${waLink('a photoshoot')}" rel="noopener">WhatsApp</a> or call ${SITE.phoneDisplay}. All options are on the <a href="/contact">contact page</a>.`],
+];
+
+// Seasonal campaign block on the homepage, linking to the Christmas landing
+// page. Styles are scoped to .xmas-promo.
+function christmasPromo(ctx) {
+  const im = ctx.image('Gh9BHdv') ?? ctx.imagesOf('/Christmas-theme-photoshoots')[0];
+  if (!im) return '';
+  return `<section class="xmas-promo" aria-labelledby="xmas-promo-h"><div class="wrap xmas-promo-grid">
+  <div class="xmas-promo-img">${img(im, { sizes: '(max-width: 860px) 100vw, 40vw' })}</div>
+  <div class="xmas-promo-copy">
+    <span class="eyebrow">Christmas portraits at Nevervoid</span>
+    <h2 id="xmas-promo-h">Make this Christmas a memory worth keeping.</h2>
+    <p>Celebrate the season with beautiful Christmas portraits. Bring your family, your partner or your little ones for a festive photography experience at Nevervoid.</p>
+    <div class="actions"><a class="btn btn-xmas" href="/christmas-photoshoot-bangalore">Explore Christmas Sessions →</a></div>
+    <p class="xmas-promo-note">Limited seasonal sessions. Enquire for availability.</p>
+  </div>
+</div></section>`;
+}
+
 export function home(ctx) {
   const page = ctx.page('/');
   const hs = pick(ctx, ['R2Sg6fk', 'qwKzjqx', 'br92FtZ'], '/Headshot-photographer-bangalore', 3);
@@ -94,7 +122,7 @@ export function home(ctx) {
     <div class="hero-x-copy">
       <span class="eyebrow">Banaswadi, Bangalore · Since ${SITE.foundingYear}</span>
       <h1>Headshot, corporate &amp; fitness photographer in Bangalore</h1>
-      <p class="lede">Headshots that open doors, team portraits that show your company at its best, and fitness photos that show the work. In our Banaswadi studio or on-site anywhere in the city.</p>
+      <p class="lede">Nevervoid Photography is a Bangalore-based photography studio specialising in professional headshots, corporate team photography and fitness photography. In our Banaswadi studio or on location anywhere in the city.</p>
       <div class="actions">
         <a class="btn btn-light" href="/contact">Book a session</a>
         <a class="btn btn-ghost" href="/Headshot-photographer-bangalore#pricing">Headshots from ${HS_PKG.priceText}</a>
@@ -112,15 +140,16 @@ export function home(ctx) {
     </div>
   </div>
 </section>
+${christmasPromo(ctx)}
 ${logoStrip(ctx)}
 ${featureBlock(ctx, {
   id: 'headshots',
   num: '01',
   eyebrow: 'Headshots',
   title: 'Headshots that make the right first impression',
-  text: 'We provide high-quality, professional headshot photography that helps individuals and businesses create a strong, positive first impression and establish credibility in their industry.',
+  text: 'Professional headshots for LinkedIn profiles, company websites, speaker bios and personal branding. Photographed in our Banaswadi studio, or on location at your office.',
   bullets: [
-    'For LinkedIn, founders, doctors, lawyers, consultants, actors and creators',
+    'For founders, entrepreneurs, executives and working professionals, plus doctors, lawyers, consultants, actors and creators',
     'Grey and white backgrounds, standing and sitting poses',
     'Posing and expression coaching, so camera-shy is fine',
     `Every photo from the session; ${HS_PKG.deliverablesShort}`,
@@ -139,10 +168,10 @@ ${featureBlock(ctx, {
   tone: 'dark',
   reverse: true,
   title: 'Your whole team, photographed to match',
-  text: 'We come to your office anywhere in Bangalore with a portable studio setup. Consistent lighting and background for the whole team, so everyone matches on your website and company profiles.',
+  text: 'Corporate team headshots and employee photography at your office anywhere in Bangalore, with a portable studio setup. Consistent lighting and background for the whole team, so everyone matches on your company website and professional profiles.',
   bullets: [
-    'Team headshots at your office, with minutes per person',
-    'Leadership and personal branding portraits',
+    'Team and employee headshots at your office, with minutes per person',
+    'Leadership and executive portraits',
     'Corporate events and office celebrations',
     'Office spaces and interiors',
   ],
@@ -158,10 +187,10 @@ ${featureBlock(ctx, {
   eyebrow: 'Fitness',
   tone: 'alt',
   title: 'Fitness photography that shows the work',
-  text: "Whether you're a fitness coach, bodybuilder, or simply proud of your transformation, we help you capture it professionally, in the studio or at your gym.",
+  text: "Fitness photography for personal trainers, coaches, athletes and bodybuilders, and for anyone proud of a transformation. Photographed in our studio or at your gym.",
   bullets: [
-    'Physique, transformation and competition shoots',
-    'Trainer, coach and gym brand content',
+    'Bodybuilding, physique, transformation and competition shoots',
+    'Fitness portfolios and personal branding for trainers, coaches and gyms',
     'High-contrast lighting, hero shots and motion captures',
     `${FIT_PKG.edited} professionally edited photos of your choice, with ${FIT_PKG.posing}`,
   ],
@@ -177,7 +206,7 @@ ${featureBlock(ctx, {
   <div>
     <span class="eyebrow">Why Nevervoid</span>
     <h2>${yearsSince()} years of making people look like their best selves.</h2>
-    <p>I'm ${SITE.founder}, and I have been providing photography services since ${SITE.foundingYear}. I take my photography service very seriously. It's not just about you arriving, the shoot happening, and you leaving. It's an experience: you get ready, feel it from inside and give your best expressions, and we take care of the rest.</p>
+    <p>I'm ${SITE.founder}, the founder of Nevervoid Photography, and I have been providing photography services since ${SITE.foundingYear}. Over ${yearsSince()}+ years, that experience has shaped the studio's three specialisations: professional headshots, corporate team photography and fitness photography. I take my photography service very seriously. It's not just about you arriving, the shoot happening, and you leaving. It's an experience: you get ready, feel it from inside and give your best expressions, and we take care of the rest.</p>
     <ul class="ticks">
       <li>Posed and candid styles, and you're comfortable throughout</li>
       <li>Studio in Banaswadi, or on-site at your office, home or gym</li>
@@ -199,7 +228,7 @@ ${featureBlock(ctx, {
 </div></section>
 
 <section class="section"><div class="wrap">
-  <div class="section-head"><span class="eyebrow">Also photographing</span><h2>Portraits, families and celebrations</h2></div>
+  <div class="section-head"><span class="eyebrow">Also photographing</span><h2>Portraits, families and celebrations</h2><p>Alongside our three specialisations, we also photograph these sessions.</p></div>
   <div class="minis">
     ${mini('/Professional-branding-portraits', 'Personal branding')}
     ${mini('/Maternity-Photography', 'Maternity')}
@@ -214,9 +243,10 @@ ${featureBlock(ctx, {
 </div></section>
 
 <section class="section alt"><div class="wrap">
-  <div class="section-head"><span class="eyebrow">Our services</span><h2>Best photography services from Bangalore</h2></div>
+  <div class="section-head"><span class="eyebrow">About Nevervoid</span><h2>Best photography services from Bangalore</h2></div>
   <div class="prose-cols">
-    ${long.map((b) => `<p>${b.html}</p>`).join('')}
+    ${ABOUT_QA.map(([q, a]) => `<h3>${esc(q)}</h3><p>${a}</p>`).join('')}
+    ${long.filter((b) => /^(Corporate headshot|Fitness photography)/.test(b.text ?? b.html.replace(/<[^>]+>/g, ''))).map((b) => `<p>${b.html}</p>`).join('')}
     <h3>History of Nevervoid Photography</h3>
     ${history.map((b) => `<p>${b.html}</p>`).join('')}
   </div>
@@ -234,6 +264,24 @@ ${ctaBand({ heading: 'Book your photography session with confidence.', text: 'He
     ogImage: ogUrl(hs[0]),
     body,
     waTopic: 'professional photography services',
+    ld: [
+      {
+        '@type': ['LocalBusiness', 'ProfessionalService'],
+        '@id': `${SITE.origin}/#business`,
+        description: 'Nevervoid Photography is a Bangalore-based photography studio specialising in professional headshots, corporate team photography and fitness photography.',
+        knowsAbout: ['Professional headshots', 'LinkedIn headshots', 'Corporate team photography', 'Leadership portraits', 'Fitness photography', 'Bodybuilding and physique photography'],
+        hasOfferCatalog: {
+          '@type': 'OfferCatalog',
+          name: 'Photography specialisations',
+          itemListElement: [
+            { '@type': 'Offer', itemOffered: { '@type': 'Service', name: 'Professional headshots', url: abs('/Headshot-photographer-bangalore') }, price: String(HS_PKG.price), priceCurrency: 'INR' },
+            { '@type': 'Offer', itemOffered: { '@type': 'Service', name: 'Corporate team photography', url: abs('/Corporate-photoshoot') } },
+            { '@type': 'Offer', itemOffered: { '@type': 'Service', name: 'Fitness photography', url: abs('/Fitness-Photography') }, price: String(FIT_PKG.price), priceCurrency: 'INR' },
+          ],
+        },
+      },
+      faqLd(ABOUT_QA.map(([q, a]) => ({ q, a: `<p>${a}</p>` }))),
+    ],
   };
 }
 

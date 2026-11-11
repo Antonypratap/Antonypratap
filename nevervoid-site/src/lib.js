@@ -86,7 +86,10 @@ export function businessLd() {
 }
 
 export function layout({ path, title, description, ogImage, ogType = 'website', ld = [], body, noindex = false, waTopic = 'a photoshoot', waNumber }) {
-  const graph = { '@context': 'https://schema.org', '@graph': [businessLd(), { '@type': 'WebSite', '@id': `${SITE.origin}/#website`, url: SITE.origin + '/', name: SITE.name, publisher: { '@id': businessId } }, ...ld] };
+  // A page may extend the business node (same @id); merge rather than duplicate it.
+  const ext = ld.filter((x) => x['@id'] === businessId);
+  const biz = Object.assign(businessLd(), ...ext);
+  const graph = { '@context': 'https://schema.org', '@graph': [biz, { '@type': 'WebSite', '@id': `${SITE.origin}/#website`, url: SITE.origin + '/', name: SITE.name, publisher: { '@id': businessId } }, ...ld.filter((x) => x['@id'] !== businessId)] };
   const navHtml = NAV.map(([p, n]) => `<a href="${href(p)}"${p === path ? ' aria-current="page"' : ''}>${n}</a>`).join('');
   const wa = waLink(waTopic, waNumber);
   return `<!doctype html>
