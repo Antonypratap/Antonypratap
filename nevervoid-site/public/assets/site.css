@@ -2493,7 +2493,7 @@ img {
 }
 .xmas-addon {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   align-items: center;
   margin-top: 28px;
@@ -2527,8 +2527,13 @@ img {
 }
 @media (max-width: 640px) {
   .xmas-addon {
-    grid-template-columns: 120px minmax(0, 1fr);
+    grid-template-columns: 1fr;
     gap: 14px;
     padding: 14px;
   }
+}
+.addon-mugs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
 }
