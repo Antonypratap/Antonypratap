@@ -1192,7 +1192,8 @@ ${ctaBand({ heading: 'Make this Christmas one to remember.', text: `${XM_PKG.pri
     path: P,
     title: 'Christmas Photoshoot in Bangalore | Festive Family Portraits - Nevervoid Photography',
     description: `Christmas photoshoot in Bangalore: ${XM_PKG.priceText} for 30 minutes, ${XM_PKG.edited} edited photos, all photos and an album. Santa hats, backdrop and lights. Until ${XM_PKG.lastDate}.`,
-    ogImage: ogUrl(hero),
+    ogImage: abs('/img/christmas/christmas-photoshoot-og.jpg'),
+    ogImageMeta: { width: 1200, height: 630, alt: 'Christmas Photoshoot at Nevervoid Photography, Bangalore: ₹6,899, 30-minute session, 20 edited photos and an album, sessions until 24 December' },
     body,
     waTopic: topic,
     ld: [

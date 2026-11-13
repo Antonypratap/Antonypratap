@@ -85,7 +85,7 @@ export function businessLd() {
   };
 }
 
-export function layout({ path, title, description, ogImage, ogType = 'website', ld = [], body, noindex = false, waTopic = 'a photoshoot', waNumber }) {
+export function layout({ path, title, description, ogImage, ogImageMeta, ogType = 'website', ld = [], body, noindex = false, waTopic = 'a photoshoot', waNumber }) {
   // A page may extend the business node (same @id); merge rather than duplicate it.
   const ext = ld.filter((x) => x['@id'] === businessId);
   const biz = Object.assign(businessLd(), ...ext);
@@ -106,7 +106,7 @@ ${description ? `<meta name="description" content="${esc(description)}">` : ''}
 <meta property="og:url" content="${abs(path)}">
 <meta property="og:title" content="${esc(title)}">
 ${description ? `<meta property="og:description" content="${esc(description)}">` : ''}
-<meta property="og:image" content="${esc(ogImage || SITE.defaultOgImage)}">
+<meta property="og:image" content="${esc(ogImage || SITE.defaultOgImage)}">${ogImageMeta ? `\n<meta property="og:image:type" content="image/jpeg">\n<meta property="og:image:width" content="${ogImageMeta.width}">\n<meta property="og:image:height" content="${ogImageMeta.height}">\n<meta property="og:image:alt" content="${esc(ogImageMeta.alt)}">\n<meta name="twitter:image" content="${esc(ogImage)}">` : ''}
 <meta property="og:locale" content="en_IN">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="geo.region" content="IN-KA">
