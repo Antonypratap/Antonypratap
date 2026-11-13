@@ -62,6 +62,8 @@ export const PACKAGES = {
     lastDateIso: '2026-12-24',
     location: 'Nevervoid Studio, Bengaluru',
     who: 'Kids, siblings, couples and families',
+    // Optional add-on (owner-approved 13 Nov 2026): a photo from the shoot printed on a mug.
+    addon: { name: 'Family photo mug', price: 559, priceText: '₹559', wasText: '₹699', text: 'A photo from your Christmas shoot, printed on a mug' },
     includes: [
       '30-minute session',
       '20 edited photos',

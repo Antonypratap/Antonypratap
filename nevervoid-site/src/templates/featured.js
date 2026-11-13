@@ -6,7 +6,8 @@ import { PACKAGES, listText } from '../packages.js';
 const HS_PKG = PACKAGES.headshot;
 const FIT_PKG = PACKAGES.fitness;
 const XM_PKG = PACKAGES.christmas;
-import { iconLinks, bookBtn, reserveAction, ogUrl, imgAbs as imgAbsOf, esc, img, href, ctaBand, faqHtml, faqLd, waIcon, crumbs, breadcrumbLd, abs } from '../lib.js';
+const XM_ADD = XM_PKG.addon;
+import { iconLinks, bookBtn, reserveAction, ogUrl, imgUrl as imgUrlOf, imgAbs as imgAbsOf, esc, img, href, ctaBand, faqHtml, faqLd, waIcon, crumbs, breadcrumbLd, abs } from '../lib.js';
 
 const gallery = (ctx, page, n = 24) =>
   `<div class="gallery">${ctx
@@ -997,6 +998,34 @@ ${ctaBand({ heading: 'Show the work you put in.', text: 'Studio in Banaswadi or 
 export { postCards };
 
 /* -------------------------------------------------------------- CHRISTMAS */
+// Christmas photos supplied by the owner (Nov 2026), self-hosted in
+// public/img/christmas/ at 400/800/1200 px, all 2:3. '@id' entries reuse
+// existing gallery photos; true marks a large tile.
+const XMAS_PHOTOS = [
+  ['mother-two-daughters-santa-hats', 'Mother and two daughters in red with Santa hats, family Christmas photoshoot in Bangalore', true],
+  ['mother-daughter-christmas-hug', 'Mother in red hugging her daughter in a Santa hat beside the Christmas tree'],
+  ['girl-elf-hat-christmas-gift', 'Girl in a green elf hat holding a Christmas gift by the tree'],
+  ['sisters-santa-hats-presents', 'Two sisters in Santa hats holding wrapped presents by the Christmas tree'],
+  ['parents-kiss-daughter-christmas', 'Parents kissing their daughter on the cheeks beside the Christmas tree'],
+  ['@Gh9BHdv'],
+  ['couple-santa-hats-christmas-tree', 'Couple in Santa hats smiling in front of the Christmas tree, couple Christmas photoshoot'],
+  ['sisters-christmas-lights', 'Two sisters in red sweaters and Santa hats in front of Christmas lights'],
+  ['@t26PDgX'],
+  ['family-christmas-portrait-red-tshirts', 'Smiling family of three in matching red t-shirts, Christmas family portrait in a Bangalore studio', true],
+  ['girl-santa-hat-christmas-gifts', 'Girl in a red shawl and Santa hat placing gifts by the Christmas tree'],
+  ['@BtpmQdr'],
+  ['family-of-three-christmas-tree', 'Family of three in red t-shirts beside the Christmas tree'],
+  ['@8x7Lwrg'],
+  ['woman-red-dress-christmas-celebration', 'Woman in a red dress and Santa hat celebrating by the Christmas tree'],
+  ['@4wzwMkR'],
+  ['woman-decorating-christmas-tree', 'Woman in a red t-shirt hanging an ornament on the Christmas tree'],
+  ['woman-peeking-christmas-tree', 'Woman in a Santa hat peeking out from behind the Christmas tree'],
+  ['santa-hat-portrait-bokeh', 'Close-up portrait of a woman in a knitted Santa hat with warm bokeh lights'],
+  ['woman-red-dress-christmas-wave', 'Woman in a red dress waving beside the Christmas tree'],
+  ['woman-santa-hat-seated-gifts', 'Woman in a red dress and Santa hat seated beside Christmas gifts'],
+  ['woman-santa-hat-christmas-gifts', 'Woman in a Santa hat holding gifts beside the lit Christmas tree'],
+];
+
 // Christmas products from NevervoidStore (the sister shop), shown on the
 // Christmas page. Images are self-hosted copies in public/img/store/.
 const STORE = 'https://nevervoidstore.com';
@@ -1033,10 +1062,23 @@ export function christmas(ctx) {
     { q: 'Do we need to bring Santa hats or props?', a: '<p>No. We have Santa red hats for everyone and the full Christmas set. Bring a favourite toy or ornament if you would like it in the photos.</p>' },
     { q: 'Who can be in the photos?', a: `<p>${XM_PKG.who}. We photograph individual portraits and group photos in the same session.</p>` },
     { q: 'How much does a Christmas photoshoot cost?', a: `<p>${XM_PKG.priceText} for a ${XM_PKG.durationAdj} session. You get ${XM_PKG.edited} edited photos, all the photos from your shoot and an album from your shoot.</p>` },
+    { q: 'Can we get a photo from the shoot printed on a mug?', a: `<p>Yes. Add the ${XM_ADD.name.toLowerCase()} to your session for ${XM_ADD.priceText} (usually ${XM_ADD.wasText}). We print a photo from your Christmas shoot on a mug.</p>` },
     { q: 'Until when can we book?', a: `<p>Christmas sessions run until ${XM_PKG.lastDate}. Message us on <a href="${waLink(topic)}" rel="noopener">WhatsApp</a> or call ${SITE.phoneDisplay} to pick your date.</p>` },
   ];
   const trail = [['/services', 'Services'], [P, 'Christmas photoshoot']];
-  const gal = ims.map((im) => `<a href="${href(ctx.imagePageOf(G, im.id) ?? G)}">${img(im, { sizes: '(max-width: 640px) 50vw, 20vw' })}</a>`).join('');
+  const local = (f, w) => `/img/christmas/christmas-${f}-${w}.webp`;
+  const gal = XMAS_PHOTOS.map(([f, alt, big]) => {
+    if (f.startsWith('@')) {
+      const im = byId(f.slice(1));
+      if (!im) return '';
+      return `<a class="xg" href="${href(ctx.imagePageOf(G, im.id) ?? G)}" data-full="${imgUrlOf(im)}" data-alt="${esc(im.alt)}">${img(im, { sizes: '(max-width: 640px) 50vw, 25vw' })}</a>`;
+    }
+    return `<a class="xg${big ? ' xg-big' : ''}" href="${local(f, 1200)}" data-full="${local(f, 1200)}" data-alt="${esc(alt)}"><img src="${local(f, 800)}" srcset="${local(f, 400)} 400w, ${local(f, 800)} 800w, ${local(f, 1200)} 1200w" sizes="${big ? '(max-width: 640px) 100vw, 50vw' : '(max-width: 640px) 50vw, 25vw'}" width="1200" height="1800" alt="${esc(alt)}" loading="lazy" decoding="async"></a>`;
+  }).join('');
+  const galLd = XMAS_PHOTOS.map(([f, alt]) => {
+    if (f.startsWith('@')) { const im = byId(f.slice(1)); return im && { contentUrl: imgAbsOf(im), name: im.alt }; }
+    return { contentUrl: abs(local(f, 1200)), name: alt };
+  }).filter(Boolean);
   const body = `<div class="xmas">
 <section class="hero xmas-hero">
   ${img(hero, { cls: 'hero-bg', eager: true, sizes: '(max-width: 860px) 100vw, 54vw', alt: '' })}
@@ -1084,6 +1126,7 @@ export function christmas(ctx) {
     <span class="eyebrow">${XM_PKG.name} · ${XM_PKG.location}</span>
     <div class="price">${XM_PKG.priceText} <small>${XM_PKG.durationAdj} session</small></div>
     <ul class="ticks">${XM_PKG.includes.map((x) => `<li>${x}</li>`).join('')}</ul>
+    <p class="xmas-addon-line"><span class="addon-tag">Add-on</span> ${XM_ADD.name} <strong>${XM_ADD.priceText}</strong> <s>${XM_ADD.wasText}</s></p>
     <p class="xmas-deadline">Sessions until ${XM_PKG.lastDate}. Pick your date.</p>
     <div class="actions" style="margin-top:8px"><a class="btn btn-xmas" href="${waLink(topic)}" rel="noopener">${waIcon} Pick your date</a>${iconLinks({ topic, whatsapp: false, email: false })}</div>
   </div>
@@ -1092,6 +1135,15 @@ export function christmas(ctx) {
     <h2>Festive portraits, ready to share and keep</h2>
     <p>One ${XM_PKG.durationAdj} studio session for ${XM_PKG.who.toLowerCase()}. You take home every photo from the shoot, ${XM_PKG.edited} of them fully edited, and an album to keep.</p>
     <p>Slots fill up in the weeks before Christmas, and sessions run only until ${XM_PKG.lastDate}, so book early.</p>
+    <div class="xmas-addon" id="photo-mug">
+      <img src="/img/christmas/family-photo-christmas-mug-600.webp" srcset="/img/christmas/family-photo-christmas-mug-300.webp 300w, /img/christmas/family-photo-christmas-mug-600.webp 600w, /img/christmas/family-photo-christmas-mug-1200.webp 1200w" sizes="(max-width: 640px) 40vw, 200px" width="1200" height="1200" alt="White mug printed with a family photo from a Nevervoid Christmas photoshoot" loading="lazy" decoding="async">
+      <div>
+        <span class="addon-tag">Add-on</span>
+        <h3>Your Christmas photo on a mug</h3>
+        <p>${XM_ADD.text}. A keepsake for the family, or a gift for grandparents.</p>
+        <p class="addon-price"><strong>${XM_ADD.priceText}</strong> <s>${XM_ADD.wasText}</s> <span>with your Christmas session</span></p>
+      </div>
+    </div>
   </div>
 </div></section>
 
@@ -1117,8 +1169,10 @@ export function christmas(ctx) {
 </div></section>
 
 <section class="section" id="portfolio"><div class="wrap">
-  <div class="section-head"><span class="eyebrow">Portfolio</span><h2>Christmas portraits from our studio</h2></div>
-  <div class="gallery xmas-gallery">${gal}</div>
+  <div class="section-head"><span class="eyebrow">Portfolio</span><h2>Christmas portraits from our studio</h2><p>Families, kids, siblings, couples and solo portraits, all photographed on our Christmas set in Banaswadi.</p></div>
+  <div class="xmas-grid">${gal}</div>
+  <dialog class="xlb" aria-label="Photo viewer"><button class="xlb-x" type="button" aria-label="Close">×</button><button class="xlb-p" type="button" aria-label="Previous photo">‹</button><button class="xlb-n" type="button" aria-label="Next photo">›</button></dialog>
+  <script>(()=>{const d=document.querySelector('.xlb');if(!d||!d.showModal)return;const a=[...document.querySelectorAll('.xmas-grid .xg')],im=d.insertBefore(document.createElement('img'),d.firstChild);let i=0;const show=(k)=>{i=(k+a.length)%a.length;im.src=a[i].dataset.full;im.alt=a[i].dataset.alt};a.forEach((el,k)=>el.addEventListener('click',(e)=>{e.preventDefault();show(k);d.showModal()}));d.querySelector('.xlb-x').onclick=()=>d.close();d.querySelector('.xlb-p').onclick=()=>show(i-1);d.querySelector('.xlb-n').onclick=()=>show(i+1);d.addEventListener('click',(e)=>{if(e.target===d)d.close()});d.addEventListener('keydown',(e)=>{if(e.key==='ArrowLeft')show(i-1);if(e.key==='ArrowRight')show(i+1)});let x=null;d.addEventListener('touchstart',(e)=>{x=e.touches[0].clientX},{passive:true});d.addEventListener('touchend',(e)=>{if(x===null)return;const dx=e.changedTouches[0].clientX-x;x=null;if(Math.abs(dx)>50)show(dx>0?i-1:i+1)},{passive:true})})()</script>
   <ul class="chips" style="margin-top:28px">
     <li><a href="${G}">Christmas theme gallery</a></li>
     <li><a href="/Family-photography-studio-bangalore">Family photography studio</a></li>
@@ -1143,8 +1197,8 @@ ${ctaBand({ heading: 'Make this Christmas one to remember.', text: `${XM_PKG.pri
     waTopic: topic,
     ld: [
       breadcrumbLd(trail),
-      { '@type': 'Service', '@id': abs(P) + '#service', name: 'Christmas photoshoot in Bangalore', serviceType: 'Christmas family photography', description: 'Festive studio portraits for families and kids, with a Christmas backdrop, Santa hats and lights.', offers: { '@type': 'Offer', name: XM_PKG.name, price: String(XM_PKG.price), priceCurrency: 'INR', priceValidUntil: XM_PKG.lastDateIso, url: abs(P), description: XM_PKG.includes.slice(0, 4).join(', ') }, provider: { '@id': `${SITE.origin}/#business` }, areaServed: { '@type': 'City', name: SITE.locality } },
-      { '@type': 'ImageGallery', name: 'Christmas photoshoots in Bangalore', url: abs(P), image: ims.map((im) => ({ '@type': 'ImageObject', contentUrl: imgAbsOf(im), name: im.alt, creator: { '@id': `${SITE.origin}/#business` } })) },
+      { '@type': 'Service', '@id': abs(P) + '#service', name: 'Christmas photoshoot in Bangalore', serviceType: 'Christmas family photography', description: 'Festive studio portraits for families and kids, with a Christmas backdrop, Santa hats and lights.', offers: { '@type': 'Offer', name: XM_PKG.name, price: String(XM_PKG.price), priceCurrency: 'INR', priceValidUntil: XM_PKG.lastDateIso, url: abs(P), description: XM_PKG.includes.slice(0, 4).join(', '), addOn: { '@type': 'Offer', name: XM_ADD.name, price: String(XM_ADD.price), priceCurrency: 'INR', priceValidUntil: XM_PKG.lastDateIso, description: XM_ADD.text } }, provider: { '@id': `${SITE.origin}/#business` }, areaServed: { '@type': 'City', name: SITE.locality } },
+      { '@type': 'ImageGallery', name: 'Christmas photoshoots in Bangalore', url: abs(P), image: galLd.map((x) => ({ '@type': 'ImageObject', ...x, creator: { '@id': `${SITE.origin}/#business` } })) },
       faqLd(faqs),
     ],
   };
