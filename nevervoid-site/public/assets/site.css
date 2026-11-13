@@ -2307,3 +2307,76 @@ img {
   user-drag: none;
   pointer-events: auto;
 }
+
+/* ================= NevervoidStore gifts on the Christmas page ================= */
+.store-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 16px;
+}
+.store-grid a {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  text-decoration: none;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.store-grid a:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 2px 4px rgba(20, 18, 16, 0.08), 0 14px 36px rgba(20, 18, 16, 0.14);
+}
+.store-img img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+}
+.store-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 14px 16px;
+  border-top: 3px solid var(--xmas-red);
+  flex: 1;
+}
+.store-grid li:nth-child(even) .store-body {
+  border-top-color: var(--xmas-green);
+}
+.store-body strong {
+  font: 600 1rem/1.25 var(--serif);
+}
+.store-body span {
+  font-size: 0.86rem;
+  color: var(--ink-2);
+}
+.store-body em {
+  margin-top: auto;
+  padding-top: 8px;
+  font-style: normal;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--xmas-red);
+}
+.store-more {
+  margin-top: 28px;
+  text-align: center;
+}
+@media (max-width: 1080px) {
+  .store-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .store-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+}

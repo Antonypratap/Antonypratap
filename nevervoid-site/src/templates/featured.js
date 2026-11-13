@@ -997,6 +997,26 @@ ${ctaBand({ heading: 'Show the work you put in.', text: 'Studio in Banaswadi or 
 export { postCards };
 
 /* -------------------------------------------------------------- CHRISTMAS */
+// Christmas products from NevervoidStore (the sister shop), shown on the
+// Christmas page. Images are self-hosted copies in public/img/store/.
+const STORE = 'https://nevervoidstore.com';
+const STORE_UTM = 'utm_source=nevervoid&utm_medium=referral&utm_campaign=christmas';
+const storeLink = (path) => `${STORE}/${path}${path.includes('?') ? '&' : '?'}${STORE_UTM}`;
+const STORE_XMAS = [
+  ['initials/', 'christmas-initial-mug', 'Christmas Initial Mugs', 'Their first letter in a Santa hat. Pick a letter A to Z.'],
+  ['products/tis-the-season-mug.html', 'tis-the-season-mug', 'Tis the Season Mug', 'A watercolour reindeer under a winter moon.'],
+  ['cases/', 'christmas-phone-case', 'Christmas Phone Cases', '55 festive glass cases, made for your exact phone.'],
+  ['products/dear-santa-i-can-explain-mug.html', 'dear-santa-i-can-explain-mug', 'Dear Santa, I Can Explain Mug', 'A guilty golden pup tangled in Christmas lights.'],
+  ['products/dear-santa-it-wasnt-me-mug.html', 'dear-santa-it-wasnt-me-mug', "Dear Santa, It Wasn't Me Mug", 'A cheeky pup in a Santa hat, very obviously guilty.'],
+  ['send-a-wish-custom-mug/', 'send-a-wish-mug', 'Send a Wish Mug', 'Your own Christmas wish and name on a mug.'],
+];
+const storeSection = () => `<section class="section alt xmas-store" id="gifts"><div class="wrap">
+  <div class="section-head"><span class="eyebrow">From NevervoidStore</span><h2>Christmas gifts from our sister store</h2><p>Made-to-order Christmas mugs and phone cases from <a href="${storeLink('')}" rel="noopener" target="_blank">NevervoidStore</a>, also by Nevervoid. Delivered across Karnataka.</p></div>
+  <ul class="store-grid">${STORE_XMAS.map(([path, file, name, text]) => `<li><a href="${storeLink(path)}" rel="noopener" target="_blank"><span class="store-img"><img src="/img/store/${file}-600.webp" srcset="/img/store/${file}-300.webp 300w, /img/store/${file}-600.webp 600w" sizes="(max-width: 640px) 50vw, 16vw" width="600" height="600" alt="${esc(name)} from NevervoidStore" loading="lazy" decoding="async"></span><span class="store-body"><strong>${esc(name)}</strong><span>${esc(text)}</span><em>Shop now ↗</em></span></a></li>`).join('')}</ul>
+  <p class="store-more"><a class="btn btn-xmas" href="${storeLink('')}" rel="noopener" target="_blank">Shop all Christmas gifts ↗</a></p>
+</div></section>
+`;
+
 // Seasonal landing page. Festive styling is scoped to .xmas so no other page
 // changes. No price or dates are stated (none approved); visitors are sent
 // to WhatsApp to pick a date. Package facts come from src/packages.js.
@@ -1107,7 +1127,8 @@ export function christmas(ctx) {
   </ul>
 </div></section>
 
-<section class="section alt" id="faq"><div class="wrap narrow">
+${storeSection()}
+<section class="section" id="faq"><div class="wrap narrow">
   <div class="section-head"><span class="eyebrow">FAQs</span><h2>Christmas photoshoot questions</h2></div>
   ${faqHtml(faqs)}
 </div></section>
