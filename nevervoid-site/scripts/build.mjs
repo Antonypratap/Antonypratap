@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { marked } from 'marked';
 import { SITE, waLink, fullAddress, mapsLink } from '../src/config.js';
-import { applyFixes, REMOVED, ALT_OVERRIDES } from '../src/content-fixes.js';
+import { applyFixes, REMOVED, ALT_OVERRIDES, yearsSince } from '../src/content-fixes.js';
 import { shareRow, subscribeForm, pinUrl, PIN_MARK, iconLinks, PIN_ICON, PHONE_ICON as PHONE_ICON_, MAIL_ICON as MAIL_ICON_, bookBtn, layout, esc, img, href, abs, crumbs, breadcrumbLd, ctaBand, imgAbs, imgUrl, ogUrl, waIcon } from '../src/lib.js';
 import { home, headshots, corporate, branding, fitness, femaleFitness, clients, christmas, postCards } from '../src/templates/featured.js';
 import { resolve as resolveRedirect } from '../src/redirects.js';
@@ -272,6 +272,8 @@ function genericPage(p) {
         .join('')
     : '';
   const lede = first ? first.html : copy?.lede ?? '';
+  const g = groupOf.get(p);
+  if (!isArticle && !isLegal) return galleryLanding(p, { pg, h1, ims, trail, prose, copy, copyHtml, lede, fitnessy, g });
   const body = `
 <section class="page-hero"><div class="wrap">
   ${crumbs(trail)}
@@ -319,6 +321,106 @@ ${isLegal ? '' : ctaBand({ topic: topicFor(p), number: fitnessy ? SITE.phone : u
     template: isArticle ? 'article' : isLegal ? 'legal' : children(p).length ? 'collection' : 'gallery',
   };
 }
+
+// ---------- gallery landing page ----------
+// Professional layout for the SmugMug gallery pages: split hero with a lead
+// photo, the page's own copy beside a planning card, a titled gallery with a
+// full-screen viewer, how-it-works steps and related galleries as cards.
+// Uses only existing copy and verified business facts.
+const GROUP_HUB = { headshots: '/Headshot-photographer-bangalore', corporate: '/Corporate-photoshoot', fitness: '/Fitness-Photography' };
+const hubFor = (g) => (g ? GROUP_HUB[g.key] ?? `/services#${g.key}` : '/services');
+const hubLabel = (g) => (g ? (GROUP_HUB[g.key] ? `All ${g.name.toLowerCase()}` : `All ${g.name.toLowerCase()} services`) : 'All services');
+function galleryLanding(p, { pg, h1, ims, trail, prose, copy, copyHtml, lede, fitnessy, g }) {
+  const desc = describe(p);
+  const intro = lede || esc((desc.text || g?.blurb || '').replace(/\s*(?:Contact|Call|WhatsApp)(?: us)?:?\s*\+?[\d\s-]{10,}\.?\s*$/i, ''));
+  const lead = ims[0];
+  const book = bookFor(p);
+  const topic = topicFor(p);
+  const actions = book
+    ? `${bookBtn(book, 'btn-primary')}${iconLinks({ topic, number: fitnessy ? SITE.phone : undefined, email: false })}`
+    : `<a class="btn btn-primary" href="${waLink(topic, fitnessy ? SITE.phone : undefined)}" rel="noopener">${waIcon} Enquire on WhatsApp</a>${iconLinks({ topic, whatsapp: false, email: false })}`;
+  const facts = [
+    ims.length ? [String(ims.length), ims.length === 1 ? 'photo in this gallery' : 'photos in this gallery'] : null,
+    ['Banaswadi', 'studio, Bangalore'],
+    [`Since ${SITE.foundingYear}`, `${yearsSince()}+ years of photography`],
+  ].filter(Boolean);
+  const story = copyHtml || prose;
+  const kids = children(p);
+  const sib = (g?.paths ?? []).filter((x) => x !== p && byPath.has(x));
+  const sibCards = sib.filter((x) => ctx.imagesOf(x)[0]).slice(0, 3);
+  const sibChips = sib.filter((x) => !sibCards.includes(x)).slice(0, 10);
+  const cardFor = (x) => {
+    const im = ctx.imagesOf(x)[0];
+    return `<a class="card" href="${href(x)}">${im ? img(im, { sizes: '(max-width: 640px) 100vw, 33vw' }) : ''}<div class="card-body"><h3>${esc(short(byPath.get(x).title))}</h3><div class="more">View gallery →</div></div></a>`;
+  };
+  const body = `
+<section class="ghero${lead ? '' : ' ghero-text'}"><div class="wrap ghero-grid">
+  <div class="ghero-copy">
+    ${crumbs(trail)}
+    ${g ? `<span class="eyebrow">${esc(g.name)}</span>` : ''}
+    <h1>${esc(h1)}</h1>
+    ${intro ? `<p class="lede">${intro}</p>` : ''}
+    <div class="actions">${actions}</div>
+    <ul class="gfacts">${facts.map(([k, v]) => `<li><strong>${esc(k)}</strong>${esc(v)}</li>`).join('')}</ul>
+  </div>
+  ${lead ? `<a class="ghero-photo" href="${href(imagePageFor.get(`${p}|${lead.id}`) ?? p)}">${img(lead, { eager: true, sizes: '(max-width: 860px) 100vw, 42vw' })}</a>` : ''}
+</div></section>
+${story ? `<section class="section-tight gstory"><div class="wrap gstory-grid">
+  <div class="prose">${copyHtml ? '' : `<span class="eyebrow">About this session</span>`}${story}</div>
+  <aside class="gplan">
+    <span class="eyebrow">Plan your shoot</span>
+    <h2>Talk to us about your session</h2>
+    <p>Tell us what the photos are for, and we will plan the shoot around it.</p>
+    <div class="actions">${actions}</div>
+    <p class="meta"><strong>${esc(SITE.studioName)}</strong><br>${esc(fullAddress())}</p>
+    <p class="meta"><a href="${href(hubFor(g))}">${esc(hubLabel(g))} →</a></p>
+  </aside>
+</div></section>` : ''}
+${ims.length ? `<section class="section-tight ggallery" id="gallery"><div class="wrap">
+  <div class="ggallery-head"><div><span class="eyebrow">Portfolio</span><h2>${esc(h1)}: the gallery</h2></div><p class="meta">${ims.length} ${ims.length === 1 ? 'photo' : 'photos'} · tap any photo to view it full screen</p></div>
+  ${galleryHtml(p, ims)}
+</div></section>` : ''}
+${kids.length ? `<section class="section-tight"><div class="wrap"><div class="ggallery-head"><div><span class="eyebrow">Collection</span><h2>In this collection</h2></div></div><div class="cards">${kids.map((k) => cardFor(k.path)).join('')}</div></div></section>` : ''}
+${copy?.faqs?.length ? `<section class="section-tight"><div class="wrap narrow"><h2>Questions</h2>${faqHtml(copy.faqs.map((f) => ({ q: f.q, a: `<p>${f.a}</p>` })))}</div></section>` : ''}
+<section class="section-tight gsteps"><div class="wrap">
+  <div class="ggallery-head"><div><span class="eyebrow">How it works</span><h2>From first message to final photos</h2></div></div>
+  <ol class="steps">
+    <li><strong>Talk to us</strong><p>A quick chat on WhatsApp or the phone about what the photos are for.</p></li>
+    <li><strong>Plan the shoot</strong><p>Studio or on-site, date and time, and guidance on what to wear and bring.</p></li>
+    <li><strong>Shoot day</strong><p>We guide every pose and expression and light every frame.</p></li>
+    <li><strong>Your photos</strong><p>You pick your favourites, and we edit and deliver them.</p></li>
+  </ol>
+</div></section>
+${sibCards.length ? `<section class="section-tight"><div class="wrap"><div class="ggallery-head"><div><span class="eyebrow">Explore</span><h2>More ${esc(g.name.toLowerCase())}</h2></div><a class="btn btn-ghost btn-sm" href="${href(hubFor(g))}">${esc(hubLabel(g))}</a></div><div class="cards">${sibCards.map(cardFor).join('')}</div>${sibChips.length ? `<ul class="chips" style="margin-top:20px">${sibChips.map((x) => `<li><a href="${href(x)}">${esc(short(byPath.get(x).title))}</a></li>`).join('')}</ul>` : ''}</div></section>` : ''}
+${ctaBand({ topic, number: fitnessy ? SITE.phone : undefined, book })}
+${ims.length ? GALLERY_VIEWER : ''}`;
+  const ld = [breadcrumbLd(trail)];
+  if (copy?.faqs?.length) ld.push(faqLd(copy.faqs.map((f) => ({ q: f.q, a: f.a }))));
+  if (ims.length)
+    ld.push({
+      '@type': 'ImageGallery',
+      name: h1,
+      url: abs(p),
+      image: ims.slice(0, 20).map((im) => ({ '@type': 'ImageObject', contentUrl: imgAbs(im), name: im.alt, creator: { '@id': `${SITE.origin}/#business` } })),
+    });
+  return {
+    path: p,
+    title: pg.title,
+    description: desc.text,
+    descSource: desc.source,
+    ogImage: ogUrl(ims[0]),
+    body,
+    ld,
+    waTopic: topic,
+    waNumber: fitnessy ? SITE.phone : undefined,
+    h1,
+    template: children(p).length ? 'collection' : 'gallery',
+  };
+}
+// Full-screen viewer for .ggallery photos; links keep their photo-page URLs
+// for search engines and visitors without JavaScript.
+const GALLERY_VIEWER = `<dialog class="xlb" aria-label="Photo viewer"><button class="xlb-x" type="button" aria-label="Close">×</button><button class="xlb-p" type="button" aria-label="Previous photo">‹</button><button class="xlb-n" type="button" aria-label="Next photo">›</button></dialog>
+<script>(()=>{const d=document.querySelector('.xlb');if(!d||!d.showModal)return;const a=[...document.querySelectorAll('.ggallery .gallery a:not(.pin-btn)')];if(!a.length)return;const im=d.insertBefore(document.createElement('img'),d.firstChild);let i=0;const big=(el)=>{const g=el.querySelector('img'),s=g.getAttribute('srcset');return s?s.split(',').map((x)=>x.trim().split(' ')[0]).at(-1):g.src};const show=(k)=>{i=(k+a.length)%a.length;im.src=big(a[i]);im.alt=a[i].querySelector('img').alt};a.forEach((el,k)=>el.addEventListener('click',(e)=>{if(e.metaKey||e.ctrlKey)return;e.preventDefault();show(k);d.showModal()}));d.querySelector('.xlb-x').onclick=()=>d.close();d.querySelector('.xlb-p').onclick=()=>show(i-1);d.querySelector('.xlb-n').onclick=()=>show(i+1);d.addEventListener('click',(e)=>{if(e.target===d)d.close()});d.addEventListener('keydown',(e)=>{if(e.key==='ArrowLeft')show(i-1);if(e.key==='ArrowRight')show(i+1)});let x=null;d.addEventListener('touchstart',(e)=>{x=e.touches[0].clientX},{passive:true});d.addEventListener('touchend',(e)=>{if(x===null)return;const dx=e.changedTouches[0].clientX-x;x=null;if(Math.abs(dx)>50)show(dx>0?i-1:i+1)},{passive:true})})()</script>`;
 
 // ---------- image page ----------
 function imagePage({ path: p, id, gallery }) {
