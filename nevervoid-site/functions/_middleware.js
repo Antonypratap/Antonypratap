@@ -59,7 +59,11 @@ export async function onRequest(context) {
   if (url.hostname.endsWith('.pages.dev')) {
     const out = new Response(res.body, res);
     out.headers.set('X-Robots-Tag', 'noindex, nofollow');
-    return out;
+    // Until www.nevervoid.com points here, its /img/ URLs 404, so share previews
+    // (WhatsApp, Facebook, LinkedIn, X) of preview links use this host's images.
+    if (!(out.headers.get('content-type') || '').includes('text/html') || typeof HTMLRewriter === 'undefined') return out;
+    const swap = { element(el) { const c = el.getAttribute('content'); if (c && c.startsWith('https://www.nevervoid.com/')) el.setAttribute('content', url.origin + c.slice('https://www.nevervoid.com'.length)); } };
+    return new HTMLRewriter().on('meta[property="og:image"]', swap).on('meta[name="twitter:image"]', swap).on('meta[property="og:url"]', swap).transform(out);
   }
   return res;
 }
