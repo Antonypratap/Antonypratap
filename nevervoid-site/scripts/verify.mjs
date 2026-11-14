@@ -340,6 +340,7 @@ if (failures.length) {
   };
   // Outdated headshot/fitness package statements that must never come back.
   const STALE = [
+    [/₹\s?8,?899|8,899 Indian Rupees|\b8899\b/, 'corporate ₹8,899 (corporate work is always a custom quote)'],
     [/delivered in 2 days|delivery in 2 days|2-day delivery|\b2 days headshot|Delivery 2 days\b/i, 'headshot delivery "2 days" (approved: 2–3 days)'],
     [/best 5 (?:photos )?(?:you choose will be |are )?advanced[- ]edited/i, 'headshot "best 5 advanced-edited" without the 2 additional office-background photos'],
     [/half to one hour|\(20 minutes\)|20-minute session/i, 'headshot duration (approved: 15–20 minutes)'],

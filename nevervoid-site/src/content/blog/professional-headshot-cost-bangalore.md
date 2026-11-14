@@ -41,7 +41,7 @@ You can see the full details and sample work on our [headshot photography in Ban
 
 ## Corporate and team headshots
 
-For corporate headshots, one look (one style with one set of clothes, such as a shirt and blazer) is **₹8,899**. Two outfits or different looks, team sessions and on-location shoots at your office are quoted as customised packages, based on team size and location. See [corporate photography](/Corporate-photoshoot) for how team shoots work.
+Corporate and team headshots are always **custom quoted**. Tell us {{corporate.quoteNeeds}}, and we will send you a quote. See [corporate photography](/Corporate-photoshoot) for how team shoots work.
 
 ## How payment works
 

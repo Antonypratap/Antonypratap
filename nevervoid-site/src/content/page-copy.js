@@ -4,12 +4,12 @@
 // headshot, corporate and fitness pages.
 // Package facts (price, duration, deliverables, delivery) come from
 // src/packages.js, the approved source of truth. Other facts: studio in
-// Banaswadi, on-site across Bangalore, Rs 8,899 corporate single look.
+// Banaswadi, on-site across Bangalore; corporate work is always custom quoted.
 //
 // Shape: { lede?, sections: [{ h, p: [..], list?: [..] }], faqs?: [{ q, a }] }
 // (p, list and a may contain inline HTML links.)
 
-import { PACKAGES } from '../packages.js';
+import { PACKAGES, listText } from '../packages.js';
 const HSP = PACKAGES.headshot;
 
 const HS = '<a href="/Headshot-photographer-bangalore">headshot photography in Bangalore</a>';
@@ -122,7 +122,7 @@ export const PAGE_COPY = {
       {
         h: 'Studio or on-site',
         p: [
-          `Individuals can book a studio headshot session for ${HSP.priceText} (see ${HS}). For teams, a corporate single look is ₹8,899 and on-location shoots at your premises are customised; see ${CORP}.`,
+          `Individuals can book a studio headshot session for ${HSP.priceText} (see ${HS}). Corporate and team shoots are always custom quoted: tell us ${listText(PACKAGES.corporate.quoteNeeds)}, and we will send you a quote. See ${CORP}.`,
         ],
       },
     ],

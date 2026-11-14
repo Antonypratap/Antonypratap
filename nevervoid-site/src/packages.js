@@ -51,6 +51,12 @@ export const PACKAGES = {
       'Studio lighting setup, with an assistant available',
     ],
   },
+  // Corporate photography has no fixed price: every job is quoted (owner, 14 Nov 2026).
+  corporate: {
+    name: 'Corporate photography',
+    priceText: 'Custom quote',
+    quoteNeeds: ['the location', 'the date and time', 'how many people', 'how many looks or outfits', 'how many days'],
+  },
   christmas: {
     name: 'Christmas Photoshoot',
     price: 6899,
@@ -83,6 +89,7 @@ export const listText = (items) => {
   return `${items.slice(0, -1).join(', ')}${sep}${items.at(-1)}`;
 };
 // Fitness kit to bring besides outfits (for "on the day" checklists).
+PACKAGES.corporate.quoteText = `Corporate photography is always custom quoted. Tell us ${listText(PACKAGES.corporate.quoteNeeds)}, and we will send you a quote.`;
 PACKAGES.fitness.bringKit = PACKAGES.fitness.bring.filter((x) => x !== 'outfits');
 
 // Replace {{package.field}} tokens in Markdown. Throws on unknown tokens so a

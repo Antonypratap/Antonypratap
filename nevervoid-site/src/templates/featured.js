@@ -5,6 +5,7 @@ import { yearsSince } from '../content-fixes.js';
 import { PACKAGES, listText } from '../packages.js';
 const HS_PKG = PACKAGES.headshot;
 const FIT_PKG = PACKAGES.fitness;
+const CORP_PKG = PACKAGES.corporate;
 const XM_PKG = PACKAGES.christmas;
 const XM_ADD = XM_PKG.addon;
 import { iconLinks, bookBtn, reserveAction, ogUrl, imgUrl as imgUrlOf, imgAbs as imgAbsOf, esc, img, href, ctaBand, faqHtml, faqLd, waIcon, crumbs, breadcrumbLd, abs } from '../lib.js';
@@ -176,7 +177,7 @@ ${featureBlock(ctx, {
     'Corporate events and office celebrations',
     'Office spaces and interiors',
   ],
-  facts: [['One look', '₹8,899'], ['Teams', 'Custom quote'], ['Where', 'Your office or our studio']],
+  facts: [['Pricing', 'Custom quote'], ['We need', 'Location, date, team size'], ['Where', 'Your office or our studio']],
   link: '/Corporate-photoshoot',
   linkLabel: 'Corporate photography',
   topic: 'corporate headshot photography',
@@ -303,7 +304,7 @@ export function corporate(ctx) {
     for (const [pg, arr] of [[P, studio], ['/Innosolv-Headshots', team]]) if (arr[i] && mixed.length < 24) mixed.push([pg, arr[i]]);
   const faqs = [
     { q: 'Can you photograph our team at our office?', a: '<p>Yes. We come to your office anywhere in Bangalore with a portable studio setup, with consistent lighting and background for the whole team, so everyone matches on your website and company profiles. People step out for a few minutes and go back to work.</p>' },
-    { q: 'How much does corporate headshot photography cost?', a: "<p>The pricing differs with the requirements. One look (one style with one set of costumes, such as a shirt and blazer) is ₹8,899. Two costumes or different looks, and on-location shoots at your premises, are customised packages. Message us with the team size and location for a quote.</p>" },
+    { q: 'How much does corporate headshot photography cost?', a: `<p>${CORP_PKG.quoteText}</p>` },
     { q: 'Studio or on-site: which is better for our team?', a: '<p>Studio sessions give the most polished result and suit founders and leadership teams. On-site sessions suit larger teams and busy schedules. Read <a href="/blog/studio-vs-on-site-corporate-headshots">studio vs on-site corporate headshots</a>.</p>' },
     { q: 'Do you also photograph corporate events and offices?', a: '<p>Yes: see our <a href="/Corporate-event-photography-innosolv">corporate event photography</a> and <a href="/Office-spaces">office spaces</a> galleries.</p>' },
   ];
@@ -349,7 +350,7 @@ ${logoStrip(ctx, 'Teams and brands we have photographed')}
     ${offer('/Office-spaces', 'Offices & interiors', 'Workspaces, receptions and interiors for your website and listings.', office[1] ?? office[0])}
   </div>
   <div class="split" style="margin-top:48px;align-items:start">
-    <div class="price-card"><span class="eyebrow">Corporate headshots</span><div class="price">₹8,899 <small>one look</small></div><p>One style with one set of costumes, such as a shirt and blazer. Two costumes or different looks, team sessions and on-location shoots at your premises are customised packages.</p><a class="btn btn-primary" href="${waLink('corporate headshot photography')}" rel="noopener">${waIcon} Get a quote</a></div>
+    <div class="price-card"><span class="eyebrow">Corporate headshots</span><div class="price">Custom quote</div><p>Every corporate shoot is quoted to your requirements. To prepare your quote we need:</p><ul class="ticks">${CORP_PKG.quoteNeeds.map((x) => `<li>${x[0].toUpperCase() + x.slice(1)}</li>`).join('')}</ul><a class="btn btn-primary" href="${waLink('corporate headshot photography')}" rel="noopener">${waIcon} Get a quote</a></div>
     <div class="price-card" style="background:var(--paper)"><span class="eyebrow">Individual headshots</span><div class="price">${HS_PKG.priceText} <small>studio session</small></div><p>Just you? Our studio headshot session includes every photo, ${HS_PKG.deliverables}, and delivery in ${HS_PKG.delivery}.</p><div class="actions" style="margin-top:8px">${bookBtn('headshots', 'btn-primary')}<a class="btn btn-ghost" href="/Headshot-photographer-bangalore#pricing">Headshot sessions</a></div></div>
   </div>
 </div></section>
@@ -385,13 +386,13 @@ ${ctaBand({ heading: 'Planning headshots for your team?', text: 'Tell us the tea
   return {
     path: P,
     title: page.title,
-    description: 'Corporate photographer in Bangalore: on-site team headshots with a portable studio, leadership portraits, corporate events and office photography. One look from ₹8,899.',
+    description: 'Corporate photographer in Bangalore: on-site team headshots with a portable studio, leadership portraits, corporate events and office photography. Custom quotes for every team.',
     ogImage: ogUrl(hero),
     body,
     waTopic: 'corporate headshot photography',
     ld: [
       breadcrumbLd(trail),
-      { '@type': 'Service', '@id': abs(P) + '#service', name: 'Corporate photography in Bangalore', serviceType: 'Corporate headshot and event photography', provider: { '@id': `${SITE.origin}/#business` }, areaServed: { '@type': 'City', name: SITE.locality }, offers: { '@type': 'Offer', name: 'Corporate headshot, one look', price: '8899', priceCurrency: 'INR', url: abs(P) } },
+      { '@type': 'Service', '@id': abs(P) + '#service', name: 'Corporate photography in Bangalore', serviceType: 'Corporate headshot and event photography', provider: { '@id': `${SITE.origin}/#business` }, areaServed: { '@type': 'City', name: SITE.locality }, offers: { '@type': 'Offer', name: 'Corporate photography (custom quote)', description: CORP_PKG.quoteText, url: abs(P) } },
       faqLd(faqs),
     ],
   };
@@ -790,7 +791,7 @@ export function headshots(ctx) {
       <span class="eyebrow">Corporate &amp; team headshots</span>
       <h3>We come to your office</h3>
       <p>A portable studio setup anywhere in Bangalore, with consistent lighting and background for the whole team, so everyone matches on your website and company profiles.</p>
-      <p>The pricing or packages differ upon the requirements for headshots as per the client's need. One look (one style with one set of costumes, such as a shirt and blazer) is ₹8,899. Two costumes or different looks, and on-location shoots at your premises, are customised packages.</p>
+      <p>${CORP_PKG.quoteText}</p>
       <a class="btn btn-ghost" href="${waLink('corporate headshot photography')}" rel="noopener">Request a team quote</a>
       <p class="meta" style="margin-top:16px">Planning a team shoot? Read <a href="/blog/studio-vs-on-site-corporate-headshots">studio vs on-site corporate headshots</a>.</p>
     </div>
